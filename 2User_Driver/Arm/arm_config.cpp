@@ -10,7 +10,7 @@ static_assert(ARM_ROLL_C610_ID >= 1 && ARM_ROLL_C610_ID <= 8 &&
               "C610 IDs must be distinct values from 1 to 8");
 
 #ifndef ARM_FOUR_AXIS_BENCH
-#define ARM_FOUR_AXIS_BENCH 1 // 日常默认四轴；整车构建显式传0
+#define ARM_FOUR_AXIS_BENCH 0 // 日常单整车固件；四轴配置只用于兼容逻辑测试
 #endif
 
 namespace engineer {

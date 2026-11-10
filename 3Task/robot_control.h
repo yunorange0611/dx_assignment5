@@ -43,7 +43,7 @@ enum RobotTuneMode {
     ROBOT_TUNE_LEFT_SPEED, ROBOT_TUNE_RIGHT_SPEED, ROBOT_TUNE_YAW_SPEED,
     ROBOT_TUNE_YAW_POSITION
 };
-extern volatile uint32_t robot_tune_mode;
+extern volatile uint32_t robot_tune_mode, tune_enable;
 extern volatile float tune_current_ma, tune_speed_rpm, tune_yaw_speed_deg_s, tune_yaw_target_deg;
 extern volatile float tune_wheel_kp, tune_wheel_ki, tune_wheel_current_limit_ma;
 extern volatile float tune_yaw_position_kp, tune_yaw_velocity_kp, tune_yaw_velocity_ki,

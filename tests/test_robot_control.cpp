@@ -3,12 +3,16 @@
 #include "task_protect.h"
 #include "Remote/operator_control.h"
 #include "Chassis/chassis_control.h"
+#include "Vehicle/robot_tuning.h"
+#include "chassis_task.h"
 #include "dr16_bsp.h"
 #include "vehicle_state_task.h"
 #include "task_ins.h"
 #include <limits>
+#include <cmath>
 using namespace engineer;
 extern "C" volatile unsigned test_checks;
+extern "C" uint32_t test_hal_tick;
 #define CHECK(x)                                                                                   \
     do {                                                                                           \
         ++test_checks;                                                                             \
@@ -18,13 +22,64 @@ extern "C" volatile unsigned test_checks;
 namespace {
 uint32_t vehicle_reasons = 0;
 unsigned vehicle_reads = 0, calibration_revocations = 0;
+ChassisStatus test_wheels{};
+InsStatus test_imu{};
+
+bool feed_all(ArmControl &a, uint32_t now) {
+    bool ok = true;
+    for (unsigned j = 0; j < kJointCount; ++j) {
+        if (!(kArmConfig.joint_mask & (1u << j)))
+            continue;
+        if (j == BigPitch || j == SmallPitch) {
+            const uint8_t d[8] = {uint8_t(0x10 + j), 0x80, 0, 0x80, 0x08, 0, 25, 25};
+            ok = a.receive(1, a.feedback_id(j), d, 8, now) && ok;
+        } else {
+            const uint8_t d[8] = {3, 232, 0, 0, 0, 0, 25, 0};
+            ok = a.receive(1, a.feedback_id(j), d, 8, now) && ok;
+        }
+    }
+    return ok;
+}
+void fresh_inputs(uint32_t now) {
+    test_hal_tick = now;
+    g_dr16_status.valid = 1;
+    g_dr16_status.consecutive_frames = 3;
+    g_dr16_status.received_ms = now;
+    for (auto &ch : g_dr16_status.frame.channel)
+        ch = 0;
+    g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
+    g_dr16_status.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
+    test_wheels = {};
+    test_wheels.updated_ms = now;
+    test_wheels.ready = test_wheels.configuration_valid = test_wheels.hardware_confirmed = 1;
+    test_wheels.wheels_stationary = 1;
+    for (unsigned i = 0; i < 2; ++i) {
+        test_wheels.feedback_ms[i] = now;
+        test_wheels.feedback_frames[i] = 1;
+    }
+    test_imu = {};
+    test_imu.updated_ms = test_imu.received_ms = now;
+    test_imu.ready = test_imu.valid = 1;
+}
 } // namespace
 extern "C" uint32_t Vehicle_GetProtectionReasons(uint32_t now) {
     ++vehicle_reads;
-    return now == 1234 ? vehicle_reasons : PROTECT_VEHICLE_STATE;
+    return now == test_hal_tick ? vehicle_reasons : PROTECT_VEHICLE_STATE;
 }
 extern "C" void INS_RevokeCalibrationPermission(uint32_t) {
     ++calibration_revocations;
+}
+extern "C" int INS_GetStatus(InsStatus *out) {
+    if (!out)
+        return 0;
+    *out = test_imu;
+    return out->ready;
+}
+extern "C" int Chassis_GetStatus(ChassisStatus *out) {
+    if (!out)
+        return 0;
+    *out = test_wheels;
+    return out->ready;
 }
 int test_robot_control() {
     static_assert(sizeof(ChassisCommand) < sizeof(RobotControlStatus));
@@ -35,74 +90,6 @@ int test_robot_control() {
     CHECK(!Robot_GetChassisCommand(nullptr));
     CHECK(!Robot_GetChassisCommand(&command));
     CHECK(!command.enabled && command.stop && command.brake && command.reset);
-#if YAW_SUSPENDED_BENCH
-    // Dedicated yaw build keeps all chassis commands disabled; default false
-    // confirmations prevent tuning requests from enabling even with valid RX.
-    g_dr16_status.valid = 1;
-    g_dr16_status.consecutive_frames = 3;
-    g_dr16_status.received_ms = 1234;
-    g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-    g_dr16_status.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
-    ArmControl arm(kArmConfig);
-    RobotControlStatus s{};
-    Robot_Execute(arm, 1234, false);
-    CHECK(Robot_GetControlStatus(&s));
-    CHECK(Robot_GetChassisCommand(&command));
-    CHECK(command.valid && !command.enabled && command.stop && command.brake && command.reset);
-    CHECK(command.updated_ms == 1234 && command.stop_epoch == s.stop_epoch);
-    CHECK(!s.active && s.emergency_stop && s.stop_chassis && s.longitudinal_brake);
-    CHECK(s.longitudinal_speed_request == 0 && s.turn_rate_request == 0 && !s.fast_requested);
-    CHECK(s.protection_current_reasons & PROTECT_CONFIG);
-    CHECK(!(s.protection_current_reasons & PROTECT_INTERLOCK));
-    const uint8_t feedback[8] = {3, 232, 0, 0, 0, 0, 25, 0};
-    CHECK(arm.receive(1, arm.feedback_id(Yaw), feedback, 8, 1234));
-    g_robot_debug_command = ROBOT_DEBUG_CAPTURE_ZERO;
-    Robot_Execute(arm, 1234, false);
-    CHECK(g_robot_debug_command == ROBOT_DEBUG_IDLE && arm.status().joint[Yaw].calibrated);
-    for (unsigned j = 1; j < kJointCount; ++j)
-        CHECK(!arm.status().joint[j].calibrated);
-    g_yaw_debug_request.mode = 1;
-    g_yaw_debug_request.speed_deg_s = 2;
-    g_yaw_debug_request.duration_ms = 100;
-    g_yaw_debug_request.suspended_confirm = 0x59415753;
-    g_yaw_debug_request.request_seq = 1;
-    Robot_Execute(arm, 1234, false);
-    CHECK(g_yaw_debug_status.consumed_seq == 1 && !g_yaw_debug_status.active);
-    CHECK(arm.status().enabled_mask == 0);
-    g_yaw_debug_request.request_seq = 2;
-    const auto epoch = s.stop_epoch;
-    Robot_StopControl();
-    Robot_Execute(arm, 1234, false);
-    CHECK(Robot_GetControlStatus(&s) && s.stop_epoch != epoch);
-    CHECK(Robot_GetChassisCommand(&command) && command.stop_epoch == s.stop_epoch);
-    CHECK(!command.enabled && command.stop && command.speed_request == 0 &&
-          command.turn_request == 0);
-    CHECK(s.protection_current_reasons & PROTECT_STOP_REQUEST);
-    CHECK(!g_yaw_debug_status.active && arm.status().enabled_mask == 0);
-    CHECK(g_yaw_debug_status.consumed_seq == 2); // A stop also consumes a concurrent new pulse.
-    ArmControl untouched(kArmConfig);
-    CHECK(untouched.receive(1, untouched.feedback_id(Yaw), feedback, 8, 1234));
-    Robot_StopControl();
-    g_robot_debug_command = ROBOT_DEBUG_CAPTURE_ZERO;
-    Robot_Execute(untouched, 1234, false);
-    CHECK(!untouched.status().joint[Yaw].calibrated && !untouched.status().enabled_mask);
-    CHECK(g_robot_debug_command == ROBOT_DEBUG_IDLE && !g_yaw_debug_status.active);
-    Frame frames[kJointCount]{};
-    const auto count = arm.step(1234, frames);
-    unsigned yaw_frames = 0;
-    for (unsigned i = 0; i < count; ++i) {
-        CHECK(frames[i].bus == 1);
-        if (frames[i].id == 0x1fe) {
-            ++yaw_frames;
-            for (uint8_t b : frames[i].data)
-                CHECK(b == 0);
-        }
-    }
-    CHECK(yaw_frames == 1);
-    CHECK(vehicle_reads ==
-          0); // Isolated existing-owner yaw test does not depend on full-vehicle sensors.
-    return 0;
-#else
     RobotControlStatus s{};
     CHECK(!Robot_GetControlStatus(nullptr));
     CHECK(!Robot_GetControlStatus(&s));
@@ -266,6 +253,107 @@ int test_robot_control() {
 #else
     CHECK(vehicle_reads == 0); // Teammate's four-axis bench remains independent.
 #endif
+    if (kArmConfig.joint_mask == kAllJoints) {
+        // Default confirmations stay false. Runtime requests must be rejected
+        // once, never become delayed starts, and still preserve an existing hold.
+        auto local = kArmConfig;
+        local.hardware_confirmed = true;
+        local.pitch.mapping_confirmed = true;
+        ArmControl held(local);
+        uint32_t now = 1238;
+        fresh_inputs(now);
+        CHECK(feed_all(held, now));
+        CHECK(held.capture_zero(kFourAxisJoints, now) == Result::Ok);
+        CHECK(held.enable(kFourAxisJoints, now) == Result::Ok);
+        float hold_target[kJointCount] = {0, 3, -1, 2, 1};
+        CHECK(held.set_targets(kFourAxisJoints, hold_target, now) == Result::Ok);
+        robot_tune_mode = ROBOT_TUNE_LEFT_CURRENT;
+        tune_current_ma = 40;
+        tune_speed_rpm = 50;
+        tune_yaw_speed_deg_s = 1;
+        tune_yaw_target_deg = 2;
+        tune_enable = 1;
+        Robot_Execute(held, now, false);
+        CHECK(g_robot_tune_status.mode == ROBOT_TUNE_LEFT_CURRENT &&
+              !g_robot_tune_status.ready && !tune_enable);
+        CHECK(tune_current_ma == 0 && tune_speed_rpm == 0 && tune_yaw_speed_deg_s == 0 &&
+              tune_yaw_target_deg == held.status().joint[Yaw].position_deg);
+        CHECK(held.status().enabled_mask == kFourAxisJoints);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.tune_value == 0);
+        now += 4;
+        fresh_inputs(now);
+        CHECK(feed_all(held, now));
+        tune_enable = 1;
+        Robot_Execute(held, now, false);
+        CHECK(!g_robot_tune_status.ready && g_robot_tune_status.blocked && !tune_enable);
+        const auto entry_epoch = g_robot_tune_status.epoch;
+        for (unsigned n = 0; n < 80; ++n) {
+            now += 4;
+            fresh_inputs(now);
+            CHECK(feed_all(held, now));
+            Robot_Execute(held, now, false);
+            CHECK(!g_robot_tune_status.ready && g_robot_tune_status.blocked &&
+                  g_robot_tune_status.epoch == entry_epoch);
+            CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.tune_value == 0);
+        }
+        for (unsigned j = BigPitch; j < kJointCount; ++j)
+            CHECK(held.status().joint[j].target_deg == hold_target[j]);
+        now += 4;
+        fresh_inputs(now);
+        CHECK(feed_all(held, now));
+        robot_tune_mode = ROBOT_TUNE_RIGHT_SPEED;
+        tune_current_ma = 80;
+        tune_speed_rpm = 90;
+        tune_yaw_speed_deg_s = 2;
+        Robot_Execute(held, now, false);
+        CHECK(g_robot_tune_status.epoch != entry_epoch && !g_robot_tune_status.ready);
+        CHECK(tune_current_ma == 0 && tune_speed_rpm == 0 && tune_yaw_speed_deg_s == 0);
+        CHECK(held.status().enabled_mask == kFourAxisJoints);
+        for (unsigned j = BigPitch; j < kJointCount; ++j)
+            CHECK(held.status().joint[j].target_deg == hold_target[j]);
+
+        // A mode change and global STOP in the same cycle cannot enable either
+        // the newly selected object or any previously held mechanical arm axis.
+        now += 4;
+        fresh_inputs(now);
+        CHECK(feed_all(held, now));
+        robot_tune_mode = ROBOT_TUNE_YAW_SPEED;
+        tune_yaw_speed_deg_s = 1;
+        Robot_StopControl();
+        Robot_Execute(held, now, false);
+        CHECK(!held.status().enabled_mask && !g_robot_tune_status.ready &&
+              g_robot_tune_status.blocked);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.tune_value == 0);
+        CHECK(g_robot_status.emergency_stop &&
+              (g_robot_status.protection_current_reasons & PROTECT_STOP_REQUEST));
+        now += 4;
+        fresh_inputs(now);
+        CHECK(feed_all(held, now));
+        Robot_Execute(held, now, false);
+        CHECK(!held.status().enabled_mask && !g_robot_tune_status.ready);
+
+        // In a Yaw tuning selection, the zero command calibrates Yaw only.
+        ArmControl yaw_only(kArmConfig);
+        const uint8_t feedback[8] = {3, 232, 0, 0, 0, 0, 25, 0};
+        now += 4;
+        fresh_inputs(now);
+        CHECK(yaw_only.receive(1, yaw_only.feedback_id(Yaw), feedback, 8, now));
+        g_robot_debug_command = ROBOT_DEBUG_CAPTURE_ZERO;
+        Robot_Execute(yaw_only, now, false);
+        CHECK(g_robot_debug_command == ROBOT_DEBUG_IDLE && yaw_only.status().joint[Yaw].calibrated);
+        for (unsigned j = BigPitch; j < kJointCount; ++j)
+            CHECK(!yaw_only.status().joint[j].calibrated);
+        CHECK(!yaw_only.status().enabled_mask);
+        now += 4;
+        fresh_inputs(now);
+        CHECK(yaw_only.receive(1, yaw_only.feedback_id(Yaw), feedback, 8, now));
+        robot_tune_mode = ROBOT_TUNE_NORMAL;
+        Robot_Execute(yaw_only, now, false);
+        CHECK(g_robot_tune_status.mode == ROBOT_TUNE_NORMAL && !g_robot_tune_status.ready &&
+              !g_robot_tune_status.blocked);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.tune_mode == 0);
+        CHECK(!yaw_only.status().enabled_mask);
+        test_hal_tick = 1234;
+    }
     return 0;
-#endif
 }

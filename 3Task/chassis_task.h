@@ -12,6 +12,9 @@ typedef struct {
         bench_active;
     uint8_t power_configuration_valid, power_confirmed;
     uint8_t power_session_allowed, power_stop_requested, power_inhibited, power_phase, power_reason;
+    uint8_t tune_mode, tune_blocked;
+    uint32_t tune_epoch, tune_result; // Runtime mode epoch; result uses ChassisTuneResult.
+    float tune_current_limit_ma;
 } ChassisStatus;
 extern ChassisStatus g_chassis_status; // Read-only snapshot.
 enum ChassisDebugMode {
@@ -22,9 +25,9 @@ enum ChassisDebugMode {
 };
 typedef struct {
     uint32_t mode, wheel, duration_ms;
-    float value;                // CURRENT=mA (<=300), SPEED=rotor rpm (<=300)
-    uint32_t suspended_confirm; // 0x53555350, manual acknowledgement; not a sensor.
-    uint32_t request_seq; // Write this last. Requests are finite pulses, never a persistent enable.
+    float value;                // Legacy ABI; runtime output comes from robot_tune_mode.
+    uint32_t suspended_confirm; // Legacy ABI, unused by the unified runtime firmware.
+    uint32_t request_seq; // Write last: only STOP/CLEAR remain accepted, never output modes.
 } ChassisDebugRequest;
 typedef struct {
     uint32_t consumed_seq, result, until_ms;

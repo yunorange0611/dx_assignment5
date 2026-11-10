@@ -173,7 +173,7 @@ class ArmControl {
     float drive_speed_limit(unsigned joint) const;
     void trip(uint32_t fault, unsigned joint);
     Result set_tuning_checked(unsigned joint, const JointTuning &tuning, uint32_t now_ms,
-                              bool runtime);
+                             bool runtime);
     bool valid_config() const;
     bool selected(unsigned joint) const {
         return (config_.joint_mask & (1u << joint)) != 0;

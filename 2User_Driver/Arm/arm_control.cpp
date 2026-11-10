@@ -542,7 +542,7 @@ Result ArmControl::set_tuning_runtime(unsigned i, const JointTuning &tuning, uin
     return set_tuning_checked(i, tuning, now, true);
 }
 Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uint32_t now,
-                                       bool runtime) {
+                                      bool runtime) {
     // Numeric typo bounds, not a claim that the full range is safe on hardware.
     if (!finite(tuning.position_kp) || tuning.position_kp <= 0 || tuning.position_kp > 1000 ||
         !finite(tuning.velocity_kp) || tuning.velocity_kp < 0 || tuning.velocity_kp > 1.0e6f ||

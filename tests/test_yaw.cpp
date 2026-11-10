@@ -4,6 +4,7 @@
 #include "Arm/yaw_bench.h"
 #include "yaw_service.h"
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 using namespace engineer;
 extern "C" volatile unsigned test_checks;
@@ -21,7 +22,8 @@ Config config() {
     c.pitch.mapping_confirmed = true;
     return c;
 }
-bool feed(ArmControl &arm, uint32_t ms, unsigned encoder = 1000, int rpm = 0) {
+bool feed_dji(ArmControl &arm, unsigned joint, uint32_t ms, unsigned encoder = 1000,
+              int rpm = 0) {
     const uint8_t d[8] = {uint8_t(encoder >> 8),
                           uint8_t(encoder),
                           uint8_t(uint16_t(rpm) >> 8),
@@ -30,7 +32,28 @@ bool feed(ArmControl &arm, uint32_t ms, unsigned encoder = 1000, int rpm = 0) {
                           0,
                           25,
                           0};
-    return arm.receive(1, arm.feedback_id(Yaw), d, 8, ms);
+    return arm.receive(1, arm.feedback_id(joint), d, 8, ms);
+}
+bool feed(ArmControl &arm, uint32_t ms, unsigned encoder = 1000, int rpm = 0) {
+    return feed_dji(arm, Yaw, ms, encoder, rpm);
+}
+bool feed_all(ArmControl &arm, uint32_t ms, unsigned yaw_encoder = 1000, int yaw_rpm = 0) {
+    bool ok = feed(arm, ms, yaw_encoder, yaw_rpm) && feed_dji(arm, Roll, ms) &&
+              feed_dji(arm, Gripper, ms);
+    for (unsigned joint : {unsigned(BigPitch), unsigned(SmallPitch)}) {
+        const uint8_t d[8] = {uint8_t(0x10 | (joint == BigPitch ? 1 : 2)),
+                              0x80, 0, 0x80, 0x08, 0, 25, 25};
+        ok = arm.receive(1, arm.feedback_id(joint), d, 8, ms) && ok;
+    }
+    return ok;
+}
+bool same_hold(const JointStatus &a, const JointStatus &b) {
+    return a.target_deg == b.target_deg && a.reference_deg == b.reference_deg &&
+           a.drive_target_deg == b.drive_target_deg &&
+           a.drive_reference_deg == b.drive_reference_deg &&
+           a.drive_reference_velocity_deg_s == b.drive_reference_velocity_deg_s &&
+           a.velocity_target_deg_s == b.velocity_target_deg_s && a.effort == b.effort &&
+           a.enabled == b.enabled;
 }
 YawRuntimeLimits limits(uint32_t version = 1) {
     return {-10, 10, 10, 15, 2, 3, version};
@@ -48,8 +71,6 @@ int test_yaw() {
     { // Task adaptation preserves the public debug ABI and one-shot requests.
         static_assert(sizeof(YawLimitRequest) == 8);
         static_assert(sizeof(YawLimitStatus) == 32);
-        static_assert(sizeof(YawDebugRequest) == 20);
-        static_assert(sizeof(YawDebugStatus) == 20);
         CHECK(!Yaw_GetLimitStatus(nullptr));
         YawLimitStatus published{};
         CHECK(!Yaw_GetLimitStatus(&published) && !published.ready);
@@ -259,6 +280,123 @@ int test_yaw() {
         CHECK(a.status().joint[Yaw].effort < 0);
         a.disable();
         CHECK(a.set_yaw_test_speed(1, 4) == Result::InvalidArgument);
+    }
+    { // Runtime selection adds only the selected axis; existing arm holders keep their history.
+        ArmControl a(config());
+        CHECK(feed_all(a, 0));
+        CHECK(a.capture_zero(kAllJoints, 0) == Result::Ok);
+        CHECK(a.set_yaw_limits(limits(), 0) == Result::Ok);
+        float q[kJointCount] = {2, 3, -1, 4, 1};
+        CHECK(a.set_targets(1u << Yaw, q, 0) == Result::Ok);
+        CHECK(a.hold(1u << Yaw, 0) == Result::Ok);
+        CHECK(!a.status().enabled_mask && a.status().joint[Yaw].target_deg == 2);
+        CHECK(a.enable(kFourAxisJoints, 0) == Result::Ok);
+        CHECK(a.set_targets(kFourAxisJoints, q, 0) == Result::Ok);
+        a.step(0, frames);
+        auto before = a.status();
+        CHECK(a.enable(1u << Yaw, 0) == Result::Ok);
+        CHECK(a.status().enabled_mask == kAllJoints);
+        for (unsigned i = BigPitch; i < kJointCount; ++i)
+            CHECK(same_hold(before.joint[i], a.status().joint[i]));
+        CHECK(a.status().joint[Yaw].target_deg == a.status().joint[Yaw].position_deg);
+        CHECK(a.enable(1u << Yaw, 0) == Result::Busy);
+        CHECK(a.set_yaw_test_speed(2, 0) == Result::Ok);
+        CHECK(feed_all(a, 4));
+        a.step(4, frames);
+        CHECK(a.status().enabled_mask == kAllJoints && a.status().joint[Yaw].effort > 0);
+        CHECK(a.status().joint[Yaw].velocity_target_deg_s == 2);
+        for (unsigned i = BigPitch; i < kJointCount; ++i)
+            CHECK(a.status().joint[i].target_deg == q[i]);
+        CHECK(feed_all(a, 8, 1023));
+        before = a.status();
+        a.clear_yaw_test();
+        const auto &yaw = a.status().joint[Yaw];
+        CHECK(yaw.position_deg > .9f && yaw.target_deg == yaw.position_deg &&
+              yaw.reference_deg == yaw.position_deg && yaw.effort == 0 &&
+              yaw.velocity_target_deg_s == 0);
+        for (unsigned i = BigPitch; i < kJointCount; ++i)
+            CHECK(same_hold(before.joint[i], a.status().joint[i]));
+        a.step(8, frames);
+        CHECK(a.status().joint[Yaw].effort == 0 && a.status().joint[Yaw].velocity_target_deg_s == 0);
+        before = a.status();
+        CHECK(a.disable_joints(1u << BigPitch) == Result::InvalidArgument);
+        CHECK(a.hold(1u << SmallPitch, 8) == Result::InvalidArgument);
+        CHECK(a.status().enabled_mask == kAllJoints);
+        CHECK(a.disable_joints(1u << Yaw) == Result::Ok);
+        CHECK(a.status().enabled_mask == kFourAxisJoints && !a.status().joint[Yaw].enabled);
+        CHECK(a.hold(1u << Yaw, 8) == Result::Ok);
+        CHECK(a.status().enabled_mask == kFourAxisJoints);
+        for (unsigned i = BigPitch; i < kJointCount; ++i)
+            CHECK(same_hold(before.joint[i], a.status().joint[i]));
+        CHECK(a.enable(1u << Yaw, 8) == Result::Ok);
+        CHECK(a.hold(kPitchPair, 8) == Result::Ok);
+        CHECK(a.status().enabled_mask == kAllJoints);
+        for (unsigned i : {unsigned(BigPitch), unsigned(SmallPitch)}) {
+            const auto &s = a.status().joint[i];
+            CHECK(s.target_deg == s.position_deg && s.reference_deg == s.position_deg &&
+                  s.velocity_target_deg_s == 0 && s.drive_reference_velocity_deg_s == 0);
+        }
+        CHECK(same_hold(before.joint[Roll], a.status().joint[Roll]));
+        CHECK(same_hold(before.joint[Gripper], a.status().joint[Gripper]));
+        CHECK(a.disable_joints(kPitchPair) == Result::Ok);
+        CHECK(a.status().enabled_mask == ((1u << Yaw) | (1u << Roll) | (1u << Gripper)));
+        CHECK(a.hold(kAllJoints, 8) == Result::Ok);
+        CHECK(a.status().enabled_mask == ((1u << Yaw) | (1u << Roll) | (1u << Gripper)));
+    }
+    { // Online tuning affects only the selected stationary drive and honors the immutable cap.
+        ArmControl a(config());
+        CHECK(feed_all(a, 0));
+        CHECK(a.capture_zero(kAllJoints, 0) == Result::Ok);
+        CHECK(a.set_yaw_limits(limits(), 0) == Result::Ok);
+        CHECK(a.enable(kAllJoints, 0) == Result::Ok);
+        float q[kJointCount] = {0, 3, -1, 4, 1};
+        CHECK(a.set_targets(kFourAxisJoints, q, 0) == Result::Ok);
+        a.step(0, frames);
+        JointTuning original{}, tuned{};
+        CHECK(a.get_tuning(Yaw, original));
+        tuned = original;
+        tuned.velocity_kp += 1;
+        tuned.effort_limit *= .5f;
+        const auto before = a.status();
+        CHECK(a.set_tuning(Yaw, tuned, 0) == Result::Busy);
+        CHECK(a.set_tuning_runtime(Yaw, tuned, 0) == Result::Ok);
+        CHECK(a.status().enabled_mask == kAllJoints);
+        for (unsigned i = BigPitch; i < kJointCount; ++i)
+            CHECK(same_hold(before.joint[i], a.status().joint[i]));
+        JointTuning read{};
+        CHECK(a.get_tuning(Yaw, read) && read.velocity_kp == tuned.velocity_kp &&
+              read.effort_limit == tuned.effort_limit);
+        CHECK(a.set_yaw_test_speed(2, 0) == Result::Ok);
+        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Busy);
+        CHECK(a.set_yaw_test_speed(0, 0) == Result::Ok);
+        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Ok);
+        CHECK(a.get_tuning(Yaw, read) && read.effort_limit == original.effort_limit);
+        tuned.effort_limit = original.effort_limit + 1;
+        CHECK(a.set_tuning_runtime(Yaw, tuned, 0) == Result::InvalidArgument);
+        tuned = original;
+        tuned.velocity_ki = std::numeric_limits<float>::quiet_NaN();
+        CHECK(a.set_tuning_runtime(Yaw, tuned, 0) == Result::InvalidArgument);
+        CHECK(a.get_tuning(Yaw, read) && read.velocity_ki == original.velocity_ki &&
+              read.effort_limit == original.effort_limit);
+        a.clear_yaw_test();
+        q[Yaw] = 1;
+        CHECK(a.set_targets(1u << Yaw, q, 0) == Result::Ok);
+        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Busy);
+        CHECK(a.hold(1u << Yaw, 0) == Result::Ok);
+        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Ok);
+        CHECK(feed_all(a, 4, 1000, 1));
+        CHECK(a.set_tuning_runtime(Yaw, original, 4) == Result::Moving);
+        CHECK(a.status().enabled_mask == kAllJoints);
+        CHECK(feed_all(a, 8));
+        JointTuning pitch{};
+        CHECK(a.get_tuning(BigPitch, pitch));
+        CHECK(a.set_tuning_runtime(BigPitch, pitch, 8) == Result::Busy);
+        CHECK(a.hold(kPitchPair, 8) == Result::Ok);
+        CHECK(a.set_tuning_runtime(BigPitch, pitch, 8) == Result::Ok);
+        CHECK(a.status().enabled_mask == kAllJoints);
+        CHECK(a.set_tuning_runtime(kJointCount, original, 8) == Result::InvalidArgument);
+        CHECK(a.disable_joints(0) == Result::InvalidArgument);
+        CHECK(a.hold(0, 8) == Result::InvalidArgument);
     }
     { // Four-axis bench never registers/enables yaw through the new core API.
         auto c = config();

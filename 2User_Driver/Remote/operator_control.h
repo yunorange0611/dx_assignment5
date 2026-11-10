@@ -67,6 +67,10 @@ class ArmOperator {
   public:
     ArmOperator(const Config &arm, const OperatorConfig &config);
     void set_yaw_limits(const YawRuntimeLimits &limits);
+    // Owner-only explicit return from tuning, after neutral/vehicle health checks.
+    // Captures targets and resets timing; step still validates all normal guards.
+    // This does not enable any drive: partially enabled arms require arm_request.
+    void resume_from_tuning(const Status &, const RemoteInput &, uint32_t now_ms);
     OperatorOutput step(const RemoteInput &, const Interlocks &, const Status &, uint32_t now_ms,
                         bool arm_request, bool stop_request);
     uint32_t enable_result(bool ok) {

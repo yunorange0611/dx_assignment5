@@ -16,6 +16,7 @@ volatile unsigned test_dm_config_failed_line = 0;
 volatile unsigned test_chassis_failed_line = 0;
 volatile unsigned test_yaw_failed_line = 0;
 volatile unsigned test_vehicle_failed_line = 0;
+volatile unsigned test_robot_tuning_failed_line = 0;
 }
 int test_can_tx();
 int test_operator();
@@ -27,6 +28,7 @@ int test_dm_id_config();
 int test_chassis();
 int test_yaw();
 int test_vehicle();
+int test_robot_tuning();
 #define CHECK(x)                                                                                   \
     do {                                                                                           \
         ++test_checks;                                                                             \
@@ -78,6 +80,8 @@ bool dji_zero(const Frame *f, unsigned n) {
     return true;
 }
 void run() {
+    test_robot_tuning_failed_line = test_robot_tuning();
+    CHECK(test_robot_tuning_failed_line == 0);
     test_chassis_failed_line = test_chassis();
     CHECK(test_chassis_failed_line == 0);
     test_yaw_failed_line = test_yaw();

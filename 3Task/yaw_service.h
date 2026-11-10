@@ -22,21 +22,6 @@ extern volatile YawLimitRequest g_yaw_limit_request;
 extern YawLimitStatus g_yaw_limit_status; // result = engineer::Result.
 int Yaw_GetLimitStatus(YawLimitStatus *status);
 
-typedef struct {
-    uint32_t mode;
-    float speed_deg_s;
-    uint32_t duration_ms, suspended_confirm, request_seq;
-} YawDebugRequest;
-
-typedef struct {
-    uint32_t consumed_seq, result, until_ms;
-    float speed_deg_s;
-    uint8_t active;
-} YawDebugStatus;
-
-extern volatile YawDebugRequest g_yaw_debug_request;
-extern YawDebugStatus g_yaw_debug_status;
-
 #ifdef __cplusplus
 }
 
@@ -61,12 +46,5 @@ void Yaw_ApplyLimitRequest(ArmControl &arm, ArmOperator &controller, Interlocks 
 // chassis and preserves the existing safe target and envelope.
 void Yaw_ApplyOperatingEnvelope(ArmControl &arm, const Interlocks &locks, OperatorOutput &output);
 
-// Dedicated suspended-bench flow. Protection stays in TaskProtect and motor
-// output stays in ArmControl; Robot_Execute publishes the common robot status.
-// The epoch reference is sampled atomically with the pulse request after the
-// protection tick. Return that sample for the common Robot status publication.
-uint32_t Yaw_ExecuteBench(ArmControl &arm, const RemoteInput &remote, uint32_t now_ms,
-                          uint32_t elapsed_ms, bool stop_requested,
-                          const uint32_t &owner_stop_epoch);
 } // namespace engineer
 #endif

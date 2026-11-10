@@ -75,6 +75,11 @@ ChassisTuneResult ChassisControl::set_velocity_tuning(float kp, float ki, float 
 }
 const ChassisState &ChassisControl::step(uint32_t now, const WheelFeedback wheel[2],
                                          const ChassisCommand &cmd) {
+    if (!cmd.tune_mode || cmd.tune_mode >= 5) {
+        have_tune_epoch_ = false;
+        s_.tune_result = ChassisTuneResult::Idle;
+        s_.tune_current_limit_ma = 0;
+    }
     const bool reset_edge = cmd.reset && !previous_reset_;
     previous_reset_ = cmd.reset;
     if (!cmd.enabled)
@@ -156,6 +161,85 @@ const ChassisState &ChassisControl::step(uint32_t now, const WheelFeedback wheel
         error_[i] = s_.target_rpm[i] - s_.measured_rpm[i];
         s_.candidate_ma[i] =
             clamp(c_.velocity_kp * error_[i] + integral_[i], -c_.max_current_ma, c_.max_current_ma);
+    }
+    return s_;
+}
+const ChassisState &ChassisControl::step_tuning(uint32_t now, const WheelFeedback wheel[2],
+                                               const ChassisCommand &cmd) {
+    ChassisCommand guarded = cmd;
+    guarded.speed_request = guarded.turn_request = 0;
+    guarded.stop = guarded.brake = true;
+    guarded.reset = false;
+    guarded.epoch = cmd.tune_epoch;
+    const bool valid = cmd.tune_mode >= 1 && cmd.tune_mode <= 4 &&
+                       std::isfinite(cmd.tune_value) && std::fabs(cmd.tune_value) <= 300 &&
+                       std::isfinite(cmd.tune_velocity_kp) && cmd.tune_velocity_kp > 0 &&
+                       cmd.tune_velocity_kp <= 1000 && std::isfinite(cmd.tune_velocity_ki) &&
+                       cmd.tune_velocity_ki >= 0 && cmd.tune_velocity_ki <= 1000 &&
+                       std::isfinite(cmd.tune_current_limit_ma) &&
+                       cmd.tune_current_limit_ma > 0 &&
+                       cmd.tune_current_limit_ma <= startup_current_limit_ma_;
+    const bool changed = !have_tune_epoch_ || previous_tune_mode_ != cmd.tune_mode ||
+                         previous_tune_epoch_ != cmd.tune_epoch;
+    if (!valid || changed) {
+        guarded.enabled = false;
+        step(now, wheel, guarded);
+        if (!valid) {
+            trip(ChassisCommandFault);
+            s_.tune_result = ChassisTuneResult::Invalid;
+        } else {
+            have_tune_epoch_ = true;
+            previous_tune_mode_ = cmd.tune_mode;
+            previous_tune_epoch_ = cmd.tune_epoch;
+            s_.tune_result = ChassisTuneResult::NotReady;
+        }
+        return s_;
+    }
+    bool stationary = true;
+    for (unsigned i = 0; i < 2; ++i)
+        stationary &= wheel[i].frames &&
+                      uint32_t(now - wheel[i].received_ms) <= c_.feedback_timeout_ms &&
+                      std::isfinite(wheel[i].rotor_rpm) &&
+                      std::fabs(wheel[i].rotor_rpm) < c_.stationary_rpm &&
+                      std::isfinite(wheel[i].temperature_c) &&
+                      wheel[i].temperature_c < c_.max_temperature_c;
+    const bool new_values = cmd.tune_velocity_kp != c_.velocity_kp ||
+                            cmd.tune_velocity_ki != c_.velocity_ki ||
+                            cmd.tune_current_limit_ma != tune_current_limit_ma_;
+    if (new_values) {
+        // A direct FreeMASTER gain write may never retune a moving wheel. The
+        // user first returns the target to zero; each accepted change inserts
+        // one disabled cycle and clears only this controller's history.
+        guarded.enabled = false;
+        step(now, wheel, guarded);
+        if (cmd.tune_value != 0 || !stationary || s_.faults) {
+            s_.tune_result = ChassisTuneResult::Busy;
+            return s_;
+        }
+        c_.velocity_kp = cmd.tune_velocity_kp;
+        c_.velocity_ki = cmd.tune_velocity_ki;
+        tune_current_limit_ma_ = cmd.tune_current_limit_ma;
+        s_.tune_result = ChassisTuneResult::Applied;
+        s_.tune_current_limit_ma = std::fmin(300, std::fmin(c_.max_current_ma,
+                                                         tune_current_limit_ma_));
+        return s_;
+    }
+    step(now, wheel, guarded);
+    s_.tune_current_limit_ma = std::fmin(300, std::fmin(c_.max_current_ma,
+                                                     tune_current_limit_ma_));
+    s_.tune_result = s_.enabled ? ChassisTuneResult::Applied : ChassisTuneResult::NotReady;
+    if (!s_.enabled)
+        return s_;
+    const unsigned selected = (cmd.tune_mode == 2 || cmd.tune_mode == 4) ? 1 : 0;
+    if (cmd.tune_mode <= 2) {
+        direct_output();
+        s_.candidate_ma[0] = s_.candidate_ma[1] = 0;
+        s_.candidate_ma[selected] = clamp(cmd.tune_value, -s_.tune_current_limit_ma,
+                                          s_.tune_current_limit_ma);
+    } else {
+        step_debug_speed(selected, cmd.tune_value);
+        s_.candidate_ma[selected] = clamp(s_.candidate_ma[selected], -s_.tune_current_limit_ma,
+                                          s_.tune_current_limit_ma);
     }
     return s_;
 }

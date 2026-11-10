@@ -615,5 +615,81 @@ int test_operator() {
         o = t.tick();
         CHECK(o.disable_arm && o.block == OperatorBlock::Timing);
     }
+    { // An explicit tuning exit resumes the existing arm without a stale-period stop or re-enable.
+        for (uint8_t left : {uint8_t(DR16_SWITCH_UP), uint8_t(DR16_SWITCH_MID)}) {
+            Rig r;
+            CHECK(r.start().active);
+            r.rc.frame.channel[3] = 660;
+            r.tick(); // Leave an old normal-operation target that must not be reused.
+            r.neutral();
+            r.rc.frame.switches[0] = left;
+            r.arm.joint[Yaw].position_deg = 2;
+            r.arm.joint[BigPitch].position_deg = 6;
+            r.arm.joint[SmallPitch].position_deg = -2;
+            r.arm.joint[Roll].position_deg = 5;
+            r.now += 100000;
+            const auto original = r.arm;
+            r.op.resume_from_tuning(r.arm, r.rc, r.now);
+            CHECK(std::memcmp(&original, &r.arm, sizeof(original)) == 0);
+            const auto o = r.tick(true);
+            CHECK(o.active && !o.request_enable && !o.disable_arm && !o.emergency_stop);
+            CHECK(!o.wait_neutral && o.block == OperatorBlock::None);
+            CHECK(o.mode == (left == DR16_SWITCH_UP ? RobotMode::Drive : RobotMode::Grab));
+            CHECK(r.arm.enabled_mask == kAllJoints);
+            CHECK(o.stop_chassis && o.longitudinal_speed_request == 0 && o.turn_rate_request == 0);
+            for (unsigned i = 0; i < kJointCount; ++i)
+                CHECK(o.target_deg[i] == r.arm.joint[i].position_deg);
+        }
+    }
+    { // Resuming a partial hold never enables it implicitly; only the following request can add axes.
+        for (bool request : {false, true}) {
+            Rig r;
+            CHECK(r.start().active);
+            r.arm.enabled_mask = kFourAxisJoints;
+            r.now += 100000;
+            r.op.resume_from_tuning(r.arm, r.rc, r.now);
+            CHECK(r.arm.enabled_mask == kFourAxisJoints);
+            r.rc.received_ms = r.locks.received_ms = r.now;
+            const auto o = r.op.step(r.rc, r.locks, r.arm, r.now, request, false);
+            CHECK(r.arm.enabled_mask == kFourAxisJoints);
+            CHECK(o.request_enable == request && o.active == request &&
+                  o.disable_arm == !request);
+            CHECK(o.block == (request ? OperatorBlock::None : OperatorBlock::NeedArm));
+        }
+    }
+    { // Resume resets timing/state only: normal remote, interlock, axis health and stop checks still run.
+        for (unsigned bad = 0; bad < 7; ++bad) {
+            Rig r;
+            CHECK(r.start().active);
+            r.now += 100000;
+            r.op.resume_from_tuning(r.arm, r.rc, r.now);
+            if (bad == 0)
+                r.rc.valid = false;
+            if (bad == 1)
+                r.locks.valid = false;
+            if (bad == 2)
+                r.arm.configuration_valid = false;
+            if (bad == 3)
+                r.arm.faults = FeedbackTimeout;
+            if (bad == 4)
+                r.arm.joint[Roll].online = false;
+            if (bad == 5)
+                r.arm.joint[Yaw].calibrated = false;
+            const auto o = r.tick(true, bad == 6);
+            CHECK(!o.active && o.disable_arm && o.emergency_stop && !o.request_enable);
+            CHECK(o.stop_chassis && o.longitudinal_speed_request == 0 && o.turn_rate_request == 0);
+            if (bad >= 2 && bad <= 5)
+                CHECK(o.block == OperatorBlock::ArmUnavailable);
+        }
+        Rig r;
+        CHECK(r.start().active);
+        r.now += 100000;
+        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.locks.arm_allows_drive = false;
+        r.op.resume_from_tuning(r.arm, r.rc, r.now);
+        const auto o = r.tick(true);
+        CHECK(o.active && !o.disable_arm && !o.request_enable && o.stop_chassis);
+        CHECK(o.block == OperatorBlock::PostureDenied && o.wait_neutral);
+    }
     return 0;
 }

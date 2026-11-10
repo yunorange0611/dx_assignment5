@@ -71,6 +71,26 @@ void ArmOperator::freeze(const Status &s) {
     close_tracking_ = false;
     close_limited_ = false;
 }
+void ArmOperator::resume_from_tuning(const Status &s, const RemoteInput &r, uint32_t now) {
+    freeze(s);
+    mode_ = config_.left_switch_index < 2
+                ? mode_for(r.frame.switches[config_.left_switch_index])
+                : RobotMode::Safe;
+    waiting_ = false;
+    active_ = s.enabled_mask == arm_.joint_mask;
+    safe_latched_ = false;
+    neutral_tracking_ = false;
+    neutral_since_ = now;
+    last_step_ = now - arm_.control_period_ms;
+    have_step_ = true;
+    last_right_ = DR16_SWITCH_MID;
+    bench_up_seen_ = false;
+    bench_arm_pending_ = false;
+    permission_blocked_ = false;
+    yaw_was_allowed_ = false;
+    close_since_ = 0;
+    ++motion_epoch_;
+}
 void ArmOperator::wait_for_neutral(const Status &s) {
     waiting_ = true;
     neutral_tracking_ = false;
@@ -155,7 +175,12 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         return stopped;
     }
     safe_latched_ = false;
-    if (active_ && (s.enabled_mask != arm_.joint_mask || s.faults))
+    bool joints_ready = true;
+    for (unsigned i = 0; i < kJointCount; ++i)
+        if ((arm_.joint_mask & (1u << i)) && (!s.joint[i].online || !s.joint[i].calibrated))
+            joints_ready = false;
+    if (active_ && (s.enabled_mask != arm_.joint_mask || s.faults || !s.configuration_valid ||
+                    !joints_ready))
         return fail(OperatorBlock::ArmUnavailable);
     if (bench_up_seen_) {
         bench_arm_pending_ = left == DR16_SWITCH_MID;
@@ -172,10 +197,6 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
     const float ry = axis(r.frame, config_.right_y_channel, config_.axis_direction[2]);
     const float rx = axis(r.frame, config_.right_x_channel, config_.axis_direction[3]);
     const bool neutral = ly == 0 && lx == 0 && ry == 0 && rx == 0 && right == DR16_SWITCH_MID;
-    bool joints_ready = true;
-    for (unsigned i = 0; i < kJointCount; ++i)
-        if ((arm_.joint_mask & (1u << i)) && (!s.joint[i].online || !s.joint[i].calibrated))
-            joints_ready = false;
     if (bench && (!neutral || mode_ != RobotMode::Grab || !joints_ready || !s.configuration_valid ||
                   s.faults))
         bench_arm_pending_ = false;

@@ -3,6 +3,7 @@
 #include "CAN_bsp.h"
 #include "dr16_bsp.h"
 #include "robot_control_internal.h"
+#include "robot_control.h"
 #include "task_ins.h"
 #include <cstring>
 #include <optional>
@@ -240,8 +241,7 @@ extern "C" void arm_control_task(void *argument) {
                     arm.capture_zero(c.mask, now);
                     break;
                 case Enable:
-#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH &&                  \
-    !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
                     INS_RevokeCalibrationPermission(now);
 #endif
                     arm.enable(c.mask, now);
@@ -257,7 +257,14 @@ extern "C" void arm_control_task(void *argument) {
         }
         now = HAL_GetTick();
         apply_tune_request(arm, now);
+        const auto previous_tune_epoch = g_robot_tune_status.epoch;
+        const bool previous_tune_ready = g_robot_tune_status.ready;
         Robot_Execute(arm, now, user_stopped);
+        if (previous_tune_epoch != g_robot_tune_status.epoch ||
+            (previous_tune_ready && !g_robot_tune_status.ready))
+            // Drop old motion frames, then republish every held axis below.
+            // This cancels stale Yaw commands without changing arm hold targets.
+            can_cancel_pending(owned_buses);
         now = HAL_GetTick();
         Frame frames[kJointCount]{};
         const unsigned count = arm.step(now, frames);

@@ -56,8 +56,7 @@ extern "C" int INS_GetStatus(InsStatus *out) {
     return out->ready;
 }
 extern "C" void ins_task(void *) {
-#if defined(HAL_SPI_MODULE_ENABLED) && VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH &&           \
-    !CHASSIS_SUSPENDED_BENCH && !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+#if defined(HAL_SPI_MODULE_ENABLED) && VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
     using namespace engineer;
     constexpr uint32_t period = 4;
     if (osKernelGetTickFreq() != 1000)

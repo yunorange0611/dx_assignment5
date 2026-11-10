@@ -33,8 +33,7 @@ extern "C" uint32_t Vehicle_GetProtectionReasons(uint32_t now_ms) {
                                         engineer::kVehicleConfig.status_timeout_ms);
 }
 
-#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH &&                  \
-    !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
 namespace {
 
 // Translate publication protocols into only the values needed by domain policy.
@@ -140,8 +139,7 @@ RobotInterlocks adapt_interlocks(const engineer::VehicleInterlocks &input) {
 #endif
 
 extern "C" void vehicle_state_task(void *) {
-#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH &&                  \
-    !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
     const engineer::VehicleTiming timing{engineer::kChassisConfig.feedback_timeout_ms,
                                          engineer::kArmConfig.feedback_timeout_ms,
                                          engineer::kAttitudeConfig.max_sample_gap_ms};

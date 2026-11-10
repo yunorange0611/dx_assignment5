@@ -26,17 +26,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 # Core project settings
 project(${CMAKE_PROJECT_NAME})
-option(ARM_FOUR_AXIS_BENCH "Four-axis arm bench: no yaw or chassis control" ON)
 option(DM_ID_CONFIG_MODE "Standalone CAN1 DM ID configuration; no arm control" OFF)
-option(CHASSIS_SUSPENDED_BENCH "Explicit suspended chassis pulse testing only" OFF)
-option(YAW_SUSPENDED_BENCH "Explicit limited Yaw tuning in the existing owner" OFF)
 option(VEHICLE_SAFETY_ENABLED "Real IMU, posture interlocks and conservative power stopping" ON)
-if(YAW_SUSPENDED_BENCH AND (ARM_FOUR_AXIS_BENCH OR CHASSIS_SUSPENDED_BENCH OR DM_ID_CONFIG_MODE))
-    message(FATAL_ERROR "Yaw bench requires the five-axis owner and excludes other test modes")
-endif()
-if(CHASSIS_SUSPENDED_BENCH AND (NOT ARM_FOUR_AXIS_BENCH OR DM_ID_CONFIG_MODE))
-    message(FATAL_ERROR "Chassis bench requires the disabled four-axis owner and excludes ID configuration")
-endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 message("Build type: " ${CMAKE_BUILD_TYPE})
@@ -76,6 +67,7 @@ set(CONTROL_SOURCES
     2User_Driver/Power/chassis_power.cpp
     2User_Driver/Imu/attitude_estimator.cpp
     2User_Driver/Vehicle/vehicle_state.cpp
+    2User_Driver/Vehicle/robot_tuning.cpp
 )
 set(TASK_SOURCES
     3Task/arm_task.cpp
@@ -104,10 +96,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    ARM_FOUR_AXIS_BENCH=$<BOOL:${ARM_FOUR_AXIS_BENCH}>
+    ARM_FOUR_AXIS_BENCH=0
     DM_ID_CONFIG_MODE=$<BOOL:${DM_ID_CONFIG_MODE}>
-    CHASSIS_SUSPENDED_BENCH=$<BOOL:${CHASSIS_SUSPENDED_BENCH}>
-    YAW_SUSPENDED_BENCH=$<BOOL:${YAW_SUSPENDED_BENCH}>
     VEHICLE_SAFETY_ENABLED=$<BOOL:${VEHICLE_SAFETY_ENABLED}>
 )
 
@@ -123,12 +113,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
 if(DM_ID_CONFIG_MODE)
     set(FIRMWARE_NAME dm_id_config)
-elseif(CHASSIS_SUSPENDED_BENCH)
-    set(FIRMWARE_NAME chassis_suspended)
-elseif(YAW_SUSPENDED_BENCH)
-    set(FIRMWARE_NAME yaw_suspended)
 else()
-    set(FIRMWARE_NAME engineer_arm)
+    set(FIRMWARE_NAME engineer_vehicle)
 endif()
 add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}>

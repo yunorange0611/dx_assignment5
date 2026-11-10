@@ -13,15 +13,12 @@ from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_PC
 
 parser = argparse.ArgumentParser(description=__doc__)
 profiles = parser.add_mutually_exclusive_group()
-profiles.add_argument("--bench", dest="bench", action="store_true", help="Test four-axis mode (default)")
-profiles.add_argument("--vehicle", dest="bench", action="store_false", help="Test the full-vehicle profile")
-profiles.add_argument("--yaw-bench", dest="yaw_bench", action="store_true", help="Test the isolated existing-owner yaw tuning profile")
-parser.set_defaults(bench=True)
+profiles.add_argument("--bench", dest="bench", action="store_true", help="Test legacy four-axis compatibility")
+profiles.add_argument("--vehicle", dest="bench", action="store_false", help="Test the full-vehicle profile (default)")
+parser.set_defaults(bench=False)
 args = parser.parse_args()
-if args.yaw_bench:
-    args.bench=False
-profile = "YawBench" if args.yaw_bench else ("FourAxis" if args.bench else "Vehicle")
-build = ROOT / "build" / ("tests_yaw_bench" if args.yaw_bench else ("tests_bench" if args.bench else "tests"))
+profile = "FourAxisCompatibility" if args.bench else "Vehicle"
+build = ROOT / "build" / ("tests_bench" if args.bench else "tests")
 build.mkdir(parents=True, exist_ok=True)
 elf = build / "test_arm.elf"
 # Compile the merged BSP as C, as in firmware; the C++ tests use its real decoder/getter.
@@ -45,12 +42,14 @@ cmd = ["arm-none-eabi-g++", "-std=c++17", "-O1", "-g", "-mcpu=cortex-m4", "-mthu
        str(ROOT / "tests" / "test_chassis.cpp"),
        str(ROOT / "tests" / "test_yaw.cpp"),
        str(ROOT / "tests" / "test_vehicle.cpp"),
+       str(ROOT / "tests" / "test_robot_tuning.cpp"),
        str(ROOT / "2User_Driver/Chassis/chassis_control.cpp"),
        str(ROOT / "2User_Driver/Chassis/chassis_motor.cpp"),
        str(ROOT / "2User_Driver/Chassis/chassis_bench.cpp"),
        str(ROOT / "2User_Driver/Power/power_meter.cpp"),
        str(ROOT / "2User_Driver/Power/chassis_power.cpp"),
        str(ROOT / "2User_Driver/Vehicle/vehicle_state.cpp"),
+       str(ROOT / "2User_Driver/Vehicle/robot_tuning.cpp"),
        str(ROOT / "2User_Driver/Imu/attitude_estimator.cpp"),
        str(ROOT / "tests" / "test_dm_id_config.cpp"), str(ROOT / "2User_Driver" / "Arm" / "dm_id_config.cpp"),
        str(dr16_object),
@@ -66,8 +65,7 @@ for include in ["3Task", "1Bsp", "Core/Inc", "2User_Driver", "Drivers/STM32F4xx_
     cmd.extend(["-I", str(ROOT / include)])
     c_cmd.extend(["-I", str(ROOT / include)])
 cmd.append(f"-DARM_FOUR_AXIS_BENCH={int(args.bench)}")
-cmd.append(f"-DYAW_SUSPENDED_BENCH={int(args.yaw_bench)}")
-cmd.append(f"-DVEHICLE_SAFETY_ENABLED={int(not args.bench and not args.yaw_bench)}")
+cmd.append(f"-DVEHICLE_SAFETY_ENABLED={int(not args.bench)}")
 subprocess.run(c_cmd, check=True)
 subprocess.run(cmd, check=True)
 emu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
@@ -88,9 +86,9 @@ if not done:
     raise SystemExit(
         f"FAIL: test firmware did not reach completion; checks={checks}; "
         f"arm line={failed}; CAN line={read('test_can_failed_line')}; protect line={read('test_protect_failed_line')}; bridge line={read('test_robot_failed_line')}; four-axis line={read('test_four_axis_failed_line')}; "
-        f"remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')}; vehicle line={read('test_vehicle_failed_line')}; "
+        f"remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')}; vehicle line={read('test_vehicle_failed_line')}; tune line={read('test_robot_tuning_failed_line')}; "
         f"PC=0x{emu.reg_read(UC_ARM_REG_PC):08x} (100M instructions / 30s limit)"
     )
 if failed:
-    raise SystemExit(f"FAIL at tests/test_arm.cpp:{failed}; CAN line={read('test_can_failed_line')}; remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; protect line={read('test_protect_failed_line')}; bridge line={read('test_robot_failed_line')}; four-axis line={read('test_four_axis_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')}; vehicle line={read('test_vehicle_failed_line')} ({checks} checks executed)")
+    raise SystemExit(f"FAIL at tests/test_arm.cpp:{failed}; CAN line={read('test_can_failed_line')}; remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; protect line={read('test_protect_failed_line')}; bridge line={read('test_robot_failed_line')}; four-axis line={read('test_four_axis_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')}; vehicle line={read('test_vehicle_failed_line')}; tune line={read('test_robot_tuning_failed_line')} ({checks} checks executed)")
 print(f"PASS [{profile}]: {checks} assertions; ARM machine code, synthetic CAN frames; no hardware validation")

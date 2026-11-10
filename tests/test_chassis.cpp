@@ -44,6 +44,128 @@ int16_t be16(const uint8_t *d) {
 }
 } // namespace
 int test_chassis() {
+    { // Runtime modes share one controller: mode changes stop first, only one slot drives.
+        auto config = confirmed();
+        ChassisControl control(config);
+        WheelFeedback wheels[2]{};
+        ChassisCommand cmd = request(0);
+        cmd.tune_mode = 1;
+        cmd.tune_epoch = 10;
+        cmd.tune_value = 0;
+        cmd.tune_velocity_ki = config.velocity_ki;
+        feedback(wheels, 0);
+        control.step_tuning(0, wheels, cmd);
+        CHECK(!control.status().enabled && control.status().candidate_ma[0] == 0);
+        cmd.updated_ms = 4;
+        feedback(wheels, 4);
+        control.step_tuning(4, wheels, cmd);
+        CHECK(control.status().enabled);
+        cmd.updated_ms = 8;
+        cmd.tune_value = 250;
+        feedback(wheels, 8);
+        control.step_tuning(8, wheels, cmd);
+        CHECK(control.status().enabled && near(control.status().candidate_ma[0], 100));
+        CHECK(control.status().candidate_ma[1] == 0 && control.status().target_rpm[0] == 0);
+        cmd.updated_ms = 12;
+        cmd.tune_mode = 4;
+        cmd.tune_epoch = 11;
+        cmd.tune_value = -80;
+        feedback(wheels, 12);
+        control.step_tuning(12, wheels, cmd);
+        CHECK(!control.status().enabled);
+        CHECK(control.status().candidate_ma[0] == 0 && control.status().candidate_ma[1] == 0);
+        cmd.updated_ms = 16;
+        feedback(wheels, 16);
+        control.step_tuning(16, wheels, cmd);
+        CHECK(control.status().enabled && control.status().target_rpm[1] == -80);
+        CHECK(control.status().candidate_ma[0] == 0 && control.status().candidate_ma[1] < 0);
+        CHECK(std::fabs(control.status().candidate_ma[1]) <= 100);
+        const float applied[2] = {0, -10};
+        control.apply(applied, true);
+        cmd.updated_ms = 20;
+        feedback(wheels, 20);
+        control.step_tuning(20, wheels, cmd);
+        CHECK(control.status().candidate_ma[0] == 0);
+        cmd.updated_ms = 24;
+        cmd.tune_mode = 5;
+        cmd.enabled = false;
+        feedback(wheels, 24);
+        control.step(24, wheels, cmd);
+        CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Idle);
+    }
+    { // Gains are accepted at zero target while stationary; a moving retune never drives.
+        auto config = confirmed();
+        ChassisControl control(config);
+        WheelFeedback wheels[2]{};
+        ChassisCommand cmd = request(0);
+        cmd.tune_mode = 3;
+        cmd.tune_epoch = 1;
+        feedback(wheels, 0);
+        control.step_tuning(0, wheels, cmd);
+        cmd.updated_ms = 4;
+        feedback(wheels, 4);
+        control.step_tuning(4, wheels, cmd);
+        CHECK(control.status().tune_result == ChassisTuneResult::Applied);
+        CHECK(control.config().velocity_ki == 0 && control.config().max_current_ma == 1000);
+        cmd.updated_ms = 8;
+        feedback(wheels, 8);
+        control.step_tuning(8, wheels, cmd);
+        CHECK(control.status().enabled);
+        cmd.updated_ms = 12;
+        cmd.tune_value = 50;
+        cmd.tune_velocity_kp = 2;
+        feedback(wheels, 12, 30, 0);
+        control.step_tuning(12, wheels, cmd);
+        CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Busy);
+        CHECK(control.config().velocity_kp == 1);
+        cmd.updated_ms = 16;
+        cmd.tune_value = 0;
+        feedback(wheels, 16);
+        control.step_tuning(16, wheels, cmd);
+        CHECK(!control.status().enabled && control.config().velocity_kp == 2);
+        CHECK(control.status().tune_result == ChassisTuneResult::Applied);
+        cmd.updated_ms = 20;
+        feedback(wheels, 20);
+        control.step_tuning(20, wheels, cmd);
+        CHECK(control.status().enabled);
+        cmd.updated_ms = 24;
+        cmd.tune_current_limit_ma = 1001;
+        feedback(wheels, 24);
+        control.step_tuning(24, wheels, cmd);
+        CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Invalid);
+        CHECK(control.status().faults & ChassisCommandFault);
+        CHECK(control.config().max_current_ma == 1000);
+    }
+    { // Tuning still obeys source time, local feedback, temperature and final-output PI limits.
+        ChassisControl control(confirmed());
+        WheelFeedback wheels[2]{};
+        auto cmd = request(0);
+        cmd.tune_mode = 3;
+        cmd.tune_epoch = 1;
+        cmd.tune_velocity_ki = .5f;
+        feedback(wheels, 0);
+        control.step_tuning(0, wheels, cmd);
+        cmd.updated_ms = 4;
+        cmd.tune_value = 30;
+        feedback(wheels, 4);
+        control.step_tuning(4, wheels, cmd);
+        CHECK(control.status().enabled);
+        const float first = control.status().candidate_ma[0];
+        const float no_output[2] = {0, 0};
+        control.apply(no_output, true);
+        cmd.updated_ms = 8;
+        feedback(wheels, 8);
+        control.step_tuning(8, wheels, cmd);
+        CHECK(near(control.status().candidate_ma[0], first));
+        wheels[1].frames = 0;
+        cmd.updated_ms = 12;
+        control.step_tuning(12, wheels, cmd);
+        CHECK(!control.status().enabled && (control.status().faults & ChassisFeedbackFault));
+        cmd.updated_ms = 16;
+        feedback(wheels, 16);
+        control.step_tuning(16, wheels, cmd);
+        CHECK(!control.status().enabled); // Healthy feedback never revives a faulted mode.
+    }
     { // Task snapshots enter pure bench checks without task/HAL dependencies.
         ChassisBenchRemoteInput input{};
         input.mapping_confirmed = input.valid = input.switches_in_test_position = true;

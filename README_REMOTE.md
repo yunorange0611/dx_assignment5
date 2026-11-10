@@ -1,41 +1,31 @@
-# 遥控操作、四轴台架与底盘接口
+# 遥控、运行时调参与底盘接口
 
-> 三批底盘/Yaw/真实整车安全链已接入，底盘现直接读取ChassisCommand，整车快照用于诊断与校准来源；历史API版本宏已移除。实测确认仍默认关闭，最新操作分别见README_CHASSIS.md、README_YAW.md、README_VEHICLE.md；日常四轴保持隔离。
+> 日常Debug/Release均为五轴整车固件。遥控行驶/夹取/待机保持V2.1；FreeMASTER使用robot_tune_mode选调参对象、tune_enable控制测试开始/停止。详细步骤以fm调参原PDF为准。
 
-整车按《遥控器.docx》V2.1（2026-11-09）实现行驶、夹取、待机及默认失能保护。独立四轴配置供两台DM4310、roll和夹爪M2006调试。单C板只解析一次DR16；CAN1由原arm_task统一闭环，CAN2由chassis_task统一实现差速/轮速PI/制动与保守功率限制。
+整车按《遥控器.docx》V2.1（2026-11-09）实现行驶、夹取、待机及默认失能保护。机械臂与底盘/Yaw共用此固件，不通过换固件选调参对象。单C板只解析一次DR16；CAN1由原arm_task统一闭环，CAN2由chassis_task统一实现差速/轮速PI/制动与保守功率限制。
 
 你已确认每车只用一块 C 板、机械臂不能直接接触基地。机械臂与底盘任务共享模式和互锁，不分别解释同一拨杆。V2.1 不启用云台与底盘跟随，旧的登阶、履带和伸收轮遥控路径已移除。
 
 协作分工：机械臂负责人维护两 pitch、roll、夹爪；底盘/yaw负责人维护两台 M3508 和 GM6020。GM6020 参数在 `2User_Driver`，仍由原 CAN1 任务统一发送；完整交接见 [AGENTS.md](AGENTS.md)。
 
-## 四轴台架：选配置与操作
+## 同一固件内选择对象
 
-| 构建配置 | 控制轴 | 左拨杆上/中/下 | 外部底盘互锁 |
-|---|---|---|---|
-| `Debug/Release/BenchDebug`，`ARM_FOUR_AXIS_BENCH=ON`（默认） | `joint_mask=0x1e`，两 pitch＋roll＋夹爪 | 关控/夹取/待机 | 不使用，不需要伪造许可 |
-| `VehicleDebug/VehicleRelease`，`ARM_FOUR_AXIS_BENCH=OFF` | `joint_mask=0x1f`，整车五轴 | 行驶/夹取/待机 | 必须持续提供真实状态 |
+| robot_tune_mode | 功能 |
+|---|---|
+| 0 | 正常遥控 |
+| 1 / 2 | 左 / 右轮电流测试 |
+| 3 / 4 | 左 / 右轮速度PI |
+| 5 / 6 | Yaw速度内环 / 位置双环 |
 
-当前按用户选择固定四轴调试：日常构建 `Debug` 并烧录 `build/Debug/engineer_arm.bin`，以后每次上电均为四轴，无需按 C 板按钮或再次烧录来选择模式；重启仍需校零和开控。未来整车联调时才切换至 `VehicleDebug` 固件。
+`tune_enable`默认0，切档自动关闭；0停止本次调参对象、其他已使能关节保持，1明确允许测试。每次先0→等实际停稳→切mode→确认目标为0（位置档对齐当前角）→1→写小目标。调参须左拨杆下、右拨杆中、五通道回中；先抬臂则在0档正常夹取，抬起后待机保持再测轮，不自动使能未开控的轴。
 
-台架不注册 yaw 反馈、不检查 yaw 在线/校零、不发送 GM6020 ID1 的 `0x1FE`，只管理四轴 CAN1 报文。日常`Debug/Release/BenchDebug`不启动底盘；台架协调层始终发布 `stop_chassis=1`、`emergency_stop=1` 和零底盘运动请求。因此判断机械臂是否已开控应看 `active` 和 `g_arm_status.enabled_mask`，不能把此处用于底盘的 emergency 标志理解为四轴必定失能。
+回0档不是全局关控。退出调参先关闭enable、停稳再回0，机构继续保持；选择正常运动模式、停稳回中后写命令4明确恢复，防止沿用旧杆量。全局关控使用命令1或Robot_StopControl；左拨杆上为行驶，不能按旧台架操作当作关控。遥控失联、电机离线、输出限制和Yaw软限位始终有效。
 
-台架中左竖调肩、右竖调肘相对角、左横调 roll；右横不控制电机，但开控时同样必须回中。右拨杆上张开、中保持、下闭合。左下待机只保持已经开控的关节，左上才是台架关控；这些改动不改变整车 V2.1。
-
-`ChassisBenchDebug`沿用该四轴操作：先左中抬臂，再左下待机并等待实际静止，右拨杆中、五通道回中后可申请CAN2短轮脉冲。保持路径核查四轴真实使能、反馈/校零/故障、Arm与Robot源时效；左中移动、源陈旧或失去保持条件立即取消脉冲。原左上四轴失能路径仍可测轮；完整门槛见README_CHASSIS，分批文件见`fm调参/`。
-
-按以下顺序调试，具体传动和待确认参数见 [README_ARM.md](README_ARM.md)：
-
-1. 用日常 `Debug` 构建（原 `BenchDebug` 也可），烧录与调试加载同目录的固件和 ELF；确认 `g_robot_status.joint_mask=0x1e`。支撑机构，先在默认失能下核对四轴 ID、反馈、正向、遥控通道和协议量程。
-2. `hardware_confirmed`、`pitch.mapping_confirmed`、遥控 `mapping_confirmed` 仍默认 false；只有对应实物参数确认后再修改、重新构建。台架配置不会跳过这些门槛，也不会自动校零。
-3. 左拨杆上档，确认 `enabled_mask=0`。需要清故障时先排除原因，再写调试命令 3；将四轴手动摆到约定零位并固定支撑、静止且反馈在线后写命令 2，检查 `last_result=0` 和四轴 `calibrated=1`。两 pitch 必须联合校零；夹爪 0 必须是人工定义的安全张开参考，因为当前张开目标为 0°，不能任意摆放后沿用 0..45°。重启或反馈多圈失效后重做。
-4. 保持四摇杆回中、右拨杆中档，在健康连接中将左拨杆从上拨到中；连续中立 300 ms 后尝试一次开控。确认 `active=1`、`enabled_mask=0x1e` 后才进行小角度、低输出试动。
-5. 左下进入待机保持，返回中档需重新通过回中等待；左上立即关控。关控/失联/故障后，排除原因、必要时清故障与重新校零，再重新执行上→中。
-
-启动或重连时左杆已经在中档不会开控。上→中事件期间非中立、反馈/校零未就绪、故障或开控被拒绝都会丢弃这次事件；之后即使条件变好也不会迟到自动开启，须重新上→中。显式 `Robot_RequestControl()` 或调试命令 4 也只消费一次，不能绕过回中/反馈/校零/保护检查；待机中请求直接忽略，不留待以后执行。
+先验证无输出、反馈和停止，再低电流确认轮方向，之后速度PI、Yaw内环与双环，最后正常模式联调。逐批的填写、观察和异常处理见 [00_分批调参步骤.pdf](fm调参/00_分批调参步骤.pdf)，抬臂保持见 [02_机械臂抬起与保持.pdf](fm调参/02_机械臂抬起与保持.pdf)。
 
 ## 少量调试变量与命令
 
-`g_arm_status`、`g_robot_status`、`g_dr16_status` 是原有三个快照符号。调试器只读取它们；其他任务通过Get接口获取所需快照，底盘控制单独用`Robot_GetChassisCommand()`读取请求。`Robot_GetControlStatus()`保留整车诊断和INS校准状态来源。关节数组下标固定：0 yaw、1 大 pitch、2 小 pitch、3 roll、4 夹爪；四轴台架忽略下标 0。
+`g_arm_status`、`g_robot_status`、`g_dr16_status` 是原有三个快照符号。调试器只读取它们；其他任务通过Get接口获取所需快照，底盘控制单独用`Robot_GetChassisCommand()`读取请求。`Robot_GetControlStatus()`保留整车诊断和INS校准状态来源。关节数组下标固定：0 yaw、1 大 pitch、2 小 pitch、3 roll、4 夹爪。
 
 | 先观察的字段 | 用途 |
 |---|---|
@@ -47,13 +37,13 @@
 | `g_arm_status.joint[i].position_deg/target_deg` | 只展开正在调试的轴，看关节反馈和目标 |
 | `g_arm_status.joint[i].drive_position_deg/drive_target_deg/effort` | pitch 驱动角换算、跟踪与输出；DM 为 Nm，M2006 为 mA |
 
-通用命令入口`volatile uint32_t g_robot_debug_command`每轮读取后自动清零；一次写入一个值，不同时反复写多个命令，也不要直接改状态快照或内存中的目标。另有`g_arm_tune_request`和`g_chassis_tune_request`在线PID请求：字段写完后最后递增`request_seq`，只在对应出力失能、反馈健康静止等条件就绪时生效；一次消费、成功不使能，输出不能超过编译启动cap，断电不保存。实际生效值读各自只读`g_*_tune_status`；关节参数与条件见README_ARM/YAW，轮组见README_CHASSIS。
+通用命令 `g_robot_debug_command` 每轮读取后清0。日常轮/Yaw目标和增益直接用 `tune_*` 输入，由原owner检查，不填旧出力脉冲的wheel/duration/confirm/seq。轮组参数结果看 `g_chassis_tune_status`，Yaw参数结果看 `g_robot_tune_status`。机械臂其他轴仍可使用 `g_arm_tune_request` 受限参数申请，要求全部轴失能、反馈静止健康，最后递增request_seq；这不是运动出力入口。所有在线值只存RAM。
 
 | 写入值 | 执行含义 |
 |---|---|
 | 0 | 空闲 |
 | 1 | 关控 |
-| 2 | 校零当前配置全部轴：台架 `0x1e`，整车 `0x1f`；同周期请求关控 |
+| 2 | 0档校零五轴；mode5/6只校Yaw；同周期请求关控 |
 | 3 | 清底层故障；同周期请求关控 |
 | 4 | 显式请求开控，仍需满足所选配置所有条件 |
 
@@ -88,30 +78,30 @@
 
 待机是正常模式。进入时只抓取一次当前反馈，经过合法范围约束后作为保持目标；已开控关节继续刷新目标，避免 250 ms 目标看门狗超时。停留待机期间不追随反馈下垂反复重抓目标，也不接收摇杆和右拨杆新动作。原本失能的轴保持失能，待机中的 `Robot_RequestControl()` 被忽略且不会留待退出后执行。
 
-这是候选的位置闭环保持策略，参考轨迹仍按原速度、加速度限制收敛，不能等同于瞬间机械制动或经过验证的承重保持。pitch 暂定 0.3 Nm 上限可能不足以承载；没有重力补偿或抱闸。负载保持策略本轮按用户要求暂不改，后续再实测核定。整车离开待机重新经过停车和回中检查；台架只需回中检查。
+这是候选的位置闭环保持策略，参考轨迹仍按原速度、加速度限制收敛，不能等同于瞬间机械制动或经过验证的承重保持。pitch 暂定 0.3 Nm 上限可能不足以承载；没有重力补偿或抱闸。负载保持策略本轮按用户要求暂不改，后续再实测核定。整车离开待机重新经过停车和回中检查。
 
 ## 关控保护
 
 `TaskProtect`沿用默认禁止输出、保护优先与取消旧指令结构；新增真实IMU/翻车、底盘反馈/发送、能量和整车生产者超时原因。未复制旧两板通信或自动恢复，具体时限由当前配置及实测确定。
 
-每 4 ms 控制周期在处理运动输出前汇总保护输入。`Task_Protect_Init()` 默认失能；健康输入只清当前原因，不自动开控。所选配置的回中、反馈、校零等条件就绪后，显式开控请求（台架也可用上→中事件）才尝试解锁；整车另要求真实停车与互锁。开控被拒绝、输出提交失败或底层故障仍会锁存停机；底层控制计算期间发现的故障同周期覆盖共享状态。
+每 4 ms 控制周期在处理运动输出前汇总保护输入。`Task_Protect_Init()` 默认失能；健康输入只清当前原因，不自动开控。所选配置的回中、反馈、校零等条件就绪后，显式开控请求才尝试解锁；整车另要求真实停车与互锁。开控被拒绝、输出提交失败或底层故障仍会锁存停机；底层控制计算期间发现的故障同周期覆盖共享状态。
 
 | 原因位 | 名称 | 含义 |
 |---|---|---|
 | bit0 | `PROTECT_BOOT` | 初始等待明确开控 |
 | bit1 | `PROTECT_CONFIG` | 硬件、pitch 或遥控映射未确认，或保护输入非法 |
 | bit2 | `PROTECT_REMOTE` | DR16 无效或超过 100 ms 未收到有效报文 |
-| bit3 | `PROTECT_INTERLOCK` | 整车底盘/安全互锁无效或超过 100 ms 未更新；四轴台架不要求此输入 |
+| bit3 | `PROTECT_INTERLOCK` | 整车底盘/安全互锁无效或超过 100 ms 未更新；调参按所选对象的实际健康条件检查 |
 | bit4 | `PROTECT_STOP_REQUEST` | 显式关控或 `Arm_Disable()` 请求 |
 | bit5 | `PROTECT_TIMING` | 控制周期为 0 或超过当前 4+2 ms 门槛 |
 | bit6 | `PROTECT_ARM_FAULT` | 机械臂底层故障、异常失能或目标提交失败 |
 | bit7 | `PROTECT_ENABLE_REJECTED` | 条件检查后实际使能仍被拒绝 |
 
-保护触发后使当前配置全部轴失能，清除闭环积分，取消 CAN1 待发旧帧，并持续发送所管理电机的 DJI 零指令和 DM 失能帧。台架不额外发送 yaw 帧。关控优先于同周期开控，恢复通信不会自动使能。待机本身不触发保护失能；负载保持策略本轮暂不改。
+保护触发后使当前配置全部轴失能，清除闭环积分，取消 CAN1 待发旧帧，并持续发送所管理电机的 DJI 零指令和 DM 失能帧。关控优先于同周期开控，恢复通信不会自动使能。待机本身不触发保护失能；负载保持策略本轮暂不改。
 
 该逻辑仍依赖 DR16 接收机失联后停止输出有效报文。必须实测关闭遥控器后 `good_frames` 停止增长；若接收机重复发送合法旧帧，当前无时间戳的 DBUS 报文不能独自辨别。软件超时还包含任务、总线和电机响应时间，并不能代替电机侧通信超时。
 
-整车新版“下方关控”尚未指定物理输入；已有 `Robot_StopControl()` 和遥控失联入口，整车左下仍为待机。四轴台架单独定义左上关控。若整车需要独立按钮关控，仍需明确通道；若指遥控电源，则需验证有效报文停止的实际行为。
+整车新版“下方关控”尚未指定物理输入；已有 `Robot_StopControl()` 和遥控失联入口，整车左下仍为待机。左拨杆上是行驶，不能用它代替关控。若整车需要独立按钮关控，仍需明确通道；若指遥控电源，则需验证有效报文停止的实际行为。
 
 `Task_Protect_*` 状态只由机械臂控制任务拥有。其他任务读取 `Robot_GetControlStatus()` 内的保护快照，不并发调用保护状态机；`protection_current_reasons` 表示当前原因，`protection_latched_reasons` 保留历史原因直至明确重新开控。
 
@@ -135,7 +125,7 @@
 
 整车底盘/安全管理约每 20 ms 更新真实互锁状态；100 ms 过期会触发保护。非法布尔值或非法 yaw 包络使互锁立即无效，不继续沿用旧许可。无底盘任务时不能为了开控把全部字段写成 1。
 
-`vehicle_state_task`已持续聚合真实Arm、Chassis及INS状态并提供互锁；不能用调试器一次写值替代。四轴台架通过明确的`joint_mask=0x1e`隔离，不依赖外部互锁，也不产生驾驶许可；`interlock_age_ms=0`仅表示该输入未使用，不是测得底盘停稳。
+`vehicle_state_task`持续聚合真实Arm、Chassis及INS状态并提供正常整车互锁；不能用调试器一次写值替代。受限调参只放行所选对象的明确条件，不代表整车已获准落地行驶。
 
 | `RobotInterlocks` 字段 | 提供方应保证的含义 |
 |---|---|
@@ -147,13 +137,14 @@
 
 | `ChassisCommand` 字段 | 底盘消费规则 |
 |---|---|
-| `valid/enabled` | 来源已发布与底盘运行许可；生产方包含整车构建门槛，四轴台架始终不允许底盘运行 |
+| `valid/enabled` | 来源已发布与底盘运行许可；正常控制或受限选轮许可由唯一协调方产生 |
 | `updated_ms` | 用底盘当前tick检查来源陈旧，不以取用时间刷新 |
 | `stop` | 请求受控停车，纵向与转向目标均减速到零 |
 | `brake` | 将纵向速度制动到零，允许同时转向 |
 | `reset/epoch` | 重置边沿或代号变化时按实测速度重建参考并清积分，避免漏掉短暂模式切换 |
 | `speed_request/turn_request` | [-1,1]纵向速度/转向意图，前进与逆时针为正；不是物理速度，倒车不翻转转向符号 |
-| `stop_epoch` | 显式停止事件，取消独立脉冲和CAN2旧帧；与运动重置代号分开 |
+| `stop_epoch` | 显式停止事件，取消调参运动和CAN2旧帧；与运动重置代号分开 |
+| `tune_mode/tune_epoch/tune_value` | 运行时对象、切换代号及受限目标；同一个控制器执行，不增加发送入口 |
 
 整车诊断快照保留模式、关节目标、遥控/互锁年龄、保护原因及快速请求，底盘不再消费这些字段；INS校准仍使用其开控状态和源时间。`Robot_ReportArmState()`在同一临界区覆盖诊断并撤销底盘命令，保留Arm闭环/发送后故障的同周期停机。
 
@@ -190,8 +181,8 @@
 
 ## 构建与验证
 
-四轴日常用 `cmake --preset Debug`、`cmake --build --preset Debug`；整车将两处配置名换成 `VehicleDebug`。分别运行 `python tests/run_tests.py`（四轴）与 `python tests/run_tests.py --vehicle`（整车），依赖安装命令见 [README.md](README.md)。原 `BenchDebug` 和测试 `--bench` 入口保留。构建及测试记录见 [README.md](README.md)。
+日常统一 `cmake --preset Debug`、`cmake --build --preset Debug`，输出engineer_vehicle.bin/hex与同目录ELF；Release为同功能优化构建。`python tests/run_tests.py`默认整车，`--bench`仅兼容逻辑测试。构建和依赖见README.md。
 
-验证应覆盖整车 V2.1、pitch/夹爪换算及 CAN 保护，并覆盖四轴无 yaw/互锁依赖、不发 yaw 指令、台架上→中一次开控、回中与故障恢复不迟到自动启、调试命令关控优先。合成输入测试不代表真实 UART/CAN、电机负载或底盘制动已经验证；本轮没有自动烧录。
+验证覆盖V2.1、pitch/夹爪换算、CAN保护、运行时切档清目标、enable0停止对象且机械臂保持、500ms电流超时、关控优先和故障不自动续跑。合成输入不代表真实UART/CAN、负载或制动已经验收；不自动烧录。
 
 硬件参考：[DJI C 板遥控器示例](https://github.com/RoboMaster/Development-Board-C-Examples/tree/master/9.remote_control_dma)，[ST UART HAL 说明](https://www.st.com/resource/en/user_manual/um1725-description-of-stm32f4-hal-and-lowlayer-drivers-stmicroelectronics.pdf)。

@@ -1,45 +1,47 @@
-# Yaw 运行限位与独立调参
+# Yaw限位与运行时调参
 
-第二批在原 `ArmControl / Robot_Execute / arm_task` 内增强 GM6020 Yaw。用户最新确认为CAN1、ID1，对应反馈0x205、电流命令0x1FE第一槽；原ID5配置已更新。没有第二个电机实例、闭环线程或发送者。日常四轴 `Debug/Release/BenchDebug` 完全不启用Yaw；专用调参构建为 `YawBenchDebug`。
+CAN1 GM6020电流模式，ID1，反馈0x205，输出0x1FE第一槽。Yaw由原 `ArmControl / Robot_Execute / arm_task` 闭环并发送，没有第二个驱动或线程。与底盘共用 `Debug/Release` 整车固件，mode5/6选内环或双环，不换固件。
 
-当前请求/状态声明在 `3Task/yaw_service.h`，任务适配实现在 `yaw_service.cpp`，仍由原 `Robot_Execute` 调用；`robot_control.h` 兼容包含这些声明，原调试符号保留。纯脉冲门控在 `Arm/yaw_bench.h`。三层与调用顺序见 README_ARCHITECTURE.md。
+C板在底盘，Yaw相对角和速度来自6020编码器/rpm，不能用底盘IMU代替。没有滑环，断电后人工整理线束并对齐可重复的自然中位，再显式校零；任意上电姿态不当零点，软件不能识别断电期间额外扭转的整圈。
 
-## 先确认的参数
+## 修改入口
 
-`yaw_config.h` 中 `kYawSafetyConfirmed=false` 保持默认。±90°、约1:1、方向、PI、电流及制动参数仍是待测占位；只有人工核对电机模式、线束自然中位、两侧安全行程和停止距离后才能有依据地确认。C板在底盘，Yaw相对角和速度来自6020编码器/rpm，不来自底盘IMU。
+| 内容 | 入口 |
+|---|---|
+| 模式、ID、比例、方向、静态范围与确认 | `2User_Driver/Arm/yaw_config.h` |
+| 制动余量/减速度、目标领先约束 | 同文件Yaw限位参数 |
+| 在线线束半幅 | `tune_yaw_half_range_deg` |
+| 在线位置P、速度PI | `tune_yaw_position_kp`、`tune_yaw_velocity_kp`、`tune_yaw_velocity_ki` |
+| 测试输出上限 | `tune_yaw_current_limit_ma`，mA |
+| 速度/位置目标 | `tune_yaw_speed_deg_s` / `tune_yaw_target_deg` |
 
-线束参考沿用显式人工校零，保存在RAM；重启/重烧后重新整理线束、对齐实物中位标记再校零。不要把任意启动姿态当零，也不能用软件识别断电期间额外扭转的整圈。
+`kYawSafetyConfirmed`等确认默认false。约1:1传动、方向、实际软限位、可靠制动与电流须逐项实测，不能把±90deg占位当安全行程。在线参数只存RAM，确定后写回源码。
 
-Yaw在线PID沿用原Arm owner的`g_arm_tune_request`：`joint=0`，填写`position_kp/velocity_kp/velocity_ki/effort_limit`，最后递增`request_seq`。全部轴失能、Yaw反馈在线已校零且静止、无故障时才生效；`effort_limit`单位mA，不能超过编译启动电流上限。请求只消费一次，拒绝后不迟到执行，成功不使能、不改变线束零位或限位；实际参数与结果读`g_arm_tune_status`。参数仅存RAM，重启恢复源码值。中文分批调参/排障页与PDF见`fm调参/`。
+## 线束中位和半幅
 
-## 在线半幅的请求与生效
+全局关控并确认失能，整理线束到人工中位并保持静止。命令2在mode5/6只校Yaw，在0档针对全部五轴；两pitch如参与必须联合校零。检查 `g_arm_status.last_result`，不能只看命令已清0。
 
-沿用现有可用的变量读写工具，按本固件ELF操作。先写 `g_yaw_limit_request.half_range_deg`，再递增 `request_seq`。对称区间为 `[-half,+half]`。只在现有owner内处理请求，要求全部轴关控、Yaw反馈新鲜且已校零、静止，参数有限/合法、不超过经确认的静态上限；实际角、现有目标和参考都必须被新范围容纳，并留出提前制动余量。
+直接写 `tune_yaw_half_range_deg`，范围为[-half,+half]；原owner在数值变化时检查后应用，日常不用填限位序号。要求关控、反馈新鲜已校零且静止，范围合法且不超过已确认静态上限，实际角/目标/参考均被包含并留足制动余量。看 `g_yaw_limit_status.result/ready/active_half_range_deg`。拒绝后不迟到执行，修正原因后需再次明确修改输入；首次有效限位前正常Yaw/整车放行禁止。
 
-`g_yaw_limit_status` 是只读结果：`consumed_seq` 表示已消费请求，`active_seq` 表示实际生效版本，`result` 对应 `engineer::Result`，`ready` 表示已成功应用。被拒绝的请求不会等条件恢复后迟到生效，必须重新递增序号。缩小范围排除当前位置/目标/参考时保留旧限制，关控后人工安全回中再申请，不自动冲回新边界。参数不默认掉电保存。
+生效版本同时用于遥控目标、姿态包络与内层限位；任务间用 `Yaw_GetLimitStatus()`，`ArmStatus.updated_ms`和`yaw_limit_version`用于核查发布时间与核心版本。不写只读状态强行放行。
 
-有效版本同周期交给 `ArmOperator` 目标推进、`Robot_SetInterlocks` 包络检查和 `ArmControl` 内层。跨任务读取用 `Yaw_GetLimitStatus()`；`ArmStatus.updated_ms` 为发布源时间，`yaw_limit_version` 显示内核版本。首次成功应用之前，正常整车Yaw/整车开控保持禁止。
+## 速度内环与位置双环
 
-## 实际角度制动与动态限制
+| robot_tune_mode | 功能 | 目标 |
+|---|---|---|
+| 5 | 跳过位置外环，调速度PI | `tune_yaw_speed_deg_s` |
+| 6 | 位置P＋速度PI | `tune_yaw_target_deg` |
 
-根据真实相对角、真实角速度、保守制动减速度及余量计算向外速度上限；真实角越接近边界，底层速度目标越小。预留一个控制周期的运动距离。朝内制动电流保留；越界故障余量 `limit_margin_deg` 与提前制动余量不是同一个参数。
+底盘停止、机构有支撑；左拨杆下、右拨杆中、五通道回中。按 **enable=0 → 等实际静止 → 切mode → 确认速度0/位置对齐当前角 → enable=1 → 写小目标**。切档自动关闭 `tune_enable` 并清历史。速度测试最大5deg/s，测试电流最大150mA且受编译/已生效上限约束；目标须在生效线束软限位内。
 
-行驶姿态包络继续由真实互锁提供，但现在同时限制内层速度目标和参考轨迹。新包络排除实际角/目标/参考时拒绝应用、请求停车处理，不自动跳到边界。目标和参考相对实际角的领先量有上限，外部直接调用目标API也不能绕过。
+改参数先enable=0、速度归零或位置对齐当前角、等静止，再改P/PI/限流，查看 `g_robot_tune_status` 参数结果和实际值。真实角边界、目标领先、电流和反馈保护继续生效。速度环稳定后在同固件切6档调位置P。
 
-切到Grab/Standby或丢失Drive许可时，未确认驱动轮静止前保持已有较窄包络；静止后才按模式条件放宽，避免停车途中突然释放Yaw转角。驱动轮静止不等于整车绝对无滑移。
+`tune_enable=0`停止Yaw调参运动，已使能Yaw按现有策略回到当前位置保持，其他已使能轴保持；切档不会自动使能其他四轴。全局关控/失联/故障按核定策略失能，零输出不是机械锁止。退出先enable=0、停稳、mode=0，再正常模式停稳回中后命令4恢复遥控。
 
-速度PI抗饱和使用本周期最终安全/电流限幅之后的值；发送失败仍通过原owner锁存故障并取消旧CAN帧。入队成功不等于已在实物执行。
+## 限位与输出边界
 
-## YawBenchDebug 受限调参
+核心按真实角/速度、保守减速度和提前余量限制向外速度，保留朝内制动；越界故障余量与提前制动余量不同。行驶包络同时约束目标、参考和内层速度；新包络排除实际角/目标/参考时请求停车，不强拉回边界。未确认轮静止前不放宽已有较窄包络。
 
-此构建使用同一五轴内核，但只允许单独使能Yaw；底盘任务、INS和整车放行任务不运行，其他四轴保持失能。必须支撑机构；Yaw撤力会自由转动，零电流不是机械锁止。正常整车和日常四轴不消费Yaw调参出力请求。
+PI按最终安全/电流限幅后的提交值抗饱和，发送失败由原owner锁存并取消旧帧。限速不等于已验证制动距离，入队不等于电机执行。带载前双方确认Yaw撤力后的整臂/线束行为。
 
-1. 按实物核对配置后重新构建；默认确认标记不为真时不会出力。
-2. 关控、手动对齐线束中位、静止反馈在线，写原 `g_robot_debug_command=2`。在此专用构建中仅校零Yaw；读 `g_arm_status.last_result`。
-3. 写入保守在线半幅请求，确认 `active_seq/ready`，不能直接使用未测的±90°。
-4. 保持四杆回中、左拨杆上、右拨杆中，遥控数据新鲜，其他轴失能。
-5. 写 `g_yaw_debug_request.mode=1`、`speed_deg_s`、`duration_ms`、`suspended_confirm=0x59415753`，最后递增 `request_seq`。速度绝对值最多5°/s，持续最多500ms，电流上限为配置上限与150mA中较小值。该入口仍经过真实角度边界、反馈/时序/故障保护，只跳过位置外环以便调速度PI。
-6. 观察 `g_yaw_debug_status`：result0停止，1接受，2参数非法，3未就绪/忙，4已撤销/到期。请求进行中追加请求会取消旧脉冲，不能靠不断写序号续时。等待实际静止后再申请下一次。
-7. `mode=0` 并递增序号可停止；显式 `Robot_StopControl()`、原调试关控命令1、遥控失联/偏杆/换拨杆、时序/反馈错误和到期也会撤销。恢复健康不续旧请求。
-
-观测Yaw关节 `position_deg/target_deg/reference_deg/velocity_deg_s/velocity_target_deg_s/effort`、发布时戳、限制版本、锁存原因。先速度PI，后回普通整车构建调位置P；不要在正常固件里另开测试发送任务。软件测试不代替方向、制动距离、线束、负载和整臂撤力行为实测。
+逐批操作见原 [00_分批调参步骤.pdf](fm调参/00_分批调参步骤.pdf)，异常查 [01_排障与变量说明.pdf](fm调参/01_排障与变量说明.pdf)。旧独立Yaw固件和短脉冲请求不再是当前入口。

@@ -1,59 +1,45 @@
-# 两轮底盘：分批实现与悬空调试
+# 两轮底盘：参数与运行时调参
 
-当前底盘通过 `Robot_GetChassisCommand()` 直接取得现有 `ChassisCommand`，不再读取整车诊断快照或逐字段转换。`speed_request/turn_request`取值[-1,1]；回中映射零速度，再经加减速斜坡。右横转向为逆时针正，倒车不翻转，不做Yaw跟随。第一批曾用`0x0203`标记内部速度字段变更；该历史版本宏已移除，不作为单板内部协议维护。
+CAN2左轮ID1、右轮ID2，反馈0x201/0x202，输出0x200第一/二槽；CAN1由原机械臂任务管理。日常构建 `Debug/Release`，同一整车固件通过 `robot_tune_mode` 和 `tune_enable` 调参。
 
-CAN1为机械臂/Yaw；CAN2为两台M3508/C620和功率计。用户确认CAN2左轮ID1、右轮ID2，对应反馈0x201/0x202、共用0x200第一/二槽；转动方向仍须实测。功率计标准帧0x31、DLC4，功率与缓冲为有符号小端int16×0.1W/J，保留首帧及源时间。第三批已接保守功率限幅和低能量/功率反馈超时的受控停车，完整边界见README_VEHICLE.md；严格瞬态50W保证与实测停车距离仍未验收。
-
-## 构建与默认边界
-
-| 配置 | 用途 |
-|---|---|
-| Debug / Release / BenchDebug | 原四轴台架；不启动底盘任务，不发Yaw |
-| VehicleDebug / VehicleRelease | 整车真实互锁/IMU/功率停车链；各实测确认及在线Yaw限位未就绪时禁止行驶 |
-| ChassisBenchDebug | 显式悬空测试；四轴可关控或处于真实静止待机保持，CAN2唯一任务发短脉冲 |
-| YawBenchDebug | 原五轴owner内仅Yaw短时调参；不启动底盘与整车安全任务 |
-| DmIdConfig | 独立配ID，不启动底盘 |
-
-默认`ChassisConfig.hardware_confirmed=false`，遥控映射确认也为false；不会因编译成功自动开轮。先核对电调ID、方向、齿比、悬空固定与摇杆/拨杆原码，再据实设置确认标记。方向通过低电流短时试验确认，不先接反向反馈的闭环。
+正常控制链为 `Robot_GetChassisCommand → ChassisControl → ChassisPower → ChassisMotor组帧 → CAN2`。摇杆直接映射目标速度再限加减速，`speed_request/turn_request`为[-1,1]；前进和逆时针为正，倒车不反转转向，不做Yaw跟随。
 
 ## 修改入口
 
-以下均在 `2User_Driver/Chassis/chassis_config.h` 的 `ChassisConfig`；确认标记保持默认false，测完对应项目再据实填写。
+源码参数在 `2User_Driver/Chassis/chassis_config.h`。实测确认默认关闭，只确认已经核对的项目。
 
-| 修改内容 | 字段 |
+| 内容 | 字段 |
 |---|---|
-| 左右ID、方向 | `motor_id[2]`（已确认左1右2）、`direction[2]`（待测） |
-| 轮径、轮距、总齿比 | `diameter_m`、`track_m`、`gear_ratio` |
-| 慢速与转向上限 | `max_speed_m_s`、`max_turn_rad_s` |
-| 加减速、转向斜坡 | `acceleration_m_s2`、`deceleration_m_s2`、`angular_accel_rad_s2` |
-| 轮速PI、电流上限 | `velocity_kp`、`velocity_ki`、`max_current_ma` |
-| 反馈/请求超时、轮停判定 | `feedback_timeout_ms`、`command_timeout_ms`、`stationary_rpm`、`stationary_ms` |
+| 电调ID、正方向 | `motor_id[2]`、`direction[2]` |
+| 有效轮径、轮距、总齿比 | `diameter_m`、`track_m`、`gear_ratio` |
+| 慢速/转向上限 | `max_speed_m_s`、`max_turn_rad_s` |
+| 加减速/转向斜坡 | `acceleration_m_s2`、`deceleration_m_s2`、`angular_accel_rad_s2` |
+| 轮速PI/运行限流 | `velocity_kp`、`velocity_ki`、`max_current_ma` |
+| 超时、轮静止确认 | `feedback_timeout_ms`、`command_timeout_ms`、`stationary_rpm`、`stationary_ms` |
 
-当前没有独立快速档参数，快速请求不会使底盘变快；`fast_requested/drive_gear`仅保留在整车诊断。功率/能量停车参数在 `Power/chassis_power.h`，与轮速PI参数分开实测。
+FreeMASTER日常直接修改 `tune_wheel_kp`、`tune_wheel_ki`、`tune_wheel_current_limit_ma`，在测试停止、目标归零和新鲜静止反馈满足时由原owner校验生效；查看 `g_chassis_tune_status`、`g_chassis_status.tune_result`，不改只读状态。测试限流还受300mA及编译上限约束。参数只存RAM，确定后写回源码。底盘没有独立快速档参数，快速请求不会使车变快；功率参数在 `Power/chassis_power.h`。
 
-轮速PI可通过`g_chassis_tune_request.velocity_kp/velocity_ki/max_current_ma`在线申请，最后递增`request_seq`。底盘未使能、owner源时间新鲜、两轮反馈健康且静止时才处理；新参数先完整校验，再清积分并生效，不自动使能。电流不能超过编译启动上限，拒绝的请求只消费一次。只读`g_chassis_tune_status`显示实际参数及`consumed_seq/active_seq/result`（0空闲、1成功、2非法、3忙、4未就绪）。参数只存RAM，重启恢复源码配置；实测确认标志、方向和几何参数仍须按源码修改。
+## 同一固件内测轮
 
-## 悬空入口
+| robot_tune_mode | 测试 | 目标 |
+|---|---|---|
+| 1 / 2 | 左 / 右轮电流 | `tune_current_ma`，mA |
+| 3 / 4 | 左 / 右轮速度PI | `tune_speed_rpm`，3508转子rpm |
 
-构建`ChassisBenchDebug`，使用同目录的固件与ELF。保持两轮悬空、机构有支撑；原入口为左拨杆上（四轴关控）、右拨杆中、五通道回中。也可先在左中夹取模式用遥控器抬臂，再左下进入待机保持：只有真实四轴`enabled_mask=0x1e`、owner为active Standby、Arm/Robot源快照不超过40ms、各轴反馈在线已校零无故障且驱动速度低于本轴静止阈值时，才允许右拨杆中、五通道回中的测轮请求。返回左中移动机械臂会取消轮脉冲，举臂期间不能同时测轮。RC有效且新鲜、两轮首帧/温度/静止/反馈健康等原门槛继续生效；不伪造整车互锁，不通过别的任务发CAN。
+两轮悬空并固定车体。需要抬臂时先在0档正常夹取，抬起后左拨杆下进入待机、右拨杆中、五通道回中并等实际静止。已使能轴继续保持，未使能轴不因选轮调参而自动使能。
 
-读取`g_chassis_status`和`g_chassis_debug_status`；脉冲请求写`g_chassis_debug_request`，字段写完后最后递增`request_seq`。这是调参命令而非持久开控；在线PI使用上面的独立调参请求，不改只读状态。
+每次按 **enable=0 → 等轮子停稳 → 选择mode → 确认电流/速度目标为0 → enable=1 → 写小目标**。切mode自动关闭 `tune_enable` 并清原目标/PI历史；只给选中轮输出，另一轮槽位0。先电流确认正负方向，再Ki=0调速度P，最后少量加I。速度单位是转子rpm，不是轮轴rpm。
 
-| 字段 | 填写 |
-|---|---|
-| mode | 0停止、1清本地故障、2电流脉冲、3轮速脉冲 |
-| wheel | 0左、1右，实际归属先核对 |
-| value | 电流mA或转子rpm，绝对值不超过300，先从更小值开始 |
-| duration_ms | 1..500ms，先短脉冲 |
-| suspended_confirm | 0x53555350，人工确认已悬空，不是传感器检测 |
-| request_seq | 最后写，和上次不同才消费 |
+`tune_enable=0`停止轮测试而不撤机械臂保持。模式1/2非零电流最多500ms，不能靠改幅值或符号延长。失联、反馈/温度/时序异常、发送失败、全局关控和本地故障均能撤销测试；健康恢复不自动续跑。回0档清本次调参锁，再按需清本地硬故障、重新选档和使能。模式5/6调Yaw时两轮禁止输出。
 
-请求未就绪立即消费拒绝，不等待以后自动启；忙时新请求不续时；超时、偏杆/离开安全拨杆位置、机械臂失去静止保持条件、RC失联、全局显式关控、源停更或总线异常均取消当前脉冲。清故障只清本地锁存，不开控；恢复后须新的请求。非选轮电流槽位为零。关控/撤力不是机械锁止，低速测试结束后可能存在惯性滑转。
+功率未实测确认时仅允许上述受限悬空调轮，不代表可以落地行驶；一旦功率配置确认，数据超时、低能量和禁止运行继续约束调轮。本地CAN2停止/清错不直接撤销CAN1机械臂保持；正常行驶限功率制动见 [README_VEHICLE.md](README_VEHICLE.md)。
 
-单轮方向通过后先Ki=0调速度P，再少量加I。速度脉冲复用同一个轮速PI，最终电流限制为min(300mA,配置上限)。调参不使用旧DJI对象，不另建输出任务。正常轮速PI以最终提交电流约束积分，队列失败转故障；入队成功不等于电机已执行。
+## 退出、清错与观察
 
-底盘故障只由本地取消CAN2旧帧，CAN1由原owner按统一策略处理。两轮低速持续确认只表示驱动轮静止，不能证明坡道/抱死滑移时整车静止。
+先enable=0、等实际停稳，再mode=0。0档不是总关控；机械臂继续保持，正常遥控需停稳回中后写 `g_robot_debug_command=4` 明确恢复。全局关控始终用命令1或 `Robot_StopControl()`。
 
-实物验收需逐轮记录正/负方向、目标/实际rpm、输出、反馈年龄、超时撤力及恢复步骤。软件测试不能替代这项验收；未烧录/未做悬空试验时明确记录为待验。
+`g_chassis_debug_request`仅保留本地维护：mode0停止、mode1清错，最后递增request_seq；旧mode2/3、wheel/duration/confirm不再是日常出力入口。清错不自动使能，需核对硬故障和功率锁存。日常选轮/给目标无需填这组请求。
 
-分批操作、中文分组的FreeMASTER调参/排障工程及PDF集中在`fm调参/`，沿用现有连接方式，并加载与所烧固件一致的ELF。
+观察 `g_chassis_status` 的反馈源时间、measured_rpm、target_rpm、current_ma、faults、tune_mode/tune_blocked及功率状态。current_ma是队列接受的最终量化值，不是电机执行确认；PI按最终提交值抗饱和。轮静止确认不能检测抱死滑移。
+
+每批步骤和异常处理以原 [00_分批调参步骤.pdf](fm调参/00_分批调参步骤.pdf)、[01_排障与变量说明.pdf](fm调参/01_排障与变量说明.pdf) 为准；三个FreeMASTER工程使用同一Debug固件ELF。软件验证不能替代实物方向、停车距离与负载验收。

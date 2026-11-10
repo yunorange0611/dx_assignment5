@@ -4,10 +4,7 @@
 #include "Power/power_meter.h"
 #include "Power/chassis_power.h"
 #include "robot_control.h"
-#include "arm_task.h"
 #include "task_ins.h"
-#include "Remote/operator_control.h"
-#include "dr16_bsp.h"
 #include "CAN_bsp.h"
 #include <cmath>
 #include <cstring>
@@ -31,7 +28,7 @@ ChassisTuneStatus g_chassis_tune_status{0, 0, 0, engineer::kChassisConfig.veloci
 namespace {
 using namespace engineer;
 
-#if !ARM_FOUR_AXIS_BENCH || CHASSIS_SUSPENDED_BENCH
+#if !ARM_FOUR_AXIS_BENCH
 struct Rx {
     uint16_t id;
     uint8_t len;
@@ -81,12 +78,13 @@ struct ChassisRuntime {
     bool explicit_stop = false;
     bool bench_active = false;
     bool previous_enabled = false;
-#if CHASSIS_SUSPENDED_BENCH
-    ChassisBenchGate bench_gate;
-#else
     uint32_t debug_seq = 0;
     bool local_stop_latched = false;
-#endif
+    uint8_t previous_tune_mode = 0;
+    uint32_t previous_tune_epoch = 0;
+    bool have_tune_epoch = false, tune_blocked = false;
+    bool current_timer_running = false;
+    uint32_t current_started_ms = 0;
 };
 
 void publish_invalid_configuration(const ChassisRuntime &runtime) {
@@ -183,96 +181,8 @@ void apply_tune_request(ChassisRuntime &runtime) {
     taskEXIT_CRITICAL();
 }
 
-#if CHASSIS_SUSPENDED_BENCH
-// 任务只读取快照并转换为纯输入，遥控/轮反馈判定留在 chassis_bench。
-void read_bench_command(ChassisRuntime &runtime) {
-    DR16Status remote{};
-    DR16_GetStatus(&remote);
-    ArmStatus arm{};
-    Arm_GetStatus(&arm);
-    RobotControlStatus robot{};
-    Robot_GetControlStatus(&robot);
-
-    ChassisBenchRemoteInput input{};
-    input.mapping_confirmed = kOperatorConfig.mapping_confirmed;
-    input.valid = remote.valid;
-    input.received_ms = remote.received_ms;
-    input.consecutive_frames = remote.consecutive_frames;
-    for (unsigned i = 0; i < 5; ++i) {
-        input.channel[i] = remote.frame.channel[i];
-    }
-    input.switches_in_test_position =
-        remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP &&
-        remote.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
-    input.switches_in_hold_position =
-        remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_DOWN &&
-        remote.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
-    input.owner_idle = arm.ready && arm.enabled_mask == 0;
-    ChassisBenchArmInput holding{};
-    holding.ready = arm.ready;
-    holding.configuration_valid = arm.configuration_valid;
-    holding.robot_ready = robot.ready && robot.stop_epoch == runtime.command.stop_epoch;
-    holding.robot_active = robot.active;
-    holding.robot_standby = robot.mode == ROBOT_STANDBY;
-    holding.enabled_mask = arm.enabled_mask;
-    holding.updated_ms = arm.updated_ms;
-    holding.robot_updated_ms = robot.updated_ms;
-    holding.faults = arm.faults;
-    holding.feedback_timeout_ms = kArmConfig.feedback_timeout_ms;
-    for (unsigned i = 0; i < 4; ++i) {
-        const unsigned joint = i + 1;
-        holding.online[i] = arm.joint[joint].online;
-        holding.calibrated[i] = arm.joint[joint].calibrated;
-        holding.feedback_age_ms[i] = arm.joint[joint].feedback_age_ms;
-        holding.drive_velocity_deg_s[i] = arm.joint[joint].drive_velocity_deg_s;
-        holding.stationary_speed_deg_s[i] = kArmConfig.joint[joint].stationary_speed_deg_s;
-    }
-    input.owner_holding = chassis_bench_arm_holding(runtime.now_ms, holding);
-    input.robot_ready = runtime.command.valid;
-    input.robot_updated_ms = runtime.command.updated_ms;
-
-    const auto feedback =
-        chassis_bench_feedback_health(runtime.now_ms, runtime.wheels, kChassisConfig);
-    ChassisBenchHealth health{};
-    health.hardware_confirmed = kChassisConfig.hardware_confirmed;
-    health.mapping_confirmed = kOperatorConfig.mapping_confirmed;
-    health.remote_ok = chassis_bench_remote_ready(runtime.now_ms, input);
-    health.owner_safe = input.owner_idle || input.owner_holding;
-    health.feedback_fresh = feedback.fresh;
-    health.temperature_ok = feedback.temperature_ok;
-    health.wheels_stationary = feedback.stationary;
-    health.transport_ok = !runtime.transport_error;
-    health.timing_ok =
-        !g_chassis_status.ready ||
-        uint32_t(runtime.now_ms - g_chassis_status.updated_ms) <= kChassisConfig.period_ms + 2;
-    health.controller_faulted = runtime.control.status().faults != 0;
-    health.controller_enabled = runtime.control.status().enabled;
-    health.global_stop = runtime.explicit_stop;
-    health.stop_epoch = runtime.command.stop_epoch;
-
-    const auto &request = runtime.debug_request;
-    const ChassisBenchRequest pulse{request.mode,
-                                    request.wheel,
-                                    request.duration_ms,
-                                    request.value,
-                                    request.suspended_confirm,
-                                    request.request_seq};
-    const auto &bench = runtime.bench_gate.step(runtime.now_ms, pulse, health);
-    runtime.bench_active = bench.active;
-    if (bench.clear_requested) {
-        runtime.control.trip(0);
-        runtime.control.clear_faults();
-    }
-    g_chassis_debug_status = {bench.consumed_seq, uint32_t(bench.result), bench.until_ms};
-    runtime.command = {};
-    runtime.command.valid = true;
-    runtime.command.updated_ms = runtime.now_ms;
-    runtime.command.enabled = runtime.bench_active;
-    runtime.command.stop = true;
-    runtime.command.brake = true;
-    runtime.command.reset = false;
-}
-#else
+// Legacy request ABI retains stop/clear only. Runtime tuning values arrive
+// through the sole coordinator command, never a second wheel-output request.
 void read_local_stop_request(ChassisRuntime &runtime) {
     const bool owner_disabled = !runtime.command.enabled;
     const auto &request = runtime.debug_request;
@@ -283,12 +193,12 @@ void read_local_stop_request(ChassisRuntime &runtime) {
         if (request.mode == CHASSIS_DEBUG_STOP || request.mode == CHASSIS_DEBUG_CLEAR) {
             runtime.local_stop_latched = true;
             runtime.command.enabled = false;
+            runtime.tune_blocked |= runtime.command.tune_mode != 0;
             runtime.control.trip(0);
             can_cancel_pending(2);
-            Robot_StopControl();
             if (request.mode == CHASSIS_DEBUG_CLEAR) {
                 const bool wheels_cleared = runtime.control.clear_faults();
-                const bool power_cleared =
+                const bool power_cleared = !runtime.energy.status().confirmed ||
                     runtime.energy.clear(runtime.now_ms, runtime.power.status(), true);
                 g_chassis_debug_status.result =
                     uint32_t(wheels_cleared && power_cleared ? ChassisBenchResult::ClearRequested
@@ -300,12 +210,10 @@ void read_local_stop_request(ChassisRuntime &runtime) {
     }
     if (runtime.local_stop_latched) {
         runtime.command.enabled = false;
-        if (owner_disabled) {
+        if (owner_disabled && runtime.command.tune_mode == 0)
             runtime.local_stop_latched = false;
-        }
     }
 }
-#endif
 
 // 输入：唯一整车 owner 的速度请求[-1,1]、模式及停控事件；调试请求只消费一次。
 void read_command(ChassisRuntime &runtime) {
@@ -317,13 +225,29 @@ void read_command(ChassisRuntime &runtime) {
         can_cancel_pending(2);
     }
 
+    const bool tune_changed = !runtime.have_tune_epoch ||
+        runtime.command.tune_mode != runtime.previous_tune_mode ||
+        runtime.command.tune_epoch != runtime.previous_tune_epoch;
+    if (tune_changed) {
+        runtime.previous_tune_mode = runtime.command.tune_mode;
+        runtime.previous_tune_epoch = runtime.command.tune_epoch;
+        runtime.have_tune_epoch = true;
+        runtime.current_timer_running = false;
+        runtime.control.trip(0);
+        can_cancel_pending(2);
+        runtime.command.enabled = false; // One disabled period before the new owner selection.
+    }
+    if (!runtime.command.tune_mode) {
+        runtime.tune_blocked = false;
+        runtime.current_timer_running = false;
+    } else if (runtime.explicit_stop || runtime.transport_error || runtime.control.status().faults) {
+        runtime.tune_blocked = true;
+    }
+    if (runtime.tune_blocked || runtime.command.tune_mode >= 5)
+        runtime.command.enabled = false;
     apply_tune_request(runtime);
     runtime.debug_request = read_debug_request();
-#if CHASSIS_SUSPENDED_BENCH
-    read_bench_command(runtime);
-#else
     read_local_stop_request(runtime);
-#endif
 }
 
 // 原差速/斜坡/轮速 PI 核心不变；输出为所有功率/安全约束之后的轮电流 mA。
@@ -331,51 +255,71 @@ void control_and_limit(ChassisRuntime &runtime) {
     runtime.energy.step(runtime.now_ms, runtime.power.status(), runtime.control.status().enabled,
                         runtime.control.status().wheels_stationary);
     auto &command = runtime.command;
-#if !CHASSIS_SUSPENDED_BENCH
     const auto &energy = runtime.energy.status();
-    command.enabled &= energy.session_allowed;
-    if (energy.stop_requested) {
-        command.stop = true;
-        command.brake = true;
-        command.speed_request = 0;
-        command.turn_request = 0;
+    const bool wheel_tuning = command.tune_mode >= 1 && command.tune_mode <= 4;
+    if (command.tune_mode) {
+        // Unconfirmed power is permitted only for tightly current-limited wheel
+        // tuning. Once confirmed, its data/energy limits are real requirements.
+        // A single wheel is never used to perform the vehicle's braking phase.
+        if (wheel_tuning && energy.confirmed &&
+            (!energy.session_allowed || energy.stop_requested)) {
+            runtime.tune_blocked = true;
+            command.enabled = false;
+        }
+        if (!wheel_tuning || runtime.tune_blocked)
+            command.enabled = false;
     } else {
-        command.speed_request *= energy.speed_scale;
-        command.turn_request *= energy.speed_scale;
-    }
-#endif
-#if VEHICLE_SAFETY_ENABLED && !CHASSIS_SUSPENDED_BENCH && !YAW_SUSPENDED_BENCH
-    // 先撤销旧的静态校准许可，再允许本周期首次出力。
-    if (command.enabled && !runtime.control.status().enabled) {
-        INS_RevokeCalibrationPermission(runtime.now_ms);
-    }
-#endif
-    runtime.control.step(runtime.now_ms, runtime.wheels, command);
-    runtime.final_ma[0] = runtime.control.status().candidate_ma[0];
-    runtime.final_ma[1] = runtime.control.status().candidate_ma[1];
-#if CHASSIS_SUSPENDED_BENCH
-    const auto &bench = runtime.bench_gate.status();
-    if (runtime.control.status().enabled && runtime.bench_active) {
-        if (bench.mode == CHASSIS_DEBUG_CURRENT) {
-            runtime.control.direct_output();
-            runtime.final_ma[0] = 0;
-            runtime.final_ma[1] = 0;
-            runtime.final_ma[bench.wheel] =
-                std::fmax(-runtime.control.config().max_current_ma,
-                          std::fmin(runtime.control.config().max_current_ma, bench.value));
+        command.enabled &= energy.session_allowed;
+        if (energy.stop_requested) {
+            command.stop = command.brake = true;
+            command.speed_request = command.turn_request = 0;
         } else {
-            runtime.control.step_debug_speed(bench.wheel, bench.value);
-            runtime.final_ma[0] = runtime.control.status().candidate_ma[0];
-            runtime.final_ma[1] = runtime.control.status().candidate_ma[1];
+            command.speed_request *= energy.speed_scale;
+            command.turn_request *= energy.speed_scale;
         }
     }
-#else
-    runtime.energy.limit(runtime.control.status().candidate_ma,
-                         runtime.control.status().measured_rpm, runtime.final_ma);
+#if VEHICLE_SAFETY_ENABLED
+    if (command.enabled && !runtime.control.status().enabled)
+        INS_RevokeCalibrationPermission(runtime.now_ms);
 #endif
-    if (!runtime.control.status().enabled) {
-        runtime.final_ma[0] = 0;
-        runtime.final_ma[1] = 0;
+    if (wheel_tuning) {
+        runtime.control.step_tuning(runtime.now_ms, runtime.wheels, command);
+        if (command.tune_mode <= 2 && command.tune_value != 0 &&
+            runtime.control.status().enabled) {
+            if (!runtime.current_timer_running) {
+                runtime.current_timer_running = true;
+                runtime.current_started_ms = runtime.now_ms;
+            } else if (uint32_t(runtime.now_ms - runtime.current_started_ms) >= 500) {
+                runtime.tune_blocked = true;
+                runtime.control.trip(0);
+                can_cancel_pending(2);
+            }
+        } else if (command.tune_value == 0) {
+            runtime.current_timer_running = false;
+        }
+        if (runtime.control.status().faults)
+            runtime.tune_blocked = true;
+    } else {
+        runtime.control.step(runtime.now_ms, runtime.wheels, command);
+    }
+    runtime.final_ma[0] = runtime.control.status().candidate_ma[0];
+    runtime.final_ma[1] = runtime.control.status().candidate_ma[1];
+    if (!command.tune_mode || energy.confirmed)
+        runtime.energy.limit(runtime.control.status().candidate_ma,
+                             runtime.control.status().measured_rpm, runtime.final_ma);
+    if (!runtime.control.status().enabled)
+        runtime.final_ma[0] = runtime.final_ma[1] = 0;
+    runtime.bench_active = wheel_tuning && runtime.control.status().enabled;
+    if (wheel_tuning) {
+        auto &status = runtime.tune_status;
+        status.result = uint32_t(runtime.control.status().tune_result);
+        status.active_seq = command.tune_epoch;
+        status.velocity_kp = runtime.control.config().velocity_kp;
+        status.velocity_ki = runtime.control.config().velocity_ki;
+        status.max_current_ma = runtime.control.status().tune_current_limit_ma;
+        taskENTER_CRITICAL();
+        g_chassis_tune_status = status;
+        taskEXIT_CRITICAL();
     }
 }
 
@@ -413,6 +357,11 @@ void publish_status(const ChassisRuntime &runtime) {
     status.enabled = control.enabled;
     status.wheels_stationary = control.wheels_stationary;
     status.bench_active = runtime.bench_active && control.enabled;
+    status.tune_mode = runtime.command.tune_mode;
+    status.tune_epoch = runtime.command.tune_epoch;
+    status.tune_result = uint32_t(control.tune_result);
+    status.tune_blocked = runtime.tune_blocked;
+    status.tune_current_limit_ma = control.tune_current_limit_ma;
     status.faults = control.faults;
     status.rx_dropped = drops;
     status.tx_errors = can_tx_error_count[1];
@@ -463,7 +412,7 @@ extern "C" int Chassis_GetStatus(ChassisStatus *out) {
 }
 
 extern "C" void chassis_task(void *) {
-#if ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH
+#if ARM_FOUR_AXIS_BENCH
     // 日常四轴台架不注册 CAN2 电机，也不发送底盘输出。
     for (;;) {
         osDelay(100);

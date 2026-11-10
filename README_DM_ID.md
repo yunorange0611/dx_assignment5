@@ -1,6 +1,6 @@
 # C 板 CAN 配置 DM4310 ID
 
-此模式只用于逐台配置 DM-J4310P-2EC 的 ESC_ID 和 MST_ID。它是独立固件，不运行机械臂闭环或遥控任务；四轴/整车原有配置和三个默认失能确认项保持不变。上电不发配置报文，不自动读、写或保存参数。显式读取后按实际控制模式发送失能帧，得到失能反馈后才允许继续；从不发送使能、运动目标或保存零点命令。
+此模式只用于逐台配置 DM-J4310P-2EC 的 ESC_ID 和 MST_ID。它是独立固件，不运行机械臂闭环或遥控任务；正常整车配置和默认失能确认项保持不变。上电不发配置报文，不自动读、写或保存参数。显式读取后按实际控制模式发送失能帧，得到失能反馈后才允许继续；从不发送使能、运动目标或保存零点命令。
 
 ## 固件和 ELF
 
@@ -9,11 +9,11 @@ cmake --preset DmIdConfig
 cmake --build --preset DmIdConfig
 ```
 
-- 烧录：`D:\RM_robosister\build\DmIdConfig\dm_id_config.bin`（或同目录 `.hex`）。
-- FreeMASTER 使用同次构建的符号：`D:\RM_robosister\build\DmIdConfig\dx_assignment5_freertos.elf`。
-- 配置完成后重新烧四轴 `build/Debug/engineer_arm.bin`，FreeMASTER 换回 `build/Debug/dx_assignment5_freertos.elf`。
+- 烧录：`build/DmIdConfig/dm_id_config.bin`（或同目录 `.hex`）。
+- FreeMASTER 使用同次构建的符号：`build/DmIdConfig/dx_assignment5_freertos.elf`。
+- 配置完成后重新烧正常整车 `build/Debug/engineer_vehicle.bin`，FreeMASTER 换回 `build/Debug/dx_assignment5_freertos.elf`。
 
-沿用你现有的 FreeMASTER 连接与变量访问方式。本次不改其配置，不新增通信驱动；ELF 只提供符号和地址，必须与板内固件对应。不要把配置固件的变量地址用于四轴/整车固件。
+沿用你现有的 FreeMASTER 连接与变量访问方式。本次不改其配置，不新增通信驱动；ELF 只提供符号和地址，必须与板内固件对应。不要把配置固件的变量地址用于正常整车固件。
 
 ## 接线
 
@@ -68,7 +68,7 @@ cmake --build --preset DmIdConfig
 5. 写一次 `command=3`，等待 `busy=0`、`result=6`。保存使用内部已经核对的新地址，**无需先改 source_id**。每次保存许可只能使用一次；重复写3会被拒绝，不会循环擦写Flash。
 6. 确认 busy=0 后，将电机完全断电再上电。设 `source_id=1`，写 `command=1`，应再次得到 `result=2`、ID=1/0x11，才证明掉电保存成功。
 7. 断电，换接电机 B。重新读其原 ID；将 `target_axis=2`，按读取→改ID→保存→断电重读流程操作。B 的预期值是 `can_id=2`、`mst_id=0x12`（十进制18），断电复验时 source_id 要填2。
-8. 两台均通过掉电复验后断电恢复接线、烧回四轴固件。ID配置不等于机械参数已确认，不改变三个默认失能门槛。
+8. 两台均通过掉电复验后断电恢复接线、烧回正常整车固件。ID配置不等于机械参数已确认，不改变三个默认失能门槛。
 
 如果写入中途超时，电机地址可能已经改变：先取消（命令4），分别在原ID和目标ID显式读取确认，或断电恢复尚未保存的参数；不要直接保存。保存超时只能说明未收到确认，不能认定保存失败；先断电读取实际结果。换电机后必须重新读取，不能沿用上一个电机的结果。
 
@@ -76,9 +76,9 @@ cmake --build --preset DmIdConfig
 
 - `2User_Driver`：无HAL依赖的短状态机，命令一次性消费、应答200ms超时、写后20ms再读、保存应答后等满30ms。只有RID7/8可写。
 - `3Task`：独立任务与两个调试结构，CAN1任意标准反馈ID接收（包括默认MST=0），丢包/发送错误结束操作并取消待发帧。
-- `DM_ID_CONFIG_MODE` 默认 OFF，只有 `DmIdConfig` preset 打开；该构建不启动机械臂/遥控任务，CAN1关闭硬件自动重发。正常四轴/整车发送与过滤路径保留。
+- `DM_ID_CONFIG_MODE` 默认 OFF，只有 `DmIdConfig` preset 打开；该构建不启动机械臂/遥控任务，CAN1关闭硬件自动重发。正常整车发送与过滤路径保留。
 - 协议按[官方4310P型号手册V1.3](https://github.com/dmBots/DM-J4310P-2EC/blob/master/manual/DM-J4310P-2EC%20%E5%87%8F%E9%80%9F%E7%94%B5%E6%9C%BA%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6%20V1.3%202026-09-14.pdf)第13–18页：RID7=MST、RID8=ESC，保存命令为 `AA 01`。通用SDK存在 `AA 00` 的差异，本版不自动尝试另一种。若读/改正常但保存无应答，保留固件版本原码并先做掉电验证。
 
 软件编译和合成CAN测试不能代替真实电机、接线、固件兼容性以及掉电保存验证。
 
-2026-11-10 验证：`DmIdConfig`、四轴 `Debug`、整车 `VehicleDebug` 均构建通过。配置固件 Flash 40,020 B、RAM 56,616 B；ELF含两个配置调试结构、不含机械臂/旧DJI/CAN2发送任务。含新增配置状态机用例的四轴44,002条、整车44,003条ARM机器码断言通过，覆盖误帧、迟到、忙时取消、写后读回、保存单次触发和超时。未烧录或操作实物；原机械臂/遥控/保护逻辑源文件与修改前一致。
+以下为单固件收敛前的历史验证，不是当前构建入口。2026-11-10 验证：`DmIdConfig`、四轴 `Debug`、整车 `VehicleDebug` 均构建通过。配置固件 Flash 40,020 B、RAM 56,616 B；ELF含两个配置调试结构、不含机械臂/旧DJI/CAN2发送任务。含新增配置状态机用例的四轴44,002条、整车44,003条ARM机器码断言通过，覆盖误帧、迟到、忙时取消、写后读回、保存单次触发和超时。未烧录或操作实物；原机械臂/遥控/保护逻辑源文件与修改前一致。

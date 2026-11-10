@@ -2,14 +2,14 @@
 
 工程基于 [dx_assignment5_freertos](https://github.com/liqibei/dx_assignment5_freertos/tree/80450f4790afac2a29b0d66d94a6952ad3ab08e1)。机械臂负责人维护大/小 pitch、roll、夹爪四轴；另一位同学维护两台 M3508 底盘和大 yaw GM6020。yaw 参数独立在 `2User_Driver`，运行时仍由统一 CAN1 五轴任务控制。协作入口见 [AGENTS.md](AGENTS.md)；原教学模板说明完整保存在 [docs/TEMPLATE_README.md](docs/TEMPLATE_README.md)。
 
-整车已按《遥控器.docx》V2.1 接入 DR16 的行驶、夹取、待机模式，以及参考 `RM_task_Chassis/task_protect` 结构的关控保护。日常 `Debug/Release`（兼容入口 `BenchDebug`）提供仅两 pitch、roll、夹爪的固定四轴配置，不依赖 yaw 或底盘；整车显式使用 `VehicleDebug/VehicleRelease`。台架操作、调试变量、遥控接线和底盘请求接口集中见 [README_REMOTE.md](README_REMOTE.md)；CAN2差速控制已接入，仍待实物验收。
+整车按《遥控器.docx》V2.1保留行驶、夹取、待机与统一关控。日常Debug/Release均为五轴整车固件，通过robot_tune_mode0～6与tune_enable切换正常控制、轮测试和Yaw闭环；不换固件。调参详细步骤见fm调参原PDF，遥控、命令和接口见README_REMOTE.md。
 
 ## 当前实现
 
 - 6020电流模式、两台 M2006：外部位置 P + 速度 PI，输出单位为mA，按实际周期积分。
 - 两台 DM4310：MIT 纯力矩指令（kp=kd=0），外部位置 P + 速度 PI，最终给电机端 Nm。位置 P、速度 PI 始终在电机驱动坐标中运行；公开肩角/肘相对角另做传动映射。
 - 250 Hz（4 ms）控制任务；统一关节端角度 deg、速度 deg/s；参考轨迹限速、限加速度；手动零位标定。
-- `Config.joint_mask` 选择整车五轴 `0x1f` 或台架四轴 `0x1e`；就绪、校零、使能与收发均按当前配置。台架跳过 yaw，不发送 `0x1FE`。两 pitch 始终成对校零/使能。目标超时、反馈超时、温度、驱动器故障、调度异常、CAN 异常锁存停机，通信恢复不会自动使能。
+- 日常 `Config.joint_mask=0x1f`；两pitch始终成对校零/使能。旧四轴配置仅用于兼容逻辑测试，不对应日常固件。反馈/目标/温度/驱动/时序/CAN异常锁存停机，不自动重启。
 - 夹爪提供位置开合、闭合超时和动态保持电流限幅。此版没有接触检测、恒夹持力或自动撞限位寻零；超时和电流值仍需实测。
 - 待机不接受新动作，进入时抓取一次反馈作为保持目标；已开控关节继续闭环和目标刷新，原本失能的轴不会自动使能。负载保持策略本轮暂不改，尚未完成承重验证。关控、遥控失联和故障使当前配置全部轴失能，恢复后须重新开控。
 
@@ -124,17 +124,19 @@ a2目标 = q肩目标 + q肘目标
 
 状态中的 `configuration_valid` 只说明配置数值和 ID 等结构合法，不代表上述确认门槛已通过，也不代表反馈在线、已经校零或允许使能。
 
-把机构手动摆到约定零位并固定支撑，待电机静止后调用 `Arm_CaptureZero(mask)`。mask 只要包含任意一个 pitch，就必须同时包含两 pitch（`0x06`），否则返回 `InvalidArgument`；底层 `Arm_Enable(mask)` 同样拒绝半对 pitch。调试命令 2 自动使用当前配置的完整 mask：整车 `0x1f`、台架 `0x1e`。联合校零要确认两台驱动均静止，不能只用相减后的肘速度判断静止。夹爪须采用上述安全张开参考零位。
+把机构手动摆到约定零位并固定支撑，待电机静止后调用 `Arm_CaptureZero(mask)`。mask 只要包含任意一个 pitch，就必须同时包含两 pitch（`0x06`），否则返回 `InvalidArgument`；底层 `Arm_Enable(mask)` 同样拒绝半对 pitch。调试命令2在正常0档校五轴，mode5/6只校Yaw；不隐式开控。联合校零要确认两台驱动均静止，不能只用相减后的肘速度判断静止。夹爪须采用上述安全张开参考零位。
 
 校零只记录 MCU RAM 偏置，不运动、不向 DM 发送保存零点指令。断电/MCU 复位后需重新标定；DJI 反馈中断超过 5 ms 也会使软件多圈位置失效并要求重新标定。跨零累计要求相邻有效反馈之间转子转角小于半圈。不能依赖上电位置当作机械绝对位置。
 
-具体校零、清故障和遥控开控顺序统一见 [README_REMOTE.md](README_REMOTE.md)。台架健康上→中事件加回中等待请求一次开控，整车仍使用显式 `Robot_RequestControl()`；`Robot_StopControl()` 可显式关控。两种配置都不自动校零，也不在故障恢复后自动重启。
+具体校零、清错和开控见README_REMOTE.md及fm调参原PDF。正常遥控明确命令4或Robot_RequestControl；全局关控命令1或Robot_StopControl。左拨杆上为行驶、下为待机，不沿用旧台架上档关控或上→中开控。故障恢复不自动启。
 
-在线PID使用`g_arm_tune_request`：先填`joint`（0Yaw、1肩、2肘、3roll、4夹爪）和`position_kp/velocity_kp/velocity_ki/effort_limit`，最后递增`request_seq`；只读结果为`g_arm_tune_status`，`result`沿用下方Result码。要求全部轴失能、所选轴反馈在线已校零且静止、无故障；两pitch调参时同时检查两驱动。增益和输出上限完整校验后一起生效、清相关积分，不自动使能；输出上限不能超过编译启动cap（DM为Nm，DJI电流为mA）。拒绝请求一次消费，不排队等待；RAM参数断电不保存，确认后写回源码。`ChassisBenchDebug`可用同一四轴遥控入口先抬臂，再左下静止待机保持调轮，左中移动时取消轮脉冲；简易调参/排障文件见`fm调参/`。
+机械臂其他轴在线PID仍可用 `g_arm_tune_request`：填joint和position_kp/velocity_kp/velocity_ki/effort_limit，最后递增request_seq；全轴失能、所选轴反馈已校零且静止健康后才生效，pitch同时查两驱动。只读结果为g_arm_tune_status，输出不能超过编译cap（DM为Nm、DJI为mA），成功不使能、拒绝不排队，参数只存RAM。Yaw日常直接用tune_yaw_*变量，见README_YAW.md。
 
-底层 `Arm_Enable(mask)` 从当前反馈姿态开始保持，不沿用使能前的目标。协调层统一调用它，并每 4 ms 刷新当前配置的目标；另一任务不应调用 `Arm_SetTargets()` 与遥控层争用目标。电机控制核心仍有 250 ms 目标看门狗；遥控和整车底盘互锁另有 100 ms 超时，台架不要求外部互锁。提交函数返回 1 只表示请求已接收，实际执行结果须读取状态；接口仅用于任务上下文。`Arm_Disable` 使用独立停机标志，不受命令队列满影响。
+需要抬臂测轮时，在0档正常夹取中抬起，左下待机保持，随后enable=0、实际静止、选轮mode并明确enable=1。enable0或切档只处理测试对象，其他已使能关节保持，未使能轴不自动开启；全局关控仍按统一策略失能。原 [02_机械臂抬起与保持.pdf](fm调参/02_机械臂抬起与保持.pdf) 给出逐项步骤。
 
-整车统一开五轴，台架统一开四轴，均按 `Config.joint_mask` 管理。不要在遥控任务运行时由另一任务用底层部分轴 API 绕过协调层。待机中的开控请求会被消费并忽略，须进入所选配置的运动模式、满足回中等条件后重新请求。
+底层 `Arm_Enable(mask)` 从当前反馈姿态开始保持，不沿用使能前的目标。协调层统一调用它，并每 4 ms 刷新当前配置的目标；另一任务不应调用 `Arm_SetTargets()` 与遥控层争用目标。电机控制核心仍有 250 ms 目标看门狗；正常遥控和整车底盘互锁另有100ms超时。受限调参检查所选对象和已保持关节实际健康。提交函数返回 1 只表示请求已接收，实际执行结果须读取状态；接口仅用于任务上下文。`Arm_Disable` 使用独立停机标志，不受命令队列满影响。
+
+正常整车按五轴配置协调；运行时测试可只操作选中对象，未参与测试的轴保持原使能状态。不要由另一任务绕过唯一owner。正常待机开控请求不排队；调参退出回0后，需正常模式停稳回中命令4明确恢复。
 
 保护状态通过 `Robot_GetControlStatus()` 的 `protection_disabled`、`protection_current_reasons`、`protection_latched_reasons`、`protection_last_trip_ms` 查看。当前原因清除不会自动使能；故障锁存需要先排除、必要时 `Arm_ClearFaults()` 和重新校零，再回中明确开控。保护状态机只由控制任务调用，其他任务读取快照。
 
@@ -158,48 +160,36 @@ V2.1 行驶模式左横独立控制 yaw、右横发布底盘转向请求，无Ya
 
 其中 `drive_yaw_max_speed_deg_s` 已同时约束遥控目标、底层参考与内层速度目标；Yaw在线半幅、真实边界减速、领先限制及原owner内调参见README_YAW.md。实际制动能力仍须实测。
 
-底盘直接读取 `Robot_GetChassisCommand()` 提供的现有 `ChassisCommand`，不再将整车诊断快照转换为控制命令；不维护单板内部API版本宏。CAN2底盘已实现本端源时间检查、轮速PI/差速/斜坡、停止与epoch处理、最终输出抗饱和及功率计0x31/保守限幅。真实互锁与IMU保护见README_VEHICLE.md。台架0x1e保持禁止底盘；软件接入不代替实物停车与功率验收。
+底盘直接读取 `Robot_GetChassisCommand()` 提供的现有 `ChassisCommand`，不再将整车诊断快照转换为控制命令；不维护单板内部API版本宏。CAN2底盘已实现本端源时间检查、轮速PI/差速/斜坡、停止与epoch处理、最终输出抗饱和及功率计0x31/保守限幅。真实互锁与IMU保护见README_VEHICLE.md。运行时轮调参与正常控制复用同一个CAN2输出入口，软件接入不代替实物停车和功率验收。
 
 ## 构建与验证
-
-需要 STM32CubeCLT（arm-none-eabi-gcc/g++）、CMake、Ninja 在 PATH：
 
 ```powershell
 cmake --preset Debug
 cmake --build --preset Debug
-cmake --preset VehicleDebug
-cmake --build --preset VehicleDebug
-```
-
-四轴日常输出到 `build/Debug/`，整车输出到 `build/VehicleDebug/`，各有 `dx_assignment5_freertos.elf`、`engineer_arm.bin`、`engineer_arm.hex`。`ARM_FOUR_AXIS_BENCH` 默认 ON；Debug/Release 和保留的 BenchDebug 明确 ON，VehicleDebug/VehicleRelease 明确 OFF。四轴固件每次上电均固定四轴，无需板载按钮；两种模式均保留三处确认门槛 false。不要混用固件与 ELF。未自动烧录或实车验证。
-
-逻辑测试用 Python 3 + Unicorn 执行实际 ARM 指令，测试 CAN 协议和控制边界；RTOS/HAL 使用替身，测试不包含真实 CAN 总线、传感器或电机负载：
-
-```powershell
 python -m pip install --target build/test_deps -r tests/requirements.txt
 python tests/run_tests.py
-python tests/run_tests.py --vehicle
 ```
 
-2026-11-10 本轮两种配置构建均通过；整车 42,585 条、四轴台架 42,584 条断言通过，覆盖既有传动、遥控、保护和 CAN 边界，以及四轴隔离、一次开控事件、回中/重连/故障恢复和调试命令。内存占用与现有警告见 [README.md](README.md)。测试为实际 ARM 机器码和合成输入，未烧录或硬件验证；不能证明真实方向、带载保持或实车制动效果。
+Debug/Release均为同一整车功能。日常输出 `build/Debug/engineer_vehicle.bin/.hex` 和 `dx_assignment5_freertos.elf`，板内程序和ELF必须一致。`--bench`仅作旧四轴逻辑兼容测试，不提供日常四轴固件；DM改ID工具独立维护，见README_DM_ID.md。软件测试使用ARM机器码和合成输入、HAL/RTOS替身，不能证明真实方向、承重或制动，不自动烧录。
 
 ## 需要你确认的参数
 
 1. **两 DM 的实物对应。** 根部驱动 150 mm 长板 `机械臂板材-1` 的是否为 ID 1、驱动 60 mm 短曲柄 `机械臂板材5-2` 的是否为 ID 2；确认非交叉连杆分支和两轴 `direction`。没有确认前不改 `pitch.mapping_confirmed`。
-2. **驱动器设置。** 两台 DM-J4310P-2EC-V1.1 的实际固件、电压版本、MIT 模式、PMAX/VMAX/TMAX、ESC_ID=1/2、MST_ID=0x11/0x12、反馈周期及通信超时；roll/夹爪 C610 ID=1/2。当前 DM 量程 12.5 rad/30 rad/s/10 Nm 是占位。
+2. **驱动器设置。** 两台 DM-J4310P-2EC-V1.1 的实际固件、电压版本、MIT 模式、PMAX/VMAX/TMAX、ESC_ID=1/2、MST_ID=0x11/0x12、反馈周期及通信超时；roll/夹爪 C610 ID=3/4（与当前arm_config.cpp一致）。当前 DM 量程 12.5 rad/30 rad/s/10 Nm 是占位。
 3. **零位与 pitch 组合范围。** 记录可重复摆放的联合零位姿态，实测肩、肘相对角及第二驱动 `a2=q肩+q肘` 的范围、死点和干涉；还需可用速度/加速度。CAD 保存角度不是编码器零位。
 4. **roll。** 已知线缆不缠绕，实际范围仍未知；核对外部联轴器直连、方向及实物干涉，再决定是否调整暂定 ±90°、10°/s、800 mA，当前不自动放开范围。
 5. **夹爪。** 已知没有机械限位；人工定义安全张开位置为 0，核对闭合正向、32T 输出轮可用角度、实际开口与角度关系。暂定 0..45°、3.75°/s、2 秒、500/150 mA 需实测；不能撞限位找零，也不能凭超时判定夹紧。
 6. **低输出闭环与负载。** 核对两 pitch 0.3 Nm 上限、PID、机构回差和温升；逐步测真实负载下跟踪/下垂。用户要求负载保持策略暂不改，因此正常待机保持、关控/失联失能继续保留，不把它称为已验证承重方案。
-7. **遥控和停止。** 核对四通道、左右拨杆和方向，确认关闭遥控器后有效帧停止；实测 DJI 反馈连续性、两 DM 反馈时间差与 8 ms 门槛、驱动器侧超时。台架上档关控生效后再做小角度试动。
-8. **整车集成时再核对。** yaw 电流模式/带路/方向、真实停车及姿态许可、行驶/快速/yaw 包络由底盘负责人补齐；整车“下方关控”独立输入仍待明确。机械臂不能直接接触基地已确认，但当前没有基地碰撞检测能力。
+7. **遥控和停止。** 核对四通道、左右拨杆和方向，确认关闭遥控器后有效帧停止；实测 DJI 反馈连续性、两 DM 反馈时间差与 8 ms 门槛、驱动器侧超时。先确认全局命令1和遥控失联能关控，再做小角度试动。
+8. **整车集成时再核对。** yaw 电流模式/带路/方向、真实停车及姿态许可、行驶/快速/yaw 包络由底盘负责人补齐；整车左下为待机，独立遥控关控输入仍待明确。机械臂不能直接接触基地已确认，但当前没有基地碰撞检测能力。
 
 ## 机械臂上车刷入固件后的确认顺序
 
-1. **选对配置，先看失能反馈。** 四轴日常用 Debug/Release（BenchDebug 保留），整车用 VehicleDebug/VehicleRelease；检查 `joint_mask`、`enabled_mask=0`、电机反馈和遥控原码。四轴台架不应出现 yaw 指令。三处确认门槛保留到实物核对完成。
+1. **一份固件，先看失能反馈。** 使用Debug整车固件和同目录ELF；检查joint_mask=0x1f、enabled_mask=0、robot_tune_mode=0、tune_enable=0、真实反馈与遥控原码。各确认门槛保留到实物核对完成。
 2. **机械对应与人工校零。** 手扶/支撑失能机构，核对两 DM 长板/短曲柄、roll、夹爪的反馈方向和传动比；记录联合 pitch 零位及夹爪安全张开零位。更新已确认参数、重新构建后再校零。完整命令和开控步骤按 [README_REMOTE.md](README_REMOTE.md) 执行。
 3. **低输出小角度。** pitch 成对验证肩变而肘目标固定时第二驱动随肩变化的关系，观察关节角与驱动角；再调 roll、夹爪。只展开当前轴的目标、反馈、effort 和已有故障状态，逐步确认跟踪、振荡、限幅和温升。
-4. **待机与关控。** 核对待机保持且不自动开控、台架上档关控、遥控关闭、反馈故障，以及恢复后必须重新上→中；整车接入真实互锁后再测其失联和停车逻辑。机构保持支撑，验证电机侧超时，不用放宽超时掩盖丢帧。
+4. **待机、局部停止与关控。** 验证待机保持不自动使能、tune_enable0停止所调对象而保留其他轴保持、命令1全局关控、遥控关闭与反馈故障。恢复后先回0档，在正常模式回中命令4明确重开；左上是行驶。支撑机构验证电机侧超时，不放宽时限掩盖丢帧。
 5. **负载与整车留待分阶段验证。** 实测行程、组合干涉、夹爪接触和保持参数后再逐步带载；当前没有重力补偿、接触检测或恒力保持。主控卡死/总线断线时不能保证停机帧送达；底盘制动和 CAN2 停机仍由底盘模块独立完成。
 
 ## 协议依据

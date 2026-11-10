@@ -16,7 +16,7 @@
 | Vehicle/vehicle_state.h | 实测可行驶机械臂收拢姿态表，posture_confirmed默认false |
 | Power/chassis_power.h | 实测功率帧超时、预算、低能量停车阈值、制动电流与时限，confirmed默认false |
 
-这些确认不是开控开关，不能为了消除报错一次全部改真。对应参数未测时整车禁行；悬空调试用显式独立构建。快速许可始终关闭；精细功率模型、满载性能和快速档留待后续。
+这些确认不是开控开关，不能为了消除报错一次全部改真。对应参数未测时正常整车禁行；受限悬空调参使用同一固件的运行时档位和tune_enable。快速许可始终关闭；精细功率模型、满载性能和快速档留待后续。
 
 ## IMU与互锁
 
@@ -48,12 +48,15 @@ HAL SPI头/源取自同机旧模板dipan，与当前HAL均为v1.8.5。源码增�
 
 ## 关控、清错与重新开控
 
-1. 写`g_robot_debug_command=1`全局关控，确认robot.active=0、arm.enabled_mask=0、chassis.enabled=0，再排除故障。
-2. 若Arm故障需清理，写`g_robot_debug_command=3`；它仅清Arm，不清CAN2轮组或功率锁存。当前校零命令为2，显式开控命令为4。
-3. 正常Vehicle构建也接受底盘停止/清错：写`g_chassis_debug_request.mode=1`，最后递增request_seq。清错同时再次请求全局关控；轮组须配置合法，功率须已确认、数据新鲜且energy_j达到restart_energy_j（默认占位250J）。`result=3`表示已处理清错请求，5表示条件未齐，4表示非法请求；仍以新发布的faults、power_inhibited/power_session_allowed及全局current_reasons核对实际状态。mode=0加新序号仅停止；正常整车不接受mode2/3出力脉冲。
-4. 若反馈丢失/多圈解包不可信导致calibrated清零，清Arm故障不恢复校零。重新支撑、整理线束并对齐零位后显式校零：正常Vehicle的命令2针对全部五轴，YawBench的命令2仅Yaw；任务接口Arm_CaptureZero(ARM_JOINT_MASK(ARM_YAW))可仅请求Yaw校零。pitch必须成对，不能任意姿态重置；之后重新核对/申请在线Yaw半幅。
-5. 正常Vehicle左拨杆上=Drive、中=Grab、下=Standby；上档只在四轴/悬空配置中代表关控，不能混用。健康、校零和在线Yaw限位就绪，选择模式并满足停车/收拢、四杆与右拨杆中立持续neutral_ms（默认300ms），观察wait_neutral=0，再写`g_robot_debug_command=4`或调用Robot_RequestControl。等待阶段或Standby提前发请求会消费，不保留到以后自动开控。整车独立遥控关控物理输入尚未另行指定。
+1. **只停止调参对象**：写 `tune_enable=0`，等反馈静止；其他已使能机械臂继续保持。要换对象再改mode，切档会再次关闭enable并清目标。mode0不代表全局关控。
+2. **全局关控**：写 `g_robot_debug_command=1` 或调用 `Robot_StopControl()`；核查Arm全部失能、底盘无输出后排除故障。左拨杆上是Drive、下是Standby，不是关控。
+3. **分别清错**：Arm用命令3。CAN2本地维护用 `g_chassis_debug_request.mode=1`，最后递增request_seq；不直接撤Arm保持，不自动开控。功率已确认时须有新鲜数据且能量达到restart_energy_j才清功率锁。只看result不够，还要核查faults/power_inhibited等实际状态。日常出力不再使用这组请求mode2/3。
+4. **需要时重校零**：反馈多圈失效后，支撑机构并恢复人工零位，再命令2。mode5/6只校Yaw，其余正常0档针对全部五轴；pitch必须联合校零。校零不会恢复限位确认，按需再次申请在线半幅。
+5. **明确恢复**：先enable=0、停稳并回mode0，退出调参后机构先保持；选择正常行驶/夹取，实际停车、回中持续neutral_ms，真实互锁和各配置就绪后写命令4或Robot_RequestControl。健康恢复、回0档或清错都不能自动续跑。调参需重新选mode、确认目标和enable=1。
+
+受限调参模式保留遥控/所选电机/保持关节健康检查。IMU已完成安装与阈值确认后，失效或翻车继续制止调参；功率已确认后继续约束轮调参。未确认情况下的受限测试许可不等于正常整车许可。
+
 
 ## 验证顺序
 
-先无出力核对源时间和保护原因，再悬空逐轮方向/速度，独立Yaw小幅限位，再IMU有效性/翻车门控、真实互锁/模式转换、功率受限制动，最后慢速落地和机械臂协作。逻辑测试/编译结果与实物验收分别记录；软件通过不代表已经慢速落地或完成满载测试。详细步骤的PDF在工程外资料目录。
+先无出力核对源时间和保护原因，再悬空逐轮方向/速度，独立Yaw小幅限位，再IMU有效性/翻车门控、真实互锁/模式转换、功率受限制动，最后慢速落地和机械臂协作。逻辑测试/编译结果与实物验收分别记录；软件通过不代表已经慢速落地或完成满载测试。当前逐批步骤见原 `fm调参/00_分批调参步骤.pdf`，排障和抬臂保持分别见同目录01、02。

@@ -2,6 +2,11 @@
 #include "robot_control_internal.h"
 #include "Remote/operator_control.h"
 #include "Chassis/chassis_control.h"
+#include "Vehicle/robot_tuning.h"
+#include "Imu/attitude_estimator.h"
+#include "Arm/yaw_config.h"
+#include "chassis_task.h"
+#include "arm_task.h"
 #include "yaw_service.h"
 #include "task_protect.h"
 #include "vehicle_state_task.h"
@@ -10,18 +15,38 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stm32f4xx_hal.h"
+#include <cmath>
 extern "C" {
 RobotControlStatus g_robot_status{};
 volatile uint32_t g_robot_debug_command = ROBOT_DEBUG_IDLE;
+volatile uint32_t robot_tune_mode = 0, tune_enable = 0;
+volatile float tune_current_ma = 0, tune_speed_rpm = 0, tune_yaw_speed_deg_s = 0,
+    tune_yaw_target_deg = 0;
+volatile float tune_wheel_kp = engineer::kChassisConfig.velocity_kp,
+    tune_wheel_ki = 0, tune_wheel_current_limit_ma = 100;
+volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
+    tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
+    tune_yaw_velocity_ki = 0, tune_yaw_current_limit_ma = 100, tune_yaw_half_range_deg = 0;
+RobotTuneStatus g_robot_tune_status{};
 }
 namespace {
 engineer::Interlocks shared_interlocks;
 engineer::ChassisCommand chassis_command;
 bool arm_requested = false, stop_requested = false;
 uint32_t stop_epoch = 0;
+engineer::RobotTuning tuning;
+bool tune_exit_wait = false;
+uint8_t tune_added_mask = 0;
+uint32_t neutral_since_ms = 0;
+bool neutral_tracking = false;
+void zero_tune_targets(float yaw) {
+    taskENTER_CRITICAL();
+    tune_current_ma = tune_speed_rpm = tune_yaw_speed_deg_s = 0;
+    tune_yaw_target_deg = yaw;
+    taskEXIT_CRITICAL();
+}
 uint32_t vehicle_protection(uint32_t now) {
-#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH &&                  \
-    !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
     return Vehicle_GetProtectionReasons(now);
 #else
     (void)now;
@@ -34,6 +59,297 @@ void publish_protection(RobotControlStatus &s) {
     s.protection_current_reasons = p.current_reasons;
     s.protection_latched_reasons = p.latched_reasons;
     s.protection_last_trip_ms = p.last_trip_ms;
+}
+
+// Same owner as normal ArmOperator: this path selects a control layer, never a
+// second motor or sender. Only already-enabled non-selected axes are held.
+bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller,
+                    const engineer::RemoteInput &remote, const engineer::Interlocks &locks,
+                    uint32_t now, uint32_t elapsed,
+                    bool stop, bool request_resume) {
+    using namespace engineer;
+    uint32_t requested, enable;
+    float current, speed, yaw_speed, yaw_target, wheel_kp, wheel_ki, wheel_limit;
+    JointTuning yaw_tune{};
+    taskENTER_CRITICAL();
+    requested = robot_tune_mode;
+    enable = tune_enable;
+    current = tune_current_ma;
+    speed = tune_speed_rpm;
+    yaw_speed = tune_yaw_speed_deg_s;
+    yaw_target = tune_yaw_target_deg;
+    wheel_kp = tune_wheel_kp;
+    wheel_ki = tune_wheel_ki;
+    wheel_limit = tune_wheel_current_limit_ma;
+    yaw_tune = {tune_yaw_position_kp, tune_yaw_velocity_kp, tune_yaw_velocity_ki,
+                tune_yaw_current_limit_ma};
+    taskEXIT_CRITICAL();
+    if (!requested && !tuning.status().mode && !tune_exit_wait) {
+        tune_enable = 0;
+        return false;
+    }
+    const auto prior = tuning.status();
+    // A mode write is never an enable write, even if both arrive in one cycle.
+    if (requested != prior.mode) {
+        tune_enable = 0;
+        enable = 0;
+    }
+
+    const bool online = remote.valid && uint32_t(now - remote.received_ms) <=
+                                           kOperatorConfig.remote_timeout_ms;
+    const bool timing_ok = elapsed > 0 && elapsed <= kArmConfig.control_period_ms + 2;
+    bool neutral = online;
+    for (int channel : remote.frame.channel)
+        neutral &= std::abs(channel) <= 30;
+    const bool switches_valid = kOperatorConfig.left_switch_index < 2 &&
+                                kOperatorConfig.right_switch_index < 2;
+    neutral &= switches_valid &&
+        remote.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID &&
+        (remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP ||
+         remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_MID ||
+         remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_DOWN);
+    const bool standby = switches_valid &&
+        remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_DOWN &&
+        remote.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
+    if (!neutral)
+        neutral_tracking = false;
+    else if (!neutral_tracking) {
+        neutral_tracking = true;
+        neutral_since_ms = now;
+    }
+    const bool settled = neutral_tracking && uint32_t(now - neutral_since_ms) >=
+                                                kOperatorConfig.neutral_ms;
+    InsStatus imu{};
+    INS_GetStatus(&imu);
+    // Until IMU is physically confirmed, limited bench modes do not claim
+    // whole-vehicle readiness. Once confirmed, stale/invalid/tipped always stops.
+    const bool imu_required = kAttitudeConfig.installation_confirmed &&
+                              kAttitudeConfig.thresholds_confirmed;
+    const bool imu_ok = !imu_required ||
+        (imu.ready && imu.valid && !imu.tipped &&
+         uint32_t(now - imu.updated_ms) <= 40 &&
+         uint32_t(now - imu.received_ms) <= kAttitudeConfig.max_sample_gap_ms);
+    bool fatal = stop || enable > 1 || !online || !timing_ok || arm.status().faults || !imu_ok;
+    bool holders_still = true;
+    const uint8_t enabled = arm.status().enabled_mask;
+    for (unsigned i = 0; i < kJointCount; ++i) {
+        if (!(enabled & (1u << i)))
+            continue;
+        const auto &j = arm.status().joint[i];
+        fatal |= !j.online || !j.calibrated || j.faults ||
+            uint32_t(now - j.last_feedback_ms) > kArmConfig.feedback_timeout_ms;
+        holders_still &= std::fabs(j.drive_velocity_deg_s) <=
+                              kArmConfig.joint[i].stationary_speed_deg_s;
+    }
+    if (fatal) {
+        arm.disable();
+        tune_added_mask = 0;
+        zero_tune_targets(arm.status().joint[Yaw].position_deg);
+    }
+
+    ChassisStatus wheels{};
+    Chassis_GetStatus(&wheels);
+    const bool wheels_fresh = wheels.ready && uint32_t(now - wheels.updated_ms) <= 40;
+    bool wheel_ready = wheels_fresh && wheels.configuration_valid && wheels.hardware_confirmed &&
+                        !wheels.faults && !wheels.tune_blocked;
+    for (unsigned i = 0; i < 2; ++i)
+        wheel_ready &= wheels.feedback_frames[i] && uint32_t(now - wheels.feedback_ms[i]) <=
+                                                         kChassisConfig.feedback_timeout_ms;
+    const auto &yaw = arm.status().joint[Yaw];
+    const bool yaw_mode = requested == ROBOT_TUNE_YAW_SPEED ||
+                          requested == ROBOT_TUNE_YAW_POSITION;
+    const bool yaw_ready = arm.status().configuration_valid && kArmConfig.hardware_confirmed &&
+        Yaw_ConfigurationReady(arm) && yaw.online && yaw.calibrated && !yaw.faults &&
+        uint32_t(now - yaw.last_feedback_ms) <= kArmConfig.dji_unwrap_gap_ms &&
+        yaw.temperature_c < kArmConfig.joint[Yaw].max_temperature_c;
+    const bool stopped_wheels = wheels_fresh && !wheels.enabled &&
+        ((!wheels.feedback_frames[0] && !wheels.feedback_frames[1]) || wheels.wheels_stationary);
+    const bool still = holders_still && (yaw_mode ? stopped_wheels &&
+        std::fabs(yaw.velocity_deg_s) <= kArmConfig.joint[Yaw].stationary_speed_deg_s
+        : wheels_fresh && wheels.wheels_stationary);
+    JointTuning accepted_yaw{};
+    arm.get_tuning(Yaw, accepted_yaw);
+    const bool yaw_parameters_applied =
+        accepted_yaw.position_kp == yaw_tune.position_kp &&
+        accepted_yaw.velocity_kp == yaw_tune.velocity_kp &&
+        accepted_yaw.velocity_ki == yaw_tune.velocity_ki &&
+        accepted_yaw.effort_limit == yaw_tune.effort_limit;
+    const bool selected_ok = yaw_mode ? yaw_ready && yaw_parameters_applied : wheel_ready;
+    auto state = tuning.step({requested, now,
+        kOperatorConfig.mapping_confirmed && neutral && standby &&
+            settled && !fatal,
+        selected_ok, still, fatal, current, speed, yaw_speed, yaw_target,
+        yaw.position_deg, arm.yaw_limits().min_deg, arm.yaw_limits().max_deg, enable == 1});
+
+    if (state.changed) {
+        zero_tune_targets(yaw.position_deg);
+        arm.clear_yaw_test();
+        // A Yaw enabled only by its test must not leak into a later wheel test.
+        if (tune_added_mask) {
+            arm.disable_joints(tune_added_mask);
+            tune_added_mask = 0;
+        }
+        // The non-selected axes keep their existing hold targets/history.
+        // Only the previous Yaw test has motion history to discard here.
+        const uint8_t freeze = uint8_t((prior.mode == ROBOT_TUNE_YAW_SPEED ||
+                     prior.mode == ROBOT_TUNE_YAW_POSITION) ? (arm.status().enabled_mask & 1u) : 0u);
+        if (freeze && arm.hold(freeze, now) != Result::Ok)
+            fatal = true;
+        if (prior.mode == ROBOT_TUNE_YAW_SPEED || prior.mode == ROBOT_TUNE_YAW_POSITION) {
+            JointTuning accepted{};
+            arm.get_tuning(Yaw, accepted);
+            arm.set_effort_limit(Yaw, accepted.effort_limit);
+        }
+        controller.enable_result(false); // Normal control needs an explicit resume.
+        tune_exit_wait = true;
+    }
+    if (prior.ready && !enable)
+        zero_tune_targets(yaw.position_deg);
+    if (enable && !prior.ready && !state.ready && !state.blocked)
+        // Every new enable starts with zero motion/current and current angle.
+        zero_tune_targets(yaw.position_deg);
+
+    uint32_t yaw_parameter_result = g_robot_tune_status.yaw_parameter_result;
+    if (yaw_mode && !enable && !fatal && yaw_ready &&
+        (!state.ready || (requested == ROBOT_TUNE_YAW_SPEED ? yaw_speed == 0 :
+                           std::fabs(yaw_target - yaw.position_deg) <= .5f))) {
+        JointTuning actual{};
+        arm.get_tuning(Yaw, actual);
+        if (actual.position_kp != yaw_tune.position_kp || actual.velocity_kp != yaw_tune.velocity_kp ||
+            actual.velocity_ki != yaw_tune.velocity_ki || actual.effort_limit != yaw_tune.effort_limit)
+            yaw_parameter_result = uint32_t(arm.set_tuning_runtime(Yaw, yaw_tune, now));
+    }
+    if (state.ready && yaw_mode && !fatal) {
+        INS_RevokeCalibrationPermission(now);
+        if (!arm.status().joint[Yaw].enabled) {
+            if (arm.enable(1u << Yaw, now) == Result::Ok)
+                tune_added_mask |= 1u << Yaw;
+            else
+                fatal = true;
+        }
+        // Test range is the configured wire range, not the Drive posture envelope.
+        const auto &l = arm.yaw_limits();
+        if (!fatal && arm.set_yaw_envelope(l.min_deg, l.max_deg, l.max_speed_deg_s) != Result::Ok)
+            fatal = true;
+        JointTuning accepted{};
+        arm.get_tuning(Yaw, accepted);
+        if (!fatal && arm.set_effort_limit(Yaw, std::fmin(150.0f, accepted.effort_limit)) != Result::Ok)
+            fatal = true;
+        if (!fatal && requested == ROBOT_TUNE_YAW_SPEED) {
+            fatal = arm.set_yaw_test_speed(state.value, now) != Result::Ok;
+        } else if (!fatal) {
+            arm.clear_yaw_test();
+            float target[kJointCount]{};
+            target[Yaw] = state.value;
+            fatal = arm.set_targets(1u << Yaw, target, now) != Result::Ok;
+        }
+    } else if (yaw_mode && prior.ready && arm.status().joint[Yaw].enabled) {
+        arm.clear_yaw_test();
+        if (tune_added_mask) {
+            arm.disable_joints(tune_added_mask);
+            tune_added_mask = 0;
+        } else {
+            fatal = arm.hold(1u << Yaw, now) != Result::Ok;
+        }
+    }
+    // Refresh held targets without repeatedly capturing a sagging feedback angle.
+    uint8_t held = arm.status().enabled_mask;
+    if (state.ready && yaw_mode)
+        held &= ~(1u << Yaw);
+    if (held && !fatal) {
+        float targets[kJointCount]{};
+        for (unsigned i = 0; i < kJointCount; ++i)
+            targets[i] = arm.status().joint[i].target_deg;
+        if (arm.set_targets(held, targets, now) != Result::Ok) {
+            fatal = true;
+            arm.disable();
+        }
+    }
+    bool all_ready = VEHICLE_SAFETY_ENABLED && kOperatorConfig.mapping_confirmed &&
+        arm.status().configuration_valid && kArmConfig.hardware_confirmed &&
+        kArmConfig.pitch.mapping_confirmed && Yaw_ConfigurationReady(arm);
+    for (unsigned i = 0; i < kJointCount; ++i)
+        all_ready &= arm.status().joint[i].online && arm.status().joint[i].calibrated;
+    const bool interlock_ok = locks.valid && uint32_t(now - locks.received_ms) <=
+                                                kOperatorConfig.interlock_timeout_ms;
+    if (!requested && tune_exit_wait && request_resume && !fatal && online && neutral && settled &&
+        !standby && all_ready && interlock_ok && vehicle_protection(now) == 0) {
+        const TaskProtectInput normal_protection{1, 1, 1, 0, uint8_t(timing_ok),
+                                                 uint8_t(arm.status().faults != 0), 0};
+        Task_Protect_Tick(&normal_protection, now);
+        // The normal controller will recapture targets and re-check all normal
+        // mode/interlock rules, preserving already-enabled joints throughout.
+        if (Task_Protect_TryArm()) {
+            tune_exit_wait = false;
+            controller.resume_from_tuning(arm.status(), remote, now);
+            g_robot_tune_status.updated_ms = now;
+            g_robot_tune_status.mode = g_robot_tune_status.ready = g_robot_tune_status.blocked = 0;
+            g_robot_tune_status.held_mask = arm.status().enabled_mask;
+            g_robot_tune_status.reason = TuneNormalOperation;
+            return false;
+        }
+    }
+
+    if (fatal) {
+        arm.disable();
+        tune_added_mask = 0;
+        TuneInput failed{};
+        failed.mode = requested;
+        failed.now_ms = now;
+        failed.stop = true;
+        state = tuning.step(failed);
+    }
+    if (fatal || state.blocked) {
+        tune_enable = 0;
+        zero_tune_targets(arm.status().joint[Yaw].position_deg);
+    }
+
+    TaskProtectInput protection{uint8_t(kOperatorConfig.mapping_confirmed), uint8_t(online), 1,
+        uint8_t(stop), uint8_t(timing_ok), uint8_t(arm.status().faults != 0),
+        uint32_t(imu_ok ? 0 : (imu.tipped ? PROTECT_TIPPED : PROTECT_IMU))};
+    Task_Protect_Tick(&protection, now);
+    if (fatal || stop)
+        Task_Protect_Trip(stop ? PROTECT_STOP_REQUEST : PROTECT_ARM_FAULT, now);
+    else if (state.ready)
+        Task_Protect_TryArm(); // Only after an explicit, healthy tuning enable.
+    RobotControlStatus next{};
+    next.updated_ms = now;
+    next.ready = 1;
+    next.mode = ROBOT_STANDBY;
+    next.active = arm.status().enabled_mask != 0;
+    next.joint_mask = kArmConfig.joint_mask;
+    next.remote_online = online;
+    next.remote_age_ms = now - remote.received_ms;
+    next.stop_epoch = stop_epoch;
+    next.motion_epoch = state.epoch;
+    next.stop_chassis = next.longitudinal_brake = next.reset_chassis_motion = 1;
+    next.emergency_stop = fatal;
+    for (unsigned i = 0; i < kJointCount; ++i)
+        next.target_deg[i] = arm.status().joint[i].target_deg;
+    publish_protection(next);
+    ChassisCommand command{};
+    command.valid = true;
+    command.updated_ms = now;
+    command.epoch = state.epoch;
+    command.stop_epoch = stop_epoch;
+    command.tune_mode = uint8_t(state.mode);
+    command.tune_epoch = state.epoch;
+    command.enabled = state.ready && state.mode >= 1 && state.mode <= 4 && !fatal;
+    command.tune_value = state.value;
+    command.tune_current_limit_ma = wheel_limit;
+    command.tune_velocity_kp = wheel_kp;
+    command.tune_velocity_ki = wheel_ki;
+    JointTuning actual{};
+    arm.get_tuning(Yaw, actual);
+    taskENTER_CRITICAL();
+    g_robot_status = next;
+    chassis_command = command;
+    g_robot_tune_status = {now, state.mode, state.epoch, state.reason,
+        uint8_t(state.ready && !fatal), uint8_t(state.blocked || fatal), arm.status().enabled_mask,
+        yaw_parameter_result, actual.position_kp, actual.velocity_kp,
+        actual.velocity_ki, actual.effort_limit};
+    taskEXIT_CRITICAL();
+    return true;
 }
 } // namespace
 extern "C" int Robot_SetInterlocks(const RobotInterlocks *v) {
@@ -121,11 +437,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     if (!force_stop && !stop_request) {
         switch (debug_command) {
         case ROBOT_DEBUG_CAPTURE_ZERO:
-#if YAW_SUSPENDED_BENCH
-            arm.capture_zero(1u << Yaw, now);
-#else
-            arm.capture_zero(kArmConfig.joint_mask, now);
-#endif
+            arm.capture_zero(robot_tune_mode == ROBOT_TUNE_YAW_SPEED ||
+                                     robot_tune_mode == ROBOT_TUNE_YAW_POSITION
+                                 ? uint8_t(1u << Yaw) : kArmConfig.joint_mask, now);
             stop_request = true;
             break;
         case ROBOT_DEBUG_CLEAR_FAULTS:
@@ -150,38 +464,21 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     const bool remote_ok =
         input.valid && uint32_t(now - input.received_ms) <= kOperatorConfig.remote_timeout_ms;
     const bool bench = kArmConfig.joint_mask == kFourAxisJoints;
-    Yaw_ApplyLimitRequest(arm, controller, locks, shared_interlocks, now);
-#if YAW_SUSPENDED_BENCH
-    {
-        const uint32_t current_stop_epoch =
-            Yaw_ExecuteBench(arm, input, now, elapsed, force_stop || stop_request, stop_epoch);
-
-        // Dedicated Yaw tuning always publishes a disabled chassis. The Yaw service
-        // owns pulse adaptation only; common mode/status publication stays here.
-        RobotControlStatus next{};
-        next.ready = 1;
-        next.updated_ms = now;
-        next.joint_mask = kArmConfig.joint_mask;
-        next.mode = ROBOT_SAFE;
-        next.emergency_stop = 1;
-        next.stop_chassis = 1;
-        next.longitudinal_brake = 1;
-        next.reset_chassis_motion = 1;
-        next.wait_neutral = 1;
-        next.stop_epoch = current_stop_epoch;
-        next.remote_online = remote_ok;
-        next.remote_age_ms = now - input.received_ms;
-        publish_protection(next);
-        taskENTER_CRITICAL();
-        g_robot_status = next;
-        chassis_command = {};
-        chassis_command.valid = true;
-        chassis_command.updated_ms = now;
-        chassis_command.stop_epoch = current_stop_epoch;
-        taskEXIT_CRITICAL();
-        return;
+    // Direct half-range input is consumed once when changed. Failed changes do
+    // not become delayed applications: edit the value again after fixing cause.
+    static float previous_half_range = 0;
+    const float half_range = tune_yaw_half_range_deg;
+    if (half_range != previous_half_range &&
+        !(std::isnan(half_range) && std::isnan(previous_half_range))) {
+        previous_half_range = half_range;
+        g_yaw_limit_request.half_range_deg = half_range;
+        ++g_yaw_limit_request.request_seq;
     }
-#endif
+    Yaw_ApplyLimitRequest(arm, controller, locks, shared_interlocks, now);
+
+    if (!bench && execute_tuning(arm, controller, input, locks, now, elapsed,
+                                force_stop || stop_request, arm_request))
+        return;
     const bool interlock_ok = bench || (locks.valid && uint32_t(now - locks.received_ms) <=
                                                            kOperatorConfig.interlock_timeout_ms);
     const TaskProtectInput protection_input{
@@ -219,8 +516,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     if (!bench)
         Yaw_ApplyOperatingEnvelope(arm, locks, result);
     if (result.request_enable) {
-#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH &&                  \
-    !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
         // Revoke before ArmControl can enable an output. A stale disabled
         // snapshot cannot grant IMU calibration permission after this fence.
         INS_RevokeCalibrationPermission(now);
@@ -275,8 +571,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     // the diagnostic snapshot. Four-axis and all tuning builds deny driving.
     ChassisCommand command{};
     command.valid = true;
-#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH &&                  \
-    !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
     command.enabled =
         kArmConfig.joint_mask == kAllJoints && result.active && !result.emergency_stop;
 #endif
@@ -296,7 +591,10 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
 void Robot_ReportArmState(const engineer::Status &s) {
     // arm.step中的反馈/驱动/轨迹故障发生在Robot_Execute之后，必须同周期覆盖共享状态。
     taskENTER_CRITICAL();
-    if (s.faults || (g_robot_status.active && s.enabled_mask != engineer::kArmConfig.joint_mask)) {
+    const bool tuning_owns = tuning.status().mode != 0 || tune_exit_wait;
+    const uint8_t expected = tuning_owns ? g_robot_tune_status.held_mask
+                                         : engineer::kArmConfig.joint_mask;
+    if (s.faults || (g_robot_status.active && s.enabled_mask != expected)) {
         Task_Protect_Trip(PROTECT_ARM_FAULT, HAL_GetTick());
         g_robot_status.active = 0;
         g_robot_status.emergency_stop = 1;
@@ -315,6 +613,13 @@ void Robot_ReportArmState(const engineer::Status &s) {
         chassis_command.reset = true;
         chassis_command.speed_request = 0;
         chassis_command.turn_request = 0;
+        chassis_command.tune_value = 0;
+        if (tuning_owns) {
+            tune_enable = 0;
+            zero_tune_targets(s.joint[engineer::Yaw].position_deg);
+            g_robot_tune_status.ready = 0;
+            g_robot_tune_status.blocked = 1;
+        }
     }
     taskEXIT_CRITICAL();
 }

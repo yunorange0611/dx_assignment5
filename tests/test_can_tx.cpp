@@ -76,6 +76,7 @@ osSemaphoreId_t CAN1CountingSemHandle = reinterpret_cast<void *>(3);
 osSemaphoreId_t CAN2CountingSemHandle = reinterpret_cast<void *>(4);
 extern "C" {
 CAN_HandleTypeDef hcan1{}, hcan2{};
+uint32_t test_hal_tick = 1234;
 uint32_t HAL_GetTick() {
     if (service_running && cancel_on_tick) {
         cancel_on_tick = false;
@@ -86,7 +87,7 @@ uint32_t HAL_GetTick() {
         else
             can_cancel_pending(1);
     }
-    return tick_ms;
+    return service_running ? tick_ms : test_hal_tick;
 }
 osStatus_t osMessageQueuePut(osMessageQueueId_t queue, const void *data, uint8_t, uint32_t) {
     saved = *static_cast<const can_tx_frame *>(data);

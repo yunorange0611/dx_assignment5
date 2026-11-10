@@ -8,17 +8,14 @@
             "binaryDir": "${sourceDir}/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
             "cacheVariables": {
-                "DM_ID_CONFIG_MODE": "OFF",
-                "CHASSIS_SUSPENDED_BENCH": "OFF",
-                "YAW_SUSPENDED_BENCH": "OFF"
+                "DM_ID_CONFIG_MODE": "OFF"
             }
         },
         {
             "name": "Debug",
             "inherits": "default",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "ARM_FOUR_AXIS_BENCH": "ON"
+                "CMAKE_BUILD_TYPE": "Debug"
             }
         },
         {
@@ -29,46 +26,10 @@
             }
         },
         {
-            "name": "BenchDebug",
-            "inherits": "Debug",
-            "cacheVariables": {
-                "ARM_FOUR_AXIS_BENCH": "ON"
-            }
-        },
-        {
             "name": "Release",
             "inherits": "default",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "ARM_FOUR_AXIS_BENCH": "ON"
-            }
-        },
-        {
-            "name": "VehicleDebug",
-            "inherits": "Debug",
-            "cacheVariables": {
-                "ARM_FOUR_AXIS_BENCH": "OFF"
-            }
-        },
-        {
-            "name": "VehicleRelease",
-            "inherits": "Release",
-            "cacheVariables": {
-                "ARM_FOUR_AXIS_BENCH": "OFF"
-            }
-        },
-        {
-            "name": "ChassisBenchDebug",
-            "inherits": "Debug",
-            "cacheVariables": {
-                "CHASSIS_SUSPENDED_BENCH": "ON"
-            }
-        },
-        {
-            "name": "YawBenchDebug",
-            "inherits": "VehicleDebug",
-            "cacheVariables": {
-                "YAW_SUSPENDED_BENCH": "ON"
+                "CMAKE_BUILD_TYPE": "Release"
             }
         }
     ],
@@ -82,28 +43,8 @@
             "configurePreset": "Debug"
         },
         {
-            "name": "BenchDebug",
-            "configurePreset": "BenchDebug"
-        },
-        {
             "name": "Release",
             "configurePreset": "Release"
-        },
-        {
-            "name": "VehicleDebug",
-            "configurePreset": "VehicleDebug"
-        },
-        {
-            "name": "VehicleRelease",
-            "configurePreset": "VehicleRelease"
-        },
-        {
-            "name": "ChassisBenchDebug",
-            "configurePreset": "ChassisBenchDebug"
-        },
-        {
-            "name": "YawBenchDebug",
-            "configurePreset": "YawBenchDebug"
         }
     ]
 }
