@@ -34,6 +34,22 @@ enum RobotDebugCommand {
     ROBOT_DEBUG_CLEAR_FAULTS, ROBOT_DEBUG_REQUEST_CONTROL
 };
 extern volatile uint32_t g_robot_debug_command;
+typedef struct { float half_range_deg; uint32_t request_seq; } YawLimitRequest;
+typedef struct {
+    uint32_t consumed_seq, active_seq, result;
+    float active_half_range_deg, min_deg, max_deg, max_speed_deg_s;
+    uint8_t ready;
+} YawLimitStatus;
+extern volatile YawLimitRequest g_yaw_limit_request;
+extern YawLimitStatus g_yaw_limit_status; // Read only, result=engineer::Result.
+int Yaw_GetLimitStatus(YawLimitStatus *status);
+typedef struct {
+    uint32_t mode; float speed_deg_s;
+    uint32_t duration_ms, suspended_confirm, request_seq;
+} YawDebugRequest;
+typedef struct { uint32_t consumed_seq,result,until_ms; float speed_deg_s; uint8_t active; } YawDebugStatus;
+extern volatile YawDebugRequest g_yaw_debug_request;
+extern YawDebugStatus g_yaw_debug_status;
 // ZERO/CLEAR同时请求关控，已使能时核心返回Busy；绝不自动校零/自动开控。
 // 单C板：底盘/安全管理约每20ms更新真实状态；100ms过期禁止运动。
 // 非法输入立即使互锁无效，不继续沿用旧许可。无底盘任务时不要伪造全部为1。

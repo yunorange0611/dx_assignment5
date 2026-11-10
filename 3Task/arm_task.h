@@ -15,12 +15,14 @@ typedef struct {
     float drive_position_deg, drive_velocity_deg_s, drive_target_deg, drive_reference_deg;
     float drive_reference_velocity_deg_s;
     float feedback_effort, temperature_c;
+    float velocity_target_deg_s;
     uint32_t received, feedback_age_ms, faults;
     uint8_t online, calibrated, enabled, motor_state;
 } ArmJointStatus;
 typedef struct {
     ArmJointStatus joint[ARM_JOINT_COUNT];
     uint32_t faults, tx_errors[2], rx_dropped;
+    uint32_t updated_ms, yaw_limit_version;
     uint8_t enabled_mask, configuration_valid, ready;
     uint8_t last_result;  // engineer::Result数值；提交成功只表示入队成功
 } ArmStatus;

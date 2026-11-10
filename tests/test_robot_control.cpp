@@ -17,6 +17,41 @@ int test_robot_control() {
     static_assert(unsigned(RobotMode::Standby)==ROBOT_STANDBY);
     static_assert(unsigned(RobotMode::Drive)==ROBOT_DRIVE);
     static_assert(unsigned(DriveGear::Fast)==ROBOT_GEAR_FAST);
+#if YAW_SUSPENDED_BENCH
+    // Dedicated yaw build keeps all chassis commands disabled; default false
+    // confirmations prevent tuning requests from enabling even with valid RX.
+    receiver={}; receiver.valid=1; receiver.consecutive_frames=3; receiver.received_ms=1234;
+    receiver.frame.switches[kOperatorConfig.left_switch_index]=DR16_SWITCH_UP;
+    receiver.frame.switches[kOperatorConfig.right_switch_index]=DR16_SWITCH_MID;
+    ArmControl arm(kArmConfig); RobotControlStatus s{};
+    Robot_Execute(arm,1234,false); CHECK(Robot_GetControlStatus(&s));
+    CHECK(!s.active && s.emergency_stop && s.stop_chassis && s.longitudinal_brake);
+    CHECK(s.longitudinal_speed_request==0 && s.turn_rate_request==0 && !s.fast_requested);
+    CHECK(s.protection_current_reasons & PROTECT_CONFIG);
+    CHECK(!(s.protection_current_reasons & PROTECT_INTERLOCK));
+    const uint8_t feedback[8]={3,232,0,0,0,0,25,0};
+    CHECK(arm.receive(1,arm.feedback_id(Yaw),feedback,8,1234));
+    g_robot_debug_command=ROBOT_DEBUG_CAPTURE_ZERO; Robot_Execute(arm,1234,false);
+    CHECK(g_robot_debug_command==ROBOT_DEBUG_IDLE && arm.status().joint[Yaw].calibrated);
+    for(unsigned j=1;j<kJointCount;++j) CHECK(!arm.status().joint[j].calibrated);
+    g_yaw_debug_request.mode=1; g_yaw_debug_request.speed_deg_s=2;
+    g_yaw_debug_request.duration_ms=100; g_yaw_debug_request.suspended_confirm=0x59415753;
+    g_yaw_debug_request.request_seq=1; Robot_Execute(arm,1234,false);
+    CHECK(g_yaw_debug_status.consumed_seq==1 && !g_yaw_debug_status.active);
+    CHECK(arm.status().enabled_mask==0);
+    const auto epoch=s.stop_epoch; Robot_StopControl(); Robot_Execute(arm,1234,false);
+    CHECK(Robot_GetControlStatus(&s) && s.stop_epoch!=epoch);
+    CHECK(s.protection_current_reasons & PROTECT_STOP_REQUEST);
+    CHECK(!g_yaw_debug_status.active && arm.status().enabled_mask==0);
+    Frame frames[kJointCount]{}; const auto count=arm.step(1234,frames);
+    unsigned yaw_frames=0;
+    for(unsigned i=0;i<count;++i) {
+        CHECK(frames[i].bus==1);
+        if(frames[i].id==0x2fe) { ++yaw_frames; for(uint8_t b:frames[i].data) CHECK(b==0); }
+    }
+    CHECK(yaw_frames==1);
+    return 0;
+#else
     RobotControlStatus s{};
     CHECK(!Robot_GetControlStatus(nullptr)); CHECK(!Robot_GetControlStatus(&s));
     CHECK(!Robot_SetInterlocks(nullptr));
@@ -89,4 +124,5 @@ int test_robot_control() {
     CHECK(g_robot_debug_command==ROBOT_DEBUG_IDLE); CHECK(Robot_GetControlStatus(&s));
     CHECK(s.protection_current_reasons & PROTECT_STOP_REQUEST);
     return 0;
+#endif
 }

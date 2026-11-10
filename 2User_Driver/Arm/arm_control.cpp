@@ -29,15 +29,22 @@ void pack_dm_torque(float t, float pm, float vm, float tm, uint8_t d[8]) {
 ArmControl::ArmControl(const Config &c) : config_(c) {
     status_.configuration_valid = valid_config();
     for(unsigned i=0;i<kJointCount;++i) runtime_[i].effort_limit=c.joint[i].max_effort;
+    const auto &y=c.joint[Yaw];
+    yaw_limits_={y.min_deg,y.max_deg,y.max_speed_deg_s,y.max_accel_deg_s2,0,
+                 y.max_deg-y.min_deg,0};
+    yaw_motion_min_=y.min_deg; yaw_motion_max_=y.max_deg; yaw_motion_speed_=y.max_speed_deg_s;
 }
 
 float ArmControl::drive_min(unsigned i) const {
+    if(i==Yaw) return yaw_motion_min_;
     return i == SmallPitch ? config_.pitch.second_drive_min_deg : config_.joint[i].min_deg;
 }
 float ArmControl::drive_max(unsigned i) const {
+    if(i==Yaw) return yaw_motion_max_;
     return i == SmallPitch ? config_.pitch.second_drive_max_deg : config_.joint[i].max_deg;
 }
 float ArmControl::drive_speed_limit(unsigned i) const {
+    if(i==Yaw) return yaw_motion_speed_;
     return i == SmallPitch ? config_.pitch.second_drive_max_speed_deg_s : config_.joint[i].max_speed_deg_s;
 }
 bool ArmControl::targets_in_range(const float q[kJointCount]) const {
@@ -255,9 +262,64 @@ void ArmControl::disable() {
         auto &s = status_.joint[i]; auto &r = runtime_[i];
         s.enabled = false; s.effort = 0; r.integral = 0;
         r.reference_velocity = 0; r.dm_was_enabled = false;
-        s.drive_reference_velocity_deg_s=0;
+        s.drive_reference_velocity_deg_s=0; s.velocity_target_deg_s=0;
     }
     pitch_speed_=0; pitch_path_active_=false;
+    yaw_test_active_=false;
+}
+Result ArmControl::set_yaw_limits(const YawRuntimeLimits &l,uint32_t now) {
+    if(!selected(Yaw)) return status_.last_result=Result::InvalidArgument;
+    if(status_.enabled_mask) return status_.last_result=Result::Busy;
+    const auto &c=config_.joint[Yaw];
+    if(!finite(l.min_deg) || !finite(l.max_deg) || l.min_deg>=l.max_deg ||
+       l.min_deg<c.min_deg || l.max_deg>c.max_deg ||
+       !finite(l.max_speed_deg_s) || l.max_speed_deg_s<=0 || l.max_speed_deg_s>c.max_speed_deg_s ||
+       !finite(l.braking_accel_deg_s2) || l.braking_accel_deg_s2<=0 || l.braking_accel_deg_s2>c.max_accel_deg_s2 ||
+       !finite(l.braking_margin_deg) || l.braking_margin_deg<0 || 2*l.braking_margin_deg>=l.max_deg-l.min_deg ||
+       !finite(l.max_target_lead_deg) || l.max_target_lead_deg<=0 || l.max_target_lead_deg>l.max_deg-l.min_deg ||
+       !l.version) return status_.last_result=Result::InvalidArgument;
+    refresh(now);
+    const auto &s=status_.joint[Yaw];
+    if(!s.online) return status_.last_result=Result::NotOnline;
+    if(!s.calibrated) return status_.last_result=Result::NotCalibrated;
+    if(std::fabs(s.velocity_deg_s)>c.stationary_speed_deg_s) return status_.last_result=Result::Moving;
+    const float lo=l.min_deg+l.braking_margin_deg,hi=l.max_deg-l.braking_margin_deg;
+    if(s.position_deg<lo || s.position_deg>hi || s.target_deg<lo || s.target_deg>hi ||
+       s.reference_deg<lo || s.reference_deg>hi) return status_.last_result=Result::OutOfRange;
+    yaw_limits_=l; yaw_motion_min_=l.min_deg; yaw_motion_max_=l.max_deg; yaw_motion_speed_=l.max_speed_deg_s;
+    runtime_[Yaw].integral=0;
+    return status_.last_result=Result::Ok;
+}
+Result ArmControl::set_yaw_envelope(float lo,float hi,float speed) {
+    if(!selected(Yaw) || !finite(lo) || !finite(hi) || !finite(speed) || lo>=hi ||
+       lo<yaw_limits_.min_deg || hi>yaw_limits_.max_deg || speed<=0 || speed>yaw_limits_.max_speed_deg_s)
+        return status_.last_result=Result::InvalidArgument;
+    const auto &s=status_.joint[Yaw];
+    if(s.position_deg<lo || s.position_deg>hi || s.target_deg<lo || s.target_deg>hi ||
+       s.reference_deg<lo || s.reference_deg>hi) return status_.last_result=Result::OutOfRange;
+    yaw_motion_min_=lo; yaw_motion_max_=hi; yaw_motion_speed_=speed;
+    return status_.last_result=Result::Ok;
+}
+Result ArmControl::set_yaw_test_speed(float speed,uint32_t now) {
+    if(!selected(Yaw) || status_.enabled_mask!=(1u<<Yaw) || !finite(speed) ||
+       std::fabs(speed)>5.0f || std::fabs(speed)>yaw_motion_speed_)
+        return status_.last_result=Result::InvalidArgument;
+    yaw_test_active_=true; yaw_test_speed_=speed; runtime_[Yaw].last_command_ms=now;
+    status_.joint[Yaw].target_deg=status_.joint[Yaw].position_deg;
+    status_.joint[Yaw].reference_deg=status_.joint[Yaw].position_deg;
+    runtime_[Yaw].reference_velocity=0;
+    return status_.last_result=Result::Ok;
+}
+void ArmControl::clear_yaw_test() { yaw_test_active_=false; }
+float ArmControl::limit_yaw_speed(float requested,float dt) const {
+    const auto &s=status_.joint[Yaw];
+    const float a=yaw_limits_.braking_accel_deg_s2;
+    const float margin=yaw_limits_.braking_margin_deg+std::fabs(s.velocity_deg_s)*dt;
+    const float left=std::fmax(0.0f,s.position_deg-yaw_motion_min_-margin);
+    const float right=std::fmax(0.0f,yaw_motion_max_-s.position_deg-margin);
+    const float lo=-std::fmin(yaw_motion_speed_,std::sqrt(2*a*left));
+    const float hi=std::fmin(yaw_motion_speed_,std::sqrt(2*a*right));
+    return clamp(requested,lo,hi);
 }
 void ArmControl::transport_fault() { trip(TransportError, selected(Yaw) ? Yaw : BigPitch); }
 Result ArmControl::set_effort_limit(unsigned i,float limit) {
@@ -366,7 +428,10 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
     // 单个pitch更新保留另一关节目标，完整验证a2后才整包提交，禁止单独clamp a2。
     if (!targets_in_range(next)) return status_.last_result=Result::OutOfRange;
     for (unsigned i = 0; i < kJointCount; ++i) if (mask & (1u << i)) {
-        status_.joint[i].target_deg = q[i]; runtime_[i].last_command_ms = now;
+        status_.joint[i].target_deg = i==Yaw ? clamp(q[i],
+            std::fmax(yaw_motion_min_,status_.joint[i].position_deg-yaw_limits_.max_target_lead_deg),
+            std::fmin(yaw_motion_max_,status_.joint[i].position_deg+yaw_limits_.max_target_lead_deg)) : q[i];
+        runtime_[i].last_command_ms = now;
     }
     if (mask & kPitchPair) {
         runtime_[BigPitch].last_command_ms=now;
@@ -404,11 +469,17 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             const float error = s.target_deg - s.reference_deg;
             // 到目标前按制动距离减速；每周期约束参考速度和加速度。
             const float braking = std::sqrt(2 * c.max_accel_deg_s2 * std::fabs(error));
-            float desired = clamp(error / dt, -c.max_speed_deg_s, c.max_speed_deg_s);
+            const float max_speed=drive_speed_limit(i);
+            float desired = clamp(error / dt, -max_speed, max_speed);
             desired = clamp(desired, -braking, braking);
+            if(i==Yaw) desired=limit_yaw_speed(desired,dt);
             r.reference_velocity += clamp(desired - r.reference_velocity,
                 -c.max_accel_deg_s2 * dt, c.max_accel_deg_s2 * dt);
-            s.reference_deg = clamp(s.reference_deg + r.reference_velocity * dt, c.min_deg, c.max_deg);
+            if(i==Yaw) r.reference_velocity=limit_yaw_speed(r.reference_velocity,dt);
+            s.reference_deg = clamp(s.reference_deg + r.reference_velocity * dt, drive_min(i), drive_max(i));
+            if(i==Yaw) s.reference_deg=clamp(s.reference_deg,
+                std::fmax(drive_min(i),s.position_deg-yaw_limits_.max_target_lead_deg),
+                std::fmin(drive_max(i),s.position_deg+yaw_limits_.max_target_lead_deg));
         }
     }
     update_drive_references();
@@ -427,18 +498,21 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                          ((i!=BigPitch && i!=SmallPitch) || pitch_running);
         if (s.enabled && ready) {
             const float speed_limit=drive_speed_limit(i);
-            const float speed_target=clamp(r.reference_velocity+c.position_kp*(s.drive_reference_deg-s.drive_position_deg),
+            float speed_target=clamp(r.reference_velocity+c.position_kp*(s.drive_reference_deg-s.drive_position_deg),
                                            -speed_limit,speed_limit);
+            if(i==Yaw) speed_target=limit_yaw_speed(yaw_test_active_ ? yaw_test_speed_ : speed_target,dt);
+            s.velocity_target_deg_s=speed_target;
             // 这里必须使用a2的驱动速度；不能把q肘速度送入第二DM的独立PI。
             const float e = speed_target - s.drive_velocity_deg_s;
             const float limit=r.effort_limit;
             const float next_i = clamp(r.integral + c.velocity_ki * e * dt, -limit, limit);
             const float u = c.velocity_kp * e + next_i;
-            if (std::fabs(u) <= limit || u * e < 0) r.integral = next_i;
-            s.effort = clamp(c.velocity_kp * e + r.integral, -limit, limit);
-            if ((s.drive_position_deg <= drive_min(i) && s.effort < 0) ||
-                (s.drive_position_deg >= drive_max(i) && s.effort > 0)) { s.effort = 0; r.integral = 0; }
-        } else { s.effort = 0; r.integral = 0; }
+            float final=clamp(u,-limit,limit);
+            if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
+                (s.drive_position_deg >= drive_max(i) && final > 0)) final=0;
+            if((u-final)*e<=0) r.integral=next_i;
+            s.effort=final;
+        } else { s.effort = 0; r.integral = 0; s.velocity_target_deg_s=0; }
 
         if (c.motor == Motor::Dm4310Mit) {
             auto &f = out[count++]; f = {}; f.bus = c.bus; f.id = command_id(i);

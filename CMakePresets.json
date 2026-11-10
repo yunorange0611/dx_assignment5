@@ -9,7 +9,8 @@
             "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
             "cacheVariables": {
                 "DM_ID_CONFIG_MODE": "OFF",
-                "CHASSIS_SUSPENDED_BENCH": "OFF"
+                "CHASSIS_SUSPENDED_BENCH": "OFF",
+                "YAW_SUSPENDED_BENCH": "OFF"
             }
         },
         {
@@ -62,6 +63,13 @@
             "cacheVariables": {
                 "CHASSIS_SUSPENDED_BENCH": "ON"
             }
+        },
+        {
+            "name": "YawBenchDebug",
+            "inherits": "VehicleDebug",
+            "cacheVariables": {
+                "YAW_SUSPENDED_BENCH": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -92,6 +100,10 @@
         {
             "name": "ChassisBenchDebug",
             "configurePreset": "ChassisBenchDebug"
+        },
+        {
+            "name": "YawBenchDebug",
+            "configurePreset": "YawBenchDebug"
         }
     ]
 }

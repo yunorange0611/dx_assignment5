@@ -166,7 +166,7 @@ void MX_FREERTOS_Init(void) {
   if (!osThreadNew(dm_id_config_task, NULL, &arm_attributes)) Error_Handler();
 #else
   if (!osThreadNew(arm_control_task, NULL, &arm_attributes)) Error_Handler();
-#if !ARM_FOUR_AXIS_BENCH || CHASSIS_SUSPENDED_BENCH
+#if (!ARM_FOUR_AXIS_BENCH && !YAW_SUSPENDED_BENCH) || CHASSIS_SUSPENDED_BENCH
   static const osThreadAttr_t chassis_attributes = { .name="Chassis", .stack_size=3072, .priority=osPriorityAboveNormal };
   if (!osThreadNew(chassis_task, NULL, &chassis_attributes)) Error_Handler();
 #endif

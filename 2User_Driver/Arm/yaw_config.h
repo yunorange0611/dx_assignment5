@@ -12,4 +12,11 @@ inline constexpr JointConfig kYawConfig = {
     300.0f, 2.0f, 20.0f, 5.0f,   // 电流mA、位置P、速度PI
     0, 0, 0, 70                  // 无DM协议量程；温度门槛°C
 };
+// These values are placeholders until the wire routing and stopping distance are
+// measured. Confirmation is separate from joint PID/protocol configuration.
+inline constexpr bool kYawSafetyConfirmed = false;
+inline constexpr float kYawAbsoluteHalfRangeDeg = 90.0f;
+inline constexpr float kYawBrakingMarginDeg = 2.0f;
+inline constexpr float kYawBrakingAccelDegS2 = 15.0f;
+inline constexpr float kYawMaxTargetLeadDeg = 5.0f;
 }

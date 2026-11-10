@@ -41,6 +41,7 @@ int submit(Kind kind, uint8_t mask, const float *q = nullptr) {
 void publish(const ArmControl &arm, uint32_t now) {
     ArmStatus next{}; const auto &s = arm.status();
     next.faults = s.faults; next.enabled_mask = s.enabled_mask;
+    next.updated_ms=now; next.yaw_limit_version=arm.yaw_limits().version;
     next.last_result = uint8_t(s.last_result); next.ready = 1;
     next.configuration_valid = s.configuration_valid;
     next.rx_dropped = dropped_rx;
@@ -53,6 +54,7 @@ void publish(const ArmControl &arm, uint32_t now) {
         d.drive_target_deg=j.drive_target_deg; d.drive_reference_deg=j.drive_reference_deg;
         d.drive_reference_velocity_deg_s=j.drive_reference_velocity_deg_s;
         d.feedback_effort = j.motor_effort_feedback; d.temperature_c = j.temperature_c;
+        d.velocity_target_deg_s=j.velocity_target_deg_s;
         d.received = j.received; d.feedback_age_ms = now - j.last_feedback_ms;
         d.faults = j.faults; d.online = j.online; d.calibrated = j.calibrated;
         d.enabled = j.enabled; d.motor_state = j.motor_state;

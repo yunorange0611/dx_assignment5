@@ -57,6 +57,11 @@ struct Config {
 extern const Config kArmConfig;
 
 struct Frame { uint8_t bus; uint16_t id; uint8_t data[8]; };
+struct YawRuntimeLimits {
+    float min_deg=0, max_deg=0, max_speed_deg_s=0;
+    float braking_accel_deg_s2=0, braking_margin_deg=0, max_target_lead_deg=0;
+    uint32_t version=0;
+};
 struct JointStatus {
     // effort: 电流模式6020/C610为mA，DM为Nm；6020电压模式为原码。
     float position_deg, velocity_deg_s, target_deg, reference_deg, effort;
@@ -64,6 +69,7 @@ struct JointStatus {
     float drive_reference_velocity_deg_s;
     float motor_effort_feedback;   // DJI反馈原码 / DM Nm；不是夹持力
     float temperature_c;
+    float velocity_target_deg_s;
     uint32_t received, last_feedback_ms, faults;
     bool online, calibrated, enabled;
     uint8_t motor_state;           // DM: 0=失能,1=使能,8~F=故障
@@ -89,6 +95,11 @@ public:
     Result set_targets(uint8_t mask, const float positions[kJointCount], uint32_t now_ms);
     void transport_fault();
     Result set_effort_limit(unsigned joint,float limit);
+    Result set_yaw_limits(const YawRuntimeLimits &limits,uint32_t now_ms);
+    Result set_yaw_envelope(float min_deg,float max_deg,float speed_deg_s);
+    Result set_yaw_test_speed(float speed_deg_s,uint32_t now_ms);
+    void clear_yaw_test();
+    const YawRuntimeLimits &yaw_limits() const { return yaw_limits_; }
     // 输出最多5帧：DJI按bus+组ID合帧，DM每台一帧。调用者提供>=5个槽位。
     unsigned step(uint32_t now_ms, Frame out[kJointCount]);
     const Status &status() const { return status_; }
@@ -108,6 +119,10 @@ private:
     float pitch_direction_[2]{}, pitch_end_[2]{};
     float pitch_speed_ = 0, pitch_speed_limit_ = 0, pitch_accel_limit_ = 0;
     bool pitch_path_active_ = false;
+    YawRuntimeLimits yaw_limits_{};
+    float yaw_motion_min_=0, yaw_motion_max_=0, yaw_motion_speed_=0, yaw_test_speed_=0;
+    bool yaw_test_active_=false;
+    float limit_yaw_speed(float requested,float dt) const;
     void refresh(uint32_t now_ms);
     void update_joint_feedback();
     void update_drive_references();

@@ -52,6 +52,7 @@ struct OperatorOutput {
 class ArmOperator {
 public:
     ArmOperator(const Config &arm, const OperatorConfig &config);
+    void set_yaw_limits(const YawRuntimeLimits &limits);
     OperatorOutput step(const RemoteInput &, const Interlocks &, const Status &,
                         uint32_t now_ms, bool arm_request, bool stop_request);
     uint32_t enable_result(bool ok) {
@@ -64,6 +65,7 @@ public:
     }
 private:
     Config arm_;
+    YawRuntimeLimits yaw_limits_{};
     OperatorConfig config_;
     bool valid_ = false, active_ = false, waiting_ = true, neutral_tracking_ = false;
     bool have_step_ = false, safe_latched_ = true, permission_blocked_ = false;

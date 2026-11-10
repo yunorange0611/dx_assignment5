@@ -11,6 +11,8 @@ RobotMode mode_for(uint8_t value) {
 bool finite(float x) { return std::isfinite(x); }
 }
 ArmOperator::ArmOperator(const Config &a, const OperatorConfig &c) : arm_(a), config_(c) {
+    const auto &y=a.joint[Yaw];
+    yaw_limits_={y.min_deg,y.max_deg,y.max_speed_deg_s,y.max_accel_deg_s2,0,y.max_deg-y.min_deg,0};
     valid_ = c.mapping_confirmed && c.left_switch_index < 2 && c.right_switch_index < 2 &&
         c.left_switch_index != c.right_switch_index && finite(c.deadband) && c.deadband > 0 && c.deadband < 0.5f &&
         c.remote_timeout_ms && (a.joint_mask==kFourAxisJoints || c.interlock_timeout_ms) && c.neutral_ms &&
@@ -29,6 +31,12 @@ ArmOperator::ArmOperator(const Config &a, const OperatorConfig &c) : arm_(a), co
     const auto &g=a.joint[Gripper];
     if (c.gripper_open_deg < g.min_deg || c.gripper_open_deg > g.max_deg ||
         c.gripper_closed_deg < g.min_deg || c.gripper_closed_deg > g.max_deg) valid_=false;
+}
+void ArmOperator::set_yaw_limits(const YawRuntimeLimits &l) {
+    yaw_limits_=l;
+    arm_.joint[Yaw].min_deg=l.min_deg; arm_.joint[Yaw].max_deg=l.max_deg;
+    arm_.joint[Yaw].max_speed_deg_s=l.max_speed_deg_s;
+    targets_[Yaw]=clamp(targets_[Yaw],l.min_deg,l.max_deg);
 }
 void ArmOperator::freeze(const Status &s) {
     for (unsigned i=0;i<kJointCount;++i)
@@ -167,6 +175,11 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         const auto &c=arm_.joint[i];
         targets_[i]=clamp(targets_[i]+input*c.max_speed_deg_s*dt,c.min_deg,c.max_deg);
     };
+    auto constrain_yaw_target=[&]() {
+        targets_[Yaw]=clamp(targets_[Yaw],
+            std::fmax(yaw.min_deg,s.joint[Yaw].position_deg-yaw_limits_.max_target_lead_deg),
+            std::fmin(yaw.max_deg,s.joint[Yaw].position_deg+yaw_limits_.max_target_lead_deg));
+    };
     if(mode_==RobotMode::Drive) {
         o.reset_chassis_motion=false;
         o.fast_requested=right==DR16_SWITCH_DOWN;
@@ -183,6 +196,7 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
             if(yaw_was_allowed_) targets_[Yaw]=clamp(s.joint[Yaw].position_deg,yaw.min_deg,yaw.max_deg);
             yaw_was_allowed_=false; o.drive_yaw_limited=true;
         }
+        if(!bench) constrain_yaw_target();
         // yaw_follow始终false；其余机械臂轴不接受行驶摇杆新目标。
     } else if(mode_==RobotMode::Grab) {
         const auto &b=arm_.joint[BigPitch]; const auto &elbow_config=arm_.joint[SmallPitch];
@@ -195,7 +209,7 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         scale=clamp(scale,0,1);
         targets_[BigPitch]+=db*scale; targets_[SmallPitch]+=ds*scale;
         integrate(Roll,lx);
-        if(!bench) integrate(Yaw,rx);
+        if(!bench) { integrate(Yaw,rx); constrain_yaw_target(); }
         if(right!=last_right_) {
             targets_[Gripper]=clamp(s.joint[Gripper].position_deg,arm_.joint[Gripper].min_deg,arm_.joint[Gripper].max_deg);
             close_tracking_=false; close_limited_=false;
