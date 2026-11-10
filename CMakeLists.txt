@@ -92,8 +92,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         ${BSP_SOURCES}
         ${CONTROL_SOURCES}
         ${TASK_SOURCES}
-        Core/Src/usart.c
-        Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c
 )
 
 # Add include paths
