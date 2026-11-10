@@ -4,6 +4,8 @@
 
 单块 RoboMaster C 板（STM32F407IGH6）运行 FreeRTOS，使用 DR16 遥控协议 V2.1。两位电控同学共同维护同一份固件：机械臂负责人调试大/小 pitch、roll、夹爪；底盘/yaw 负责人调试两台 M3508 和大 yaw GM6020。
 
+分批调参PDF、三个中文分组FreeMASTER工程及固件分组切换工具见 `fm调参/`；默认对应 `ChassisBenchDebug`。支持失能静止时申请在线PI/限流，以及同一底盘悬空固件内先抬臂、后待机保持测轮；实际负载、方向和停车仍须按步骤实测。
+
 开始修改前，agent 先读 [AGENTS.md](AGENTS.md)。本文是项目入口；三层职责、实际调用顺序及旧驱动退出范围见 [README_ARCHITECTURE.md](README_ARCHITECTURE.md)。详细控制依据见 [README_ARM.md](README_ARM.md)，四轴台架操作、调试变量、整车遥控和底盘接口统一见 [README_REMOTE.md](README_REMOTE.md)。教学模板的原始说明完整保存在 [docs/TEMPLATE_README.md](docs/TEMPLATE_README.md)。
 
 缺少DM的3Pin调试线时，可用独立 `DmIdConfig` 固件，通过C板CAN1逐台改两台4310的ID；上电不自动写参数，读取、RAM改ID、保存分别手动触发。接线、FreeMASTER最少变量、ELF位置和掉电复验见 [README_DM_ID.md](README_DM_ID.md)。配置完成须烧回正常四轴/整车固件。

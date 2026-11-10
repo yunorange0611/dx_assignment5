@@ -17,9 +17,11 @@
 
 当前按用户选择固定四轴调试：日常构建 `Debug` 并烧录 `build/Debug/engineer_arm.bin`，以后每次上电均为四轴，无需按 C 板按钮或再次烧录来选择模式；重启仍需校零和开控。未来整车联调时才切换至 `VehicleDebug` 固件。
 
-台架不注册 yaw 反馈、不检查 yaw 在线/校零、不发送 GM6020 ID1 的 `0x1FE`，只管理四轴 CAN1 报文。CAN2 没有实际控制；台架始终发布 `stop_chassis=1`、`emergency_stop=1` 和零底盘运动请求。因此判断机械臂是否已开控应看 `active` 和 `g_arm_status.enabled_mask`，不能把此处用于底盘的 emergency 标志理解为四轴必定失能。
+台架不注册 yaw 反馈、不检查 yaw 在线/校零、不发送 GM6020 ID1 的 `0x1FE`，只管理四轴 CAN1 报文。日常`Debug/Release/BenchDebug`不启动底盘；台架协调层始终发布 `stop_chassis=1`、`emergency_stop=1` 和零底盘运动请求。因此判断机械臂是否已开控应看 `active` 和 `g_arm_status.enabled_mask`，不能把此处用于底盘的 emergency 标志理解为四轴必定失能。
 
 台架中左竖调肩、右竖调肘相对角、左横调 roll；右横不控制电机，但开控时同样必须回中。右拨杆上张开、中保持、下闭合。左下待机只保持已经开控的关节，左上才是台架关控；这些改动不改变整车 V2.1。
+
+`ChassisBenchDebug`沿用该四轴操作：先左中抬臂，再左下待机并等待实际静止，右拨杆中、五通道回中后可申请CAN2短轮脉冲。保持路径核查四轴真实使能、反馈/校零/故障、Arm与Robot源时效；左中移动、源陈旧或失去保持条件立即取消脉冲。原左上四轴失能路径仍可测轮；完整门槛见README_CHASSIS，分批文件见`fm调参/`。
 
 按以下顺序调试，具体传动和待确认参数见 [README_ARM.md](README_ARM.md)：
 
@@ -45,7 +47,7 @@
 | `g_arm_status.joint[i].position_deg/target_deg` | 只展开正在调试的轴，看关节反馈和目标 |
 | `g_arm_status.joint[i].drive_position_deg/drive_target_deg/effort` | pitch 驱动角换算、跟踪与输出；DM 为 Nm，M2006 为 mA |
 
-只有 `volatile uint32_t g_robot_debug_command` 是可写调试入口，每轮读取后自动清零；一次写入一个值，不同时反复写多个命令，也不要直接改状态快照或内存中的目标。
+通用命令入口`volatile uint32_t g_robot_debug_command`每轮读取后自动清零；一次写入一个值，不同时反复写多个命令，也不要直接改状态快照或内存中的目标。另有`g_arm_tune_request`和`g_chassis_tune_request`在线PID请求：字段写完后最后递增`request_seq`，只在对应出力失能、反馈健康静止等条件就绪时生效；一次消费、成功不使能，输出不能超过编译启动cap，断电不保存。实际生效值读各自只读`g_*_tune_status`；关节参数与条件见README_ARM/YAW，轮组见README_CHASSIS。
 
 | 写入值 | 执行含义 |
 |---|---|
@@ -57,7 +59,7 @@
 
 命令 2/3 在轴仍使能时由核心拒绝并返回 `Busy=3`，该周期仍关控；应先关控确认失能，再重新发送。它们不隐式开控。校零/清故障结果看 `g_arm_status.last_result`；开控看实际 `enabled_mask/active` 与保护原因，命令清零本身不表示成功。完整结果码在 [README_ARM.md](README_ARM.md)。关控优先于同周期的其他请求。
 
-本工程没有 FMSTR 通信栈，也没有本机 FreeMASTER 验证。NXP [FreeMASTER 官方说明](https://docs.mcuxpresso.nxp.com/mcuxsdk/latest/middleware/freemaster/doc/user_guide/user_guide.html) 限定该工具及通信驱动用于 NXP MCU/MPU，本机 STM32F407 不作为其移植目标。建议用现有 STM32 调试器的 Live Expressions/实时变量窗口观察上述符号；这不需要增加串口调试协议。是否支持运行中读写取决于实际调试器；不要靠打断点暂停运动中的控制任务来采样。
+`fm调参/`提供三个FreeMASTER工程及分批PDF，沿用既有工程的连接配置，不增加FMSTR串口通信栈。打开后加载与已烧固件对应的ELF，再确认`uwTick`和源时间持续更新；本轮文件生成与逻辑验证不代表已完成本机上板连接验证。也可通过原STM32调试器实时变量窗口使用相同入口，不要用断点暂停运动中的控制任务来采样。
 
 ## 整车 V2.1 操作映射
 

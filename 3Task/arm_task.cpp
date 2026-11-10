@@ -9,6 +9,8 @@
 
 extern "C" {
 ArmStatus g_arm_status{};
+volatile ArmTuneRequest g_arm_tune_request{};
+ArmTuneStatus g_arm_tune_status{};
 }
 
 namespace {
@@ -29,6 +31,36 @@ struct Received {
 osMessageQueueId_t commands = nullptr, feedback = nullptr;
 volatile bool stop_requested = false;
 volatile uint32_t dropped_rx = 0;
+void apply_tune_request(ArmControl &arm, uint32_t now) {
+    ArmTuneRequest request{};
+    taskENTER_CRITICAL();
+    request.joint = g_arm_tune_request.joint;
+    request.position_kp = g_arm_tune_request.position_kp;
+    request.velocity_kp = g_arm_tune_request.velocity_kp;
+    request.velocity_ki = g_arm_tune_request.velocity_ki;
+    request.effort_limit = g_arm_tune_request.effort_limit;
+    request.request_seq = g_arm_tune_request.request_seq;
+    taskEXIT_CRITICAL();
+    if (request.request_seq == g_arm_tune_status.consumed_seq)
+        return;
+    const JointTuning tuning{request.position_kp, request.velocity_kp, request.velocity_ki,
+                             request.effort_limit};
+    const auto result = arm.set_tuning(request.joint, tuning, now);
+    auto next = g_arm_tune_status;
+    next.consumed_seq = request.request_seq;
+    next.result = uint32_t(result);
+    if (result == Result::Ok) {
+        next.active_seq = request.request_seq;
+        next.active_joint = request.joint;
+        next.position_kp = tuning.position_kp;
+        next.velocity_kp = tuning.velocity_kp;
+        next.velocity_ki = tuning.velocity_ki;
+        next.effort_limit = tuning.effort_limit;
+    }
+    taskENTER_CRITICAL();
+    g_arm_tune_status = next;
+    taskEXIT_CRITICAL();
+}
 // RX对象在任务栈上常驻；回调只复制到队列，不在ISR里做闭环/浮点解算。
 void receive_callback(can_device_receive *dev, uint8_t *data) {
     if (!feedback)
@@ -140,6 +172,15 @@ extern "C" void arm_control_task(void *argument) {
     if (!commands || !feedback || osKernelGetTickFreq() != 1000)
         Error_Handler();
     ArmControl arm(kArmConfig);
+    const unsigned initial_joint = (kArmConfig.joint_mask & (1u << Yaw)) ? Yaw : BigPitch;
+    JointTuning initial_tuning{};
+    if (arm.get_tuning(initial_joint, initial_tuning)) {
+        g_arm_tune_status.active_joint = initial_joint;
+        g_arm_tune_status.position_kp = initial_tuning.position_kp;
+        g_arm_tune_status.velocity_kp = initial_tuning.velocity_kp;
+        g_arm_tune_status.velocity_ki = initial_tuning.velocity_ki;
+        g_arm_tune_status.effort_limit = initial_tuning.effort_limit;
+    }
     uint8_t owned_buses = 0;
     const uint32_t period = kArmConfig.control_period_ms;
     if (!arm.status().configuration_valid) {
@@ -215,6 +256,7 @@ extern "C" void arm_control_task(void *argument) {
             }
         }
         now = HAL_GetTick();
+        apply_tune_request(arm, now);
         Robot_Execute(arm, now, user_stopped);
         now = HAL_GetTick();
         Frame frames[kJointCount]{};

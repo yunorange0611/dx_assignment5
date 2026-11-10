@@ -380,6 +380,119 @@ void run() {
         CHECK(a.set_effort_limit(Gripper, -1) == Result::InvalidArgument);
         CHECK(a.set_effort_limit(5, 100) == Result::InvalidArgument);
     }
+    { // 在线PID只在失能/反馈新鲜/已校零/静止时原子生效，不改变目标和零位。
+        ArmControl a(bench());
+        const JointTuning tuning{3, 40, 2, 500};
+        JointTuning current{};
+        CHECK(a.get_tuning(Roll, current));
+        CHECK(!a.get_tuning(kJointCount, current));
+        CHECK(a.set_tuning(Roll, tuning, 0) == Result::NotOnline);
+        all(a, 0);
+        CHECK(a.set_tuning(Roll, tuning, 0) == Result::NotCalibrated);
+        CHECK(a.capture_zero(kAllJoints, 0) == Result::Ok);
+        float q[5] = {0, 1, 2, 3, 4};
+        CHECK(a.set_targets(kAllJoints, q, 0) == Result::Ok);
+        dji(a, Roll, 1004, 1);
+        const auto before = a.status();
+        const auto limits = a.yaw_limits();
+        CHECK(a.set_tuning(Roll, tuning, 1) == Result::Ok);
+        CHECK(a.get_tuning(Roll, current));
+        CHECK(current.position_kp == 3 && current.velocity_kp == 40 &&
+              current.velocity_ki == 2 && current.effort_limit == 500);
+        CHECK(a.status().enabled_mask == 0 && a.status().joint[Roll].calibrated);
+        CHECK(a.status().joint[Roll].position_deg == before.joint[Roll].position_deg &&
+              a.status().joint[Roll].target_deg == before.joint[Roll].target_deg &&
+              a.status().joint[Roll].reference_deg == before.joint[Roll].reference_deg);
+        CHECK(a.yaw_limits().min_deg == limits.min_deg &&
+              a.yaw_limits().max_deg == limits.max_deg &&
+              a.yaw_limits().version == limits.version);
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        const JointTuning invalid[] = {
+            {nan, 40, 2, 500}, {3, nan, 2, 500}, {3, 40, nan, 500}, {3, 40, 2, nan},
+            {0, 40, 2, 500}, {1001, 40, 2, 500}, {3, -1, 2, 500}, {3, 40, -1, 500},
+            {3, 1000001, 2, 500}, {3, 40, 1000001, 500}, {3, 40, 2, -1}, {3, 40, 2, 801}};
+        for (const auto &bad : invalid) {
+            CHECK(a.set_tuning(Roll, bad, 1) == Result::InvalidArgument);
+            CHECK(a.get_tuning(Roll, current));
+            CHECK(current.position_kp == 3 && current.velocity_kp == 40 &&
+                  current.velocity_ki == 2 && current.effort_limit == 500);
+        }
+        CHECK(a.set_tuning(kJointCount, tuning, 1) == Result::InvalidArgument);
+        dji(a, Roll, 1004, 2, 100);
+        CHECK(a.set_tuning(Roll, tuning, 2) == Result::Moving);
+        dji(a, Roll, 1004, 3);
+        CHECK(a.set_tuning(Roll, tuning, 60) == Result::NotOnline);
+
+        ArmControl busy(bench());
+        all(busy, 0);
+        CHECK(busy.capture_zero(kAllJoints, 0) == Result::Ok);
+        CHECK(busy.enable(1u << Yaw, 0) == Result::Ok);
+        CHECK(busy.set_tuning(Roll, tuning, 0) == Result::Busy); // 任一轴使能都拒绝。
+        busy.disable();
+        busy.transport_fault();
+        CHECK(busy.set_tuning(Roll, tuning, 0) == Result::FaultLatched);
+        auto four = bench();
+        four.joint_mask = kFourAxisJoints;
+        ArmControl no_yaw(four);
+        CHECK(!no_yaw.get_tuning(Yaw, current));
+        CHECK(no_yaw.set_tuning(Yaw, {2, 20, 5, 100}, 0) == Result::InvalidArgument);
+    }
+    { // 调一台pitch也必须同时核对另一台驱动的反馈和静止条件。
+        ArmControl a(bench());
+        const JointTuning tuning{3, .04f, .002f, .2f};
+        dm(a, BigPitch, 0);
+        CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::NotOnline);
+        dm(a, SmallPitch, 0);
+        CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::NotCalibrated);
+        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+        uint8_t moving[8] = {2, 0x80, 0, 0xff, 0xf8, 0, 25, 25};
+        CHECK(a.receive(1, a.feedback_id(SmallPitch), moving, 8, 0));
+        CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::Moving);
+        dm(a, SmallPitch, 0);
+        CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::Ok);
+        JointTuning small{};
+        CHECK(a.get_tuning(SmallPitch, small));
+        CHECK(small.position_kp == 2 && small.velocity_kp == .03f &&
+              small.velocity_ki == .005f && small.effort_limit == .3f);
+        CHECK(a.status().enabled_mask == 0 && a.status().joint[BigPitch].calibrated &&
+              a.status().joint[SmallPitch].calibrated);
+        dm(a, BigPitch, 10); // 双反馈时差超限，不能用单轴新反馈掩盖。
+        CHECK(a.set_tuning(BigPitch, tuning, 10) == Result::NotOnline);
+    }
+    { // 在线增益真正进入原闭环；运行限流不会被夹爪owner的保持请求覆盖。
+        ArmControl baseline(bench()), tuned(bench());
+        all(baseline, 0);
+        all(tuned, 0);
+        CHECK(baseline.capture_zero(1u << Roll, 0) == Result::Ok);
+        CHECK(tuned.capture_zero(1u << Roll, 0) == Result::Ok);
+        CHECK(tuned.set_tuning(Roll, {2, 40, 5, 500}, 0) == Result::Ok);
+        CHECK(baseline.enable(1u << Roll, 0) == Result::Ok);
+        CHECK(tuned.enable(1u << Roll, 0) == Result::Ok);
+        float q[5] = {0, 0, 0, 1, 45};
+        CHECK(baseline.set_targets(1u << Roll, q, 0) == Result::Ok);
+        CHECK(tuned.set_targets(1u << Roll, q, 0) == Result::Ok);
+        baseline.step(0, f);
+        tuned.step(0, f);
+        CHECK(tuned.status().joint[Roll].effort > baseline.status().joint[Roll].effort * 1.9f);
+
+        auto c = bench();
+        c.joint[Gripper].velocity_kp = 100000;
+        ArmControl gripper(c);
+        all(gripper, 0);
+        CHECK(gripper.capture_zero(1u << Gripper, 0) == Result::Ok);
+        CHECK(gripper.set_tuning(Gripper, {2, 100000, 5, 40}, 0) == Result::Ok);
+        CHECK(gripper.set_effort_limit(Gripper, 150) == Result::Ok);
+        CHECK(gripper.enable(1u << Gripper, 0) == Result::Ok);
+        CHECK(gripper.set_targets(1u << Gripper, q, 0) == Result::Ok);
+        gripper.step(0, f);
+        CHECK(gripper.status().joint[Gripper].effort == 40);
+        gripper.disable();
+        CHECK(gripper.set_tuning(Gripper, {2, 100000, 5, 500}, 0) == Result::Ok);
+        CHECK(gripper.set_tuning(Gripper, {2, 100000, 5, 501}, 0) == Result::InvalidArgument);
+        ArmControl restarted(c);
+        JointTuning original{};
+        CHECK(restarted.get_tuning(Gripper, original) && original.effort_limit == 500);
+    }
     { // HAL tick绕回不能触发误失联；原码8192不是有效编码器值。
         ArmControl a(bench());
         const uint32_t t = 0xfffffffeu;

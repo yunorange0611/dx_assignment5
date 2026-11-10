@@ -20,6 +20,12 @@ extern "C" {
 ChassisStatus g_chassis_status{};
 volatile ChassisDebugRequest g_chassis_debug_request{};
 ChassisDebugStatus g_chassis_debug_status{};
+volatile ChassisTuneRequest g_chassis_tune_request{engineer::kChassisConfig.velocity_kp,
+                                                engineer::kChassisConfig.velocity_ki,
+                                                engineer::kChassisConfig.max_current_ma, 0};
+ChassisTuneStatus g_chassis_tune_status{0, 0, 0, engineer::kChassisConfig.velocity_kp,
+                                      engineer::kChassisConfig.velocity_ki,
+                                      engineer::kChassisConfig.max_current_ma};
 }
 
 namespace {
@@ -63,6 +69,8 @@ struct ChassisRuntime {
     WheelFeedback wheels[2]{};
     ChassisCommand command{};
     ChassisDebugRequest debug_request{};
+    ChassisTuneStatus tune_status{0, 0, 0, kChassisConfig.velocity_kp, kChassisConfig.velocity_ki,
+                                  kChassisConfig.max_current_ma};
     float final_ma[2]{}; // 轮组正向坐标，mA；组帧前已经过所有限制。
     uint32_t now_ms = 0;
     uint32_t tx_errors = 0;
@@ -138,6 +146,43 @@ ChassisDebugRequest read_debug_request() {
     return request;
 }
 
+void apply_tune_request(ChassisRuntime &runtime) {
+    ChassisTuneRequest request{};
+    taskENTER_CRITICAL();
+    request.velocity_kp = g_chassis_tune_request.velocity_kp;
+    request.velocity_ki = g_chassis_tune_request.velocity_ki;
+    request.max_current_ma = g_chassis_tune_request.max_current_ma;
+    request.request_seq = g_chassis_tune_request.request_seq;
+    taskEXIT_CRITICAL();
+    auto &status = runtime.tune_status;
+    if (request.request_seq == status.consumed_seq)
+        return;
+    status.consumed_seq = request.request_seq;
+    const auto health =
+        chassis_bench_feedback_health(runtime.now_ms, runtime.wheels, runtime.control.config());
+    ChassisTuneResult result = ChassisTuneResult::NotReady;
+    if (runtime.command.enabled || runtime.control.status().enabled || runtime.bench_active) {
+        result = ChassisTuneResult::Busy;
+    } else if (runtime.command.valid &&
+               uint32_t(runtime.now_ms - runtime.command.updated_ms) <=
+                   kChassisConfig.command_timeout_ms &&
+               health.fresh && health.stationary && health.temperature_ok &&
+               !runtime.transport_error) {
+        result = runtime.control.set_velocity_tuning(request.velocity_kp, request.velocity_ki,
+                                                      request.max_current_ma);
+    }
+    status.result = uint32_t(result);
+    if (result == ChassisTuneResult::Applied)
+        status.active_seq = request.request_seq;
+    const auto &config = runtime.control.config();
+    status.velocity_kp = config.velocity_kp;
+    status.velocity_ki = config.velocity_ki;
+    status.max_current_ma = config.max_current_ma;
+    taskENTER_CRITICAL();
+    g_chassis_tune_status = status;
+    taskEXIT_CRITICAL();
+}
+
 #if CHASSIS_SUSPENDED_BENCH
 // 任务只读取快照并转换为纯输入，遥控/轮反馈判定留在 chassis_bench。
 void read_bench_command(ChassisRuntime &runtime) {
@@ -145,6 +190,8 @@ void read_bench_command(ChassisRuntime &runtime) {
     DR16_GetStatus(&remote);
     ArmStatus arm{};
     Arm_GetStatus(&arm);
+    RobotControlStatus robot{};
+    Robot_GetControlStatus(&robot);
 
     ChassisBenchRemoteInput input{};
     input.mapping_confirmed = kOperatorConfig.mapping_confirmed;
@@ -157,7 +204,30 @@ void read_bench_command(ChassisRuntime &runtime) {
     input.switches_in_test_position =
         remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP &&
         remote.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
+    input.switches_in_hold_position =
+        remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_DOWN &&
+        remote.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
     input.owner_idle = arm.ready && arm.enabled_mask == 0;
+    ChassisBenchArmInput holding{};
+    holding.ready = arm.ready;
+    holding.configuration_valid = arm.configuration_valid;
+    holding.robot_ready = robot.ready && robot.stop_epoch == runtime.command.stop_epoch;
+    holding.robot_active = robot.active;
+    holding.robot_standby = robot.mode == ROBOT_STANDBY;
+    holding.enabled_mask = arm.enabled_mask;
+    holding.updated_ms = arm.updated_ms;
+    holding.robot_updated_ms = robot.updated_ms;
+    holding.faults = arm.faults;
+    holding.feedback_timeout_ms = kArmConfig.feedback_timeout_ms;
+    for (unsigned i = 0; i < 4; ++i) {
+        const unsigned joint = i + 1;
+        holding.online[i] = arm.joint[joint].online;
+        holding.calibrated[i] = arm.joint[joint].calibrated;
+        holding.feedback_age_ms[i] = arm.joint[joint].feedback_age_ms;
+        holding.drive_velocity_deg_s[i] = arm.joint[joint].drive_velocity_deg_s;
+        holding.stationary_speed_deg_s[i] = kArmConfig.joint[joint].stationary_speed_deg_s;
+    }
+    input.owner_holding = chassis_bench_arm_holding(runtime.now_ms, holding);
     input.robot_ready = runtime.command.valid;
     input.robot_updated_ms = runtime.command.updated_ms;
 
@@ -167,7 +237,7 @@ void read_bench_command(ChassisRuntime &runtime) {
     health.hardware_confirmed = kChassisConfig.hardware_confirmed;
     health.mapping_confirmed = kOperatorConfig.mapping_confirmed;
     health.remote_ok = chassis_bench_remote_ready(runtime.now_ms, input);
-    health.owner_idle = input.owner_idle;
+    health.owner_safe = input.owner_idle || input.owner_holding;
     health.feedback_fresh = feedback.fresh;
     health.temperature_ok = feedback.temperature_ok;
     health.wheels_stationary = feedback.stationary;
@@ -247,6 +317,7 @@ void read_command(ChassisRuntime &runtime) {
         can_cancel_pending(2);
     }
 
+    apply_tune_request(runtime);
     runtime.debug_request = read_debug_request();
 #if CHASSIS_SUSPENDED_BENCH
     read_bench_command(runtime);
@@ -290,8 +361,8 @@ void control_and_limit(ChassisRuntime &runtime) {
             runtime.final_ma[0] = 0;
             runtime.final_ma[1] = 0;
             runtime.final_ma[bench.wheel] =
-                std::fmax(-kChassisConfig.max_current_ma,
-                          std::fmin(kChassisConfig.max_current_ma, bench.value));
+                std::fmax(-runtime.control.config().max_current_ma,
+                          std::fmin(runtime.control.config().max_current_ma, bench.value));
         } else {
             runtime.control.step_debug_speed(bench.wheel, bench.value);
             runtime.final_ma[0] = runtime.control.status().candidate_ma[0];

@@ -101,6 +101,10 @@ struct Status {
     bool configuration_valid;
 };
 
+struct JointTuning {
+    float position_kp, velocity_kp, velocity_ki, effort_limit;
+};
+
 // 纯控制逻辑，无HAL依赖；由一个任务拥有，禁止从ISR直接调用。
 class ArmControl {
   public:
@@ -113,6 +117,9 @@ class ArmControl {
     Result set_targets(uint8_t mask, const float positions[kJointCount], uint32_t now_ms);
     void transport_fault();
     Result set_effort_limit(unsigned joint, float limit);
+    // Disabled-only RAM tuning. Limits never exceed the startup output cap.
+    Result set_tuning(unsigned joint, const JointTuning &tuning, uint32_t now_ms);
+    bool get_tuning(unsigned joint, JointTuning &tuning) const;
     Result set_yaw_limits(const YawRuntimeLimits &limits, uint32_t now_ms);
     Result set_yaw_envelope(float min_deg, float max_deg, float speed_deg_s);
     Result set_yaw_test_speed(float speed_deg_s, uint32_t now_ms);
@@ -136,6 +143,8 @@ class ArmControl {
         bool have_feedback, dm_was_enabled;
     } runtime_[kJointCount]{};
     Config config_;
+    const float startup_effort_cap_[kJointCount];
+    float tuning_effort_limit_[kJointCount]{};
     Status status_{};
     uint32_t last_step_ms_ = 0;
     bool have_step_ = false;

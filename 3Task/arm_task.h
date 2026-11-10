@@ -30,6 +30,20 @@ typedef struct {
 // 原共享快照的稳定调试符号，外部只读；任务间仍用Arm_GetStatus原子复制。
 extern ArmStatus g_arm_status;
 
+// Write the fields first and request_seq last. Rejected requests are consumed once.
+// PID/effort changes are RAM-only, disabled-only and never alter hardware/zero/limits.
+typedef struct {
+    uint32_t joint;
+    float position_kp, velocity_kp, velocity_ki, effort_limit;
+    uint32_t request_seq;
+} ArmTuneRequest;
+typedef struct {
+    uint32_t consumed_seq, active_seq, result, active_joint;
+    float position_kp, velocity_kp, velocity_ki, effort_limit;
+} ArmTuneStatus;
+extern volatile ArmTuneRequest g_arm_tune_request;
+extern ArmTuneStatus g_arm_tune_status; // Read-only; result = engineer::Result.
+
 // 仅供任务上下文调用；返回1=成功入队，实际执行结果看Arm_GetStatus().last_result。
 // 含pitch的校零/使能必须成对使用ARM_PITCH_PAIR；手动摆好的联合姿态定义两关节的0增量。
 int Arm_CaptureZero(uint8_t mask);

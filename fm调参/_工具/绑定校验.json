@@ -1,0 +1,32 @@
+[
+  {
+    "objects": 679,
+    "variables": 91,
+    "groups": 7,
+    "scopes": 6,
+    "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\ChassisBenchDebug\\dx_assignment5_freertos.elf",
+    "title": "底盘与Yaw分批调参｜ChassisBenchDebug",
+    "file": "底盘调参.pmpx",
+    "sha256": "cbe92b1dbffdf70b93a45da0c6c9b6592f9fd8f6e5d37b8edef584ba62d8023c"
+  },
+  {
+    "objects": 558,
+    "variables": 107,
+    "groups": 6,
+    "scopes": 2,
+    "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\ChassisBenchDebug\\dx_assignment5_freertos.elf",
+    "title": "底盘与Yaw排障｜ChassisBenchDebug",
+    "file": "底盘排障.pmpx",
+    "sha256": "cbe92b1dbffdf70b93a45da0c6c9b6592f9fd8f6e5d37b8edef584ba62d8023c"
+  },
+  {
+    "objects": 664,
+    "variables": 65,
+    "groups": 6,
+    "scopes": 4,
+    "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\ChassisBenchDebug\\dx_assignment5_freertos.elf",
+    "title": "机械臂抬起与保持｜ChassisBenchDebug",
+    "file": "机械臂简易调参与排障.pmpx",
+    "sha256": "cbe92b1dbffdf70b93a45da0c6c9b6592f9fd8f6e5d37b8edef584ba62d8023c"
+  }
+]

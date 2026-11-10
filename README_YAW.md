@@ -10,6 +10,8 @@
 
 线束参考沿用显式人工校零，保存在RAM；重启/重烧后重新整理线束、对齐实物中位标记再校零。不要把任意启动姿态当零，也不能用软件识别断电期间额外扭转的整圈。
 
+Yaw在线PID沿用原Arm owner的`g_arm_tune_request`：`joint=0`，填写`position_kp/velocity_kp/velocity_ki/effort_limit`，最后递增`request_seq`。全部轴失能、Yaw反馈在线已校零且静止、无故障时才生效；`effort_limit`单位mA，不能超过编译启动电流上限。请求只消费一次，拒绝后不迟到执行，成功不使能、不改变线束零位或限位；实际参数与结果读`g_arm_tune_status`。参数仅存RAM，重启恢复源码值。中文分批调参/排障页与PDF见`fm调参/`。
+
 ## 在线半幅的请求与生效
 
 沿用现有可用的变量读写工具，按本固件ELF操作。先写 `g_yaw_limit_request.half_range_deg`，再递增 `request_seq`。对称区间为 `[-half,+half]`。只在现有owner内处理请求，要求全部轴关控、Yaw反馈新鲜且已校零、静止，参数有限/合法、不超过经确认的静态上限；实际角、现有目标和参考都必须被新范围容纳，并留出提前制动余量。

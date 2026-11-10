@@ -24,6 +24,7 @@ struct ChassisState {
     float v_m_s = 0, omega_rad_s = 0, reference_v_m_s = 0, reference_omega_rad_s = 0;
     float target_rpm[2]{}, measured_rpm[2]{}, candidate_ma[2]{}, applied_ma[2]{};
 };
+enum class ChassisTuneResult : uint32_t { Idle, Applied, Invalid, Busy, NotReady };
 class ChassisControl {
   public:
     explicit ChassisControl(const ChassisConfig &c);
@@ -33,6 +34,10 @@ class ChassisControl {
     void direct_output(); // Open-loop pulse: discard speed-loop state before final submission.
     void trip(uint32_t reason);
     bool clear_faults(); // Disabled only; never reenables.
+    ChassisTuneResult set_velocity_tuning(float kp, float ki, float current_ma);
+    const ChassisConfig &config() const {
+        return c_;
+    }
     const ChassisState &status() const {
         return s_;
     }
@@ -41,6 +46,7 @@ class ChassisControl {
 
   private:
     ChassisConfig c_;
+    const float startup_current_limit_ma_;
     ChassisState s_{};
     float integral_[2]{}, error_[2]{}, dt_ = 0;
     uint32_t previous_ms_ = 0, epoch_ = 0, stationary_since_ = 0;

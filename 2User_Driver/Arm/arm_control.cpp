@@ -40,10 +40,15 @@ void pack_dm_torque(float t, float pm, float vm, float tm, uint8_t d[8]) {
     d[7] = torque;
 }
 
-ArmControl::ArmControl(const Config &c) : config_(c) {
+ArmControl::ArmControl(const Config &c)
+    : config_(c), startup_effort_cap_{c.joint[0].max_effort, c.joint[1].max_effort,
+                                    c.joint[2].max_effort, c.joint[3].max_effort,
+                                    c.joint[4].max_effort} {
     status_.configuration_valid = valid_config();
-    for (unsigned i = 0; i < kJointCount; ++i)
+    for (unsigned i = 0; i < kJointCount; ++i) {
         runtime_[i].effort_limit = c.joint[i].max_effort;
+        tuning_effort_limit_[i] = c.joint[i].max_effort;
+    }
     const auto &y = c.joint[Yaw];
     yaw_limits_ = {
         y.min_deg, y.max_deg, y.max_speed_deg_s, y.max_accel_deg_s2, 0, y.max_deg - y.min_deg, 0};
@@ -436,6 +441,67 @@ Result ArmControl::set_effort_limit(unsigned i, float limit) {
     runtime_[i].integral = clamp(runtime_[i].integral, -limit, limit);
     return status_.last_result = Result::Ok;
 }
+bool ArmControl::get_tuning(unsigned i, JointTuning &tuning) const {
+    if (i >= kJointCount || !selected(i))
+        return false;
+    const auto &c = config_.joint[i];
+    tuning = {c.position_kp, c.velocity_kp, c.velocity_ki, tuning_effort_limit_[i]};
+    return true;
+}
+Result ArmControl::set_tuning(unsigned i, const JointTuning &tuning, uint32_t now) {
+    if (i >= kJointCount || !selected(i))
+        return status_.last_result = Result::InvalidArgument;
+    if (status_.enabled_mask)
+        return status_.last_result = Result::Busy;
+    // Numeric typo bounds, not a claim that the full range is safe on hardware.
+    if (!finite(tuning.position_kp) || tuning.position_kp <= 0 || tuning.position_kp > 1000 ||
+        !finite(tuning.velocity_kp) || tuning.velocity_kp < 0 || tuning.velocity_kp > 1.0e6f ||
+        !finite(tuning.velocity_ki) || tuning.velocity_ki < 0 || tuning.velocity_ki > 1.0e6f ||
+        !finite(tuning.effort_limit) || tuning.effort_limit < 0 ||
+        tuning.effort_limit > startup_effort_cap_[i])
+        return status_.last_result = Result::InvalidArgument;
+    if (!status_.configuration_valid)
+        return status_.last_result = Result::ConfigUnconfirmed;
+    refresh(now);
+    if (status_.faults)
+        return status_.last_result = Result::FaultLatched;
+    const uint8_t affected = (i == BigPitch || i == SmallPitch) ? kPitchPair : uint8_t(1u << i);
+    for (unsigned j = 0; j < kJointCount; ++j) {
+        if (!(affected & (1u << j)))
+            continue;
+        const auto &s = status_.joint[j];
+        const auto &c = config_.joint[j];
+        if (!s.online)
+            return status_.last_result = Result::NotOnline;
+        if (!s.calibrated)
+            return status_.last_result = Result::NotCalibrated;
+        if (!finite(s.drive_velocity_deg_s) ||
+            std::fabs(s.drive_velocity_deg_s) > c.stationary_speed_deg_s)
+            return status_.last_result = Result::Moving;
+        if (s.faults || (c.motor != Motor::M2006 && s.temperature_c >= c.max_temperature_c) ||
+            (c.motor == Motor::Dm4310Mit && s.motor_state >= 8))
+            return status_.last_result = Result::FaultLatched;
+    }
+    // Commit only after every field and both pitch drives have passed validation.
+    auto &c = config_.joint[i];
+    c.position_kp = tuning.position_kp;
+    c.velocity_kp = tuning.velocity_kp;
+    c.velocity_ki = tuning.velocity_ki;
+    tuning_effort_limit_[i] = tuning.effort_limit;
+    for (unsigned j = 0; j < kJointCount; ++j) {
+        if (!(affected & (1u << j)))
+            continue;
+        runtime_[j].integral = 0;
+        runtime_[j].reference_velocity = 0;
+        status_.joint[j].drive_reference_velocity_deg_s = 0;
+        status_.joint[j].velocity_target_deg_s = 0;
+    }
+    if (affected & kPitchPair) {
+        pitch_speed_ = 0;
+        pitch_path_active_ = false;
+    }
+    return status_.last_result = Result::Ok;
+}
 Result ArmControl::clear_faults() {
     if (status_.enabled_mask)
         return status_.last_result = Result::Busy;
@@ -698,7 +764,7 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             s.velocity_target_deg_s = speed_target;
             // 这里必须使用a2的驱动速度；不能把q肘速度送入第二DM的独立PI。
             const float e = speed_target - s.drive_velocity_deg_s;
-            const float limit = r.effort_limit;
+            const float limit = std::fmin(r.effort_limit, tuning_effort_limit_[i]);
             const float next_i = clamp(r.integral + c.velocity_ki * e * dt, -limit, limit);
             const float u = c.velocity_kp * e + next_i;
             float final = clamp(u, -limit, limit);

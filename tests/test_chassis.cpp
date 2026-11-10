@@ -90,7 +90,7 @@ int test_chassis() {
     { // Finite suspended pulses: explicit acknowledgement, all health gates, no stale starts.
         ChassisBenchHealth healthy{};
         healthy.hardware_confirmed = healthy.mapping_confirmed = healthy.remote_ok = true;
-        healthy.owner_idle = healthy.feedback_fresh = healthy.temperature_ok = true;
+        healthy.owner_safe = healthy.feedback_fresh = healthy.temperature_ok = true;
         healthy.wheels_stationary = healthy.transport_ok = healthy.timing_ok = true;
         ChassisBenchRequest r{};
         r.mode = uint32_t(ChassisBenchMode::Speed);
@@ -109,7 +109,7 @@ int test_chassis() {
             if (gate == 2)
                 h.remote_ok = false;
             if (gate == 3)
-                h.owner_idle = false;
+                h.owner_safe = false;
             if (gate == 4)
                 h.feedback_fresh = false;
             if (gate == 5)
@@ -201,6 +201,131 @@ int test_chassis() {
         clear.mode = uint32_t(ChassisBenchMode::Stop);
         CHECK(!fault.step(8, clear, active).active &&
               fault.status().result == ChassisBenchResult::Stopped);
+    }
+    { // The extra DOWN path permits only a stationary four-axis Standby hold.
+        ChassisBenchArmInput arm{};
+        arm.ready = arm.configuration_valid = arm.robot_ready = true;
+        arm.robot_active = arm.robot_standby = true;
+        arm.enabled_mask = 0x1e;
+        arm.updated_ms = arm.robot_updated_ms = 100;
+        arm.feedback_timeout_ms = 50;
+        for (unsigned i = 0; i < 4; ++i) {
+            arm.online[i] = arm.calibrated[i] = true;
+            arm.feedback_age_ms[i] = 10;
+            arm.stationary_speed_deg_s[i] = 2;
+            arm.drive_velocity_deg_s[i] = i & 1 ? -2 : 2;
+        }
+        CHECK(chassis_bench_arm_holding(140, arm)); // Source age is added to feedback age.
+        CHECK(!chassis_bench_arm_holding(141, arm));
+        for (unsigned bad = 0; bad < 17; ++bad) {
+            auto a = arm;
+            if (bad == 0) a.ready = false;
+            if (bad == 1) a.configuration_valid = false;
+            if (bad == 2) a.robot_ready = false;
+            if (bad == 3) a.robot_active = false;
+            if (bad == 4) a.robot_standby = false;
+            if (bad == 5) a.enabled_mask = 0x06;
+            if (bad == 6) a.faults = 1;
+            if (bad == 7) a.robot_updated_ms = 59;
+            if (bad == 8) a.feedback_timeout_ms = 0;
+            if (bad == 9) a.online[3] = false;
+            if (bad == 10) a.calibrated[1] = false;
+            if (bad == 11) a.feedback_age_ms[2] = 51;
+            if (bad == 12) a.drive_velocity_deg_s[0] = -2.01f;
+            if (bad == 13) a.drive_velocity_deg_s[2] = std::numeric_limits<float>::quiet_NaN();
+            if (bad == 14) a.stationary_speed_deg_s[2] = 0;
+            if (bad == 15) a.stationary_speed_deg_s[2] = std::numeric_limits<float>::infinity();
+            if (bad == 16) a.feedback_age_ms[1] = 0xffffffffu;
+            CHECK(!chassis_bench_arm_holding(100, a));
+        }
+        ChassisBenchRemoteInput remote{};
+        remote.mapping_confirmed = remote.valid = remote.robot_ready = true;
+        remote.consecutive_frames = 3;
+        remote.received_ms = remote.robot_updated_ms = 100;
+        remote.owner_holding = chassis_bench_arm_holding(100, arm);
+        CHECK(!chassis_bench_remote_ready(100, remote)); // MID while lifting is never a wheel mode.
+        remote.switches_in_hold_position = true;
+        CHECK(chassis_bench_remote_ready(100, remote));
+        remote.owner_holding = false;
+        CHECK(!chassis_bench_remote_ready(100, remote));
+        remote.owner_holding = true;
+        remote.channel[4] = 31;
+        CHECK(!chassis_bench_remote_ready(100, remote)); // The fifth channel also stays neutral.
+        remote.channel[4] = 0;
+        remote.switches_in_hold_position = false;
+        remote.switches_in_test_position = true;
+        CHECK(!chassis_bench_remote_ready(100, remote)); // UP cannot claim an enabled arm is idle.
+        remote.switches_in_test_position = false;
+        remote.switches_in_hold_position = true;
+        ChassisBenchHealth health{};
+        health.hardware_confirmed = health.mapping_confirmed = health.owner_safe = true;
+        health.feedback_fresh = health.temperature_ok = health.wheels_stationary = true;
+        health.transport_ok = health.timing_ok = true;
+        health.remote_ok = chassis_bench_remote_ready(100, remote);
+        ChassisBenchRequest pulse{};
+        pulse.mode = uint32_t(ChassisBenchMode::Current);
+        pulse.value = 50;
+        pulse.duration_ms = 100;
+        pulse.suspended_confirm = 0x53555350;
+        pulse.request_seq = 1;
+        ChassisBenchGate gate;
+        CHECK(gate.step(100, pulse, health).active);
+        health.controller_enabled = true;
+        arm.robot_standby = false;
+        remote.owner_holding = chassis_bench_arm_holding(104, arm);
+        health.remote_ok = chassis_bench_remote_ready(104, remote);
+        CHECK(!gate.step(104, pulse, health).active &&
+              gate.status().result == ChassisBenchResult::Cancelled);
+        arm.robot_standby = true;
+        arm.updated_ms = arm.robot_updated_ms = 0xfffffffcu;
+        for (auto &age : arm.feedback_age_ms) age = 0;
+        CHECK(chassis_bench_arm_holding(0, arm));
+    }
+    { // Online PI updates are atomic, disabled-only and bounded by the original current cap.
+        auto cfg = confirmed();
+        cfg.acceleration_m_s2 = 1000;
+        ChassisControl a(cfg);
+        CHECK(a.set_velocity_tuning(2, 0, 50) == ChassisTuneResult::Applied);
+        CHECK(a.config().velocity_kp == 2 && a.config().velocity_ki == 0 &&
+              a.config().max_current_ma == 50 && !a.status().enabled);
+        for (unsigned bad = 0; bad < 10; ++bad) {
+            float kp = 3, ki = 1, cap = 100;
+            if (bad == 0) kp = 0;
+            if (bad == 1) kp = -1;
+            if (bad == 2) kp = 1001;
+            if (bad == 3) ki = -1;
+            if (bad == 4) ki = 1001;
+            if (bad == 5) cap = 0;
+            if (bad == 6) cap = cfg.max_current_ma + 1;
+            if (bad == 7) kp = std::numeric_limits<float>::quiet_NaN();
+            if (bad == 8) ki = std::numeric_limits<float>::infinity();
+            if (bad == 9) cap = std::numeric_limits<float>::quiet_NaN();
+            CHECK(a.set_velocity_tuning(kp, ki, cap) == ChassisTuneResult::Invalid);
+            CHECK(a.config().velocity_kp == 2 && a.config().velocity_ki == 0 &&
+                  a.config().max_current_ma == 50);
+        }
+        CHECK(a.set_velocity_tuning(1000, 1000, cfg.max_current_ma) == ChassisTuneResult::Applied);
+        CHECK(a.set_velocity_tuning(2, 0, 50) == ChassisTuneResult::Applied);
+        WheelFeedback wheels[2]{};
+        feedback(wheels, 0);
+        a.step(0, wheels, request(0));
+        a.step_debug_speed(0, 100);
+        CHECK(a.status().candidate_ma[0] == 50);
+        CHECK(a.set_velocity_tuning(3, 1, 100) == ChassisTuneResult::Busy);
+        CHECK(a.config().velocity_kp == 2 && a.config().max_current_ma == 50);
+        auto off = request(4);
+        off.enabled = false;
+        feedback(wheels, 4);
+        a.step(4, wheels, off);
+        CHECK(a.set_velocity_tuning(1, 10, 100) == ChassisTuneResult::Applied);
+        CHECK(!a.status().enabled && !a.status().candidate_ma[0]);
+        feedback(wheels, 8);
+        a.step(8, wheels, request(8));
+        a.step_debug_speed(0, 10);
+        CHECK(a.status().candidate_ma[0] == 10); // No stale integral from the old tuning.
+        a.trip(ChassisTransportFault);
+        CHECK(a.set_velocity_tuning(4, 0, 200) == ChassisTuneResult::NotReady);
+        CHECK(a.config().velocity_kp == 1 && a.config().max_current_ma == 100);
     }
     { // External 1:1 does not erase the M3508 internal reduction; CCW left/right signs.
         float rpm[2];

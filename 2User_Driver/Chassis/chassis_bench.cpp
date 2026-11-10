@@ -8,9 +8,27 @@ bool chassis_bench_remote_ready(uint32_t now, const ChassisBenchRemoteInput &inp
     for (int channel : input.channel) {
         ready &= std::abs(channel) <= 30;
     }
-    ready &= input.switches_in_test_position && input.owner_idle && input.robot_ready &&
-             uint32_t(now - input.robot_updated_ms) <= 40;
+    const bool arm_safe = (input.switches_in_test_position && input.owner_idle) ||
+                          (input.switches_in_hold_position && input.owner_holding);
+    ready &= arm_safe && input.robot_ready && uint32_t(now - input.robot_updated_ms) <= 40;
     return ready;
+}
+
+bool chassis_bench_arm_holding(uint32_t now, const ChassisBenchArmInput &input) {
+    const uint32_t age = now - input.updated_ms;
+    if (!input.ready || !input.configuration_valid || !input.robot_ready || !input.robot_active ||
+        !input.robot_standby || input.enabled_mask != 0x1e || input.faults || age > 40 ||
+        uint32_t(now - input.robot_updated_ms) > 40 || !input.feedback_timeout_ms)
+        return false;
+    for (unsigned i = 0; i < 4; ++i) {
+        if (!input.online[i] || !input.calibrated[i] ||
+            uint64_t(input.feedback_age_ms[i]) + age > input.feedback_timeout_ms ||
+            !std::isfinite(input.drive_velocity_deg_s[i]) ||
+            !std::isfinite(input.stationary_speed_deg_s[i]) || input.stationary_speed_deg_s[i] <= 0 ||
+            std::fabs(input.drive_velocity_deg_s[i]) > input.stationary_speed_deg_s[i])
+            return false;
+    }
+    return true;
 }
 
 ChassisBenchFeedbackHealth chassis_bench_feedback_health(uint32_t now, const WheelFeedback wheel[2],
@@ -40,7 +58,7 @@ const ChassisBenchState &ChassisBenchGate::step(uint32_t now, const ChassisBench
     initialized_ = true;
     const bool was_active = state_.active;
     const bool healthy = health.hardware_confirmed && health.mapping_confirmed &&
-                         health.remote_ok && health.owner_idle && health.feedback_fresh &&
+                         health.remote_ok && health.owner_safe && health.feedback_fresh &&
                          health.temperature_ok && health.transport_ok && health.timing_ok &&
                          !health.global_stop && !stop_changed;
     if (state_.active) {

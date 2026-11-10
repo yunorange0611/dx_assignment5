@@ -58,7 +58,7 @@
 - 用户选择固定四轴调试方案，`ARM_FOUR_AXIS_BENCH` 默认 ON：日常 `Debug/Release` 和兼容入口 `BenchDebug` 为四轴 `0x1e`；整车显式用 `VehicleDebug/VehicleRelease`（OFF，`0x1f`）。台架仅两 DM＋两 M2006，不要求 yaw/外部互锁、不发 `0x1FE`，底盘共享输出始终 stop/emergency；不要伪造整车互锁来模拟台架。无板载按键选模式、无运行中自动识别模式。
 - 台架左上关控/中夹取/下待机；健康上→中且四摇杆＋右拨杆回中 300 ms 请求一次开控。启动或重连在中档、故障恢复、非中立/拒绝均不迟到自动启，须重新上→中或再次显式请求；详见 `README_REMOTE.md`。
 - 调试用原快照稳定符号及新增模块快照；只读状态不作控制入口。新增底盘/Yaw短时请求与在线Yaw半幅有序号一次消费，不得改成持续出力开关；任务间使用Get接口。
-- 没有 FMSTR 通信栈或本机 FreeMASTER 验证；官方仅允许 NXP MCU/MPU，不能向 STM32 移植推荐。使用 STM32 调试器 Live Expressions，说明与官方链接见 `README_REMOTE.md`。
+- 用户沿用已有FreeMASTER读取方式；`fm调参/`提供三个中文分组工程、分批PDF和按固件刷新ELF地址的工具。本轮不更改通信配置、不增加FMSTR；PID/限流仅通过原owner的有序号受限请求修改，不写只读状态或源码常量。文件及软件检查不代表已完成本机连接与实机调参。
 
 ## 底盘 agent 接入要求
 

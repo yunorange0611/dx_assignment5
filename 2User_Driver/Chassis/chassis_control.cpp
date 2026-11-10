@@ -9,7 +9,8 @@ float approach(float x, float goal, float step) {
     return x + clamp(goal - x, -step, step);
 }
 } // namespace
-ChassisControl::ChassisControl(const ChassisConfig &c) : c_(c) {
+ChassisControl::ChassisControl(const ChassisConfig &c)
+    : c_(c), startup_current_limit_ma_(c.max_current_ma) {
     const float values[] = {
         c.diameter_m,       c.track_m,           c.gear_ratio,        c.max_speed_m_s,
         c.max_turn_rad_s,   c.acceleration_m_s2, c.deceleration_m_s2, c.angular_accel_rad_s2,
@@ -51,6 +52,26 @@ bool ChassisControl::clear_faults() {
     s_.faults = 0;
     have_epoch_ = false;
     return true;
+}
+ChassisTuneResult ChassisControl::set_velocity_tuning(float kp, float ki, float current_ma) {
+    // Validate everything before changing the live copy. The startup current
+    // ceiling cannot be raised through a sequence of online requests.
+    if (!std::isfinite(kp) || kp <= 0 || kp > 1000 || !std::isfinite(ki) || ki < 0 ||
+        ki > 1000 || !std::isfinite(current_ma) || current_ma <= 0 ||
+        current_ma > startup_current_limit_ma_)
+        return ChassisTuneResult::Invalid;
+    if (s_.enabled)
+        return ChassisTuneResult::Busy;
+    if (!s_.configuration_valid || s_.faults)
+        return ChassisTuneResult::NotReady;
+    c_.velocity_kp = kp;
+    c_.velocity_ki = ki;
+    c_.max_current_ma = current_ma;
+    for (unsigned i = 0; i < 2; ++i) {
+        integral_[i] = error_[i] = 0;
+        s_.candidate_ma[i] = s_.applied_ma[i] = s_.target_rpm[i] = 0;
+    }
+    return ChassisTuneResult::Applied;
 }
 const ChassisState &ChassisControl::step(uint32_t now, const WheelFeedback wheel[2],
                                          const ChassisCommand &cmd) {

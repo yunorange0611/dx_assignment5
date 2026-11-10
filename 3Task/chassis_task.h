@@ -31,6 +31,18 @@ typedef struct {
 } ChassisDebugStatus;
 extern volatile ChassisDebugRequest g_chassis_debug_request;
 extern ChassisDebugStatus g_chassis_debug_status;
+// Write all values, then request_seq last. Only accepted while wheel output is
+// disabled with fresh stationary feedback; values live in RAM until restart.
+typedef struct {
+    float velocity_kp, velocity_ki, max_current_ma;
+    uint32_t request_seq;
+} ChassisTuneRequest;
+typedef struct {
+    uint32_t consumed_seq, active_seq, result; // 0Idle 1Applied 2Invalid 3Busy 4NotReady
+    float velocity_kp, velocity_ki, max_current_ma;
+} ChassisTuneStatus;
+extern volatile ChassisTuneRequest g_chassis_tune_request;
+extern ChassisTuneStatus g_chassis_tune_status; // Read-only active parameters/result.
 int Chassis_GetStatus(ChassisStatus *out);
 void chassis_task(void *argument);
 #ifdef __cplusplus
