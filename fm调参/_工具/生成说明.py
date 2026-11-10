@@ -123,7 +123,7 @@ page('每次切档都照这六步', '''
 <p class="stop">关控命令1会撤掉机械臂保持；关闭FreeMASTER通信不会自动停机。速度档3／4／5没有500ms自动结束，必须亲自改零或退出。</p>'''),
 page('第0批 A：不接动力，只测关控', setting('第0批 安全常驻｜单固件Debug',0,'先验证软件收到全局关控，完全不发运动目标。')+'''
 <h2>准备</h2>
-<ol><li>电机动力隔离，只给C板和接收机供电；两轮架空，机械臂可靠承托。</li><li>robot_tune_mode保持0；不写命令2或4，不改硬件确认项。</li><li>看uwTick、g_robot_status.updated_ms、g_chassis_status.updated_ms持续变化。</li></ol>
+<ol><li>电机动力隔离，只给C板和接收机供电；两轮架空，机械臂可靠承托。</li><li>robot_tune_mode保持0、tune_enable保持0；不写命令2或4，不改硬件确认项。</li><li>看uwTick、g_robot_status.updated_ms、g_chassis_status.updated_ms持续变化。</li></ol>
 <h2>按这四步做</h2>
 <ol><li>记下g_robot_status.stop_epoch，例如现在为0。</li><li>g_robot_debug_command写1。命令应自动被取走回0。</li><li>stop_epoch应增加；g_robot_status.protection_latched_reasons应包含16这一位，不要求整个数值恰好等于16。</li><li>g_arm_status.enabled_mask=0；g_chassis_status.enabled=0；current_ma[0]和[1]都为0。</li></ol>
 <p><b>通过：</b>控制心跳更新、命令被取走、关控次数增加、所有出力许可和两轮提交电流为0。</p>
@@ -140,12 +140,25 @@ page('第0批 B：不接动力，测遥控失联', setting('第1批 遥控与两
 <p>后面完成小电流方向验证后，再补做一次带动力的关控／失联试验：先仅让单轮低速转，确认命令1立即撤除提交输出。机械臂先承托，不能拿带载坠落验证关控。</p>'''),
 page('第1批 A：认清遥控，不调PID', setting('第1批 遥控与两轮反馈｜不出力',0,'把实物每一个输入与源码通道对应起来。')+'''
 <h2>看这些变量</h2>
-<p>g_dr16_status.frame.channel[0]～[4]、frame.switches[0]／[1]，以及good_frames、valid、consecutive_frames。</p>
+<p>三份工程都有独立Group“<b>遥控映射检查｜原始与处理后</b>”。本批电机动力可保持隔离；mode0、tune_enable=0、命令1关控，也能看处理后的映射，不必开电机。</p>
+<p>同页对比g_dr16_status.frame.channel[0]～[4]／frame.switches[0]／[1]与g_robot_status.remote_axis[0]～[3]／remote_switch[0]／[1]。它们全部只读，不是在线改映射的入口。</p>
 <ol><li>只动左竖，记录哪一个channel变化、向上是正还是负，回中。</li><li>分别只动左横、右竖、右横，每次只动一个；记录后回中。</li><li>检查拨轮channel[4]也能回中，所有通道均在±30内。</li><li>分别只拨左、右三段开关，确认switches索引。原码上1、中3、下2。</li></ol>
 '''+table(['当前源码暂定','应由实物确认'],[
 ('左竖channel[3]；左横[2]','右竖channel[1]；右横[0]。'),
 ('左拨杆switches[0]；右拨杆[1]','正常整车：左上行驶、左中夹取、左下待机。'),
 ('摇杆中位约0、满杆约±660','调参要求含拨轮共5通道均在±30内。')])+'''
+<p><b>先完成这页原始输入记录，再看下一页处理后对比。</b>本批保持关控，不把命令4当成看映射的前提。</p>'''),
+page('第1批 A2：原始值与处理后对比', setting('遥控映射检查｜原始与处理后',0,'关控时也能核对实际代码中的映射。')+'''
+<h2>原始值和处理后值怎样对应</h2>
+'''+table(['原始输入（当前配置）','处理后只读变量','正常观察'],[
+('channel[3] 左竖','g_robot_status.remote_axis[0]','上推应正，下推应负。'),
+('channel[2] 左横','g_robot_status.remote_axis[1]','右推应正，左推应负。'),
+('channel[1] 右竖','g_robot_status.remote_axis[2]','上推应正，下推应负。'),
+('channel[0] 右横','g_robot_status.remote_axis[3]','右推应正，左推应负。'),
+('switches[0] 左拨','g_robot_status.remote_switch[0]','上1／中3／下2。'),
+('switches[1] 右拨','g_robot_status.remote_switch[1]','上1／中3／下2。')])+'''
+<p>当前四轴方向均+1，都是<b>待实物确认的配置</b>。原始约±660被归一化为处理后±1，约6%死区内变0，再对死区外重新缩放，因此小输入不必与原码严格等比例。每次只动一杆，只有相应处理后轴变化才算映射正确。</p>
+<p>同时看valid、good_frames、received_ms、remote_age_ms和remote_online：帧数／接收时间需更新、年龄小、在线为1。处理后数值只是上一帧的映射，不用静止不变的数字证明接收机仍在线。</p>
 <p>不一致时，修改2User_Driver/Remote/operator_config.cpp里的通道索引、开关索引和方向；实物核对完才把mapping_confirmed设true，重编译烧录并复查。</p>
 <p class="stop">本固件左上是行驶，<b>不是关控</b>。全局关控用g_robot_debug_command=1或已核定的失联保护；左下是保持，不能当撤力使用。</p>
 <p><b>通过：</b>你能说清楚每个实物输入对应哪个变量，拨轮回中可靠，遥控关闭后帧停止。</p>'''),
@@ -160,36 +173,39 @@ page('第1批 B：手转两轮，核对方向', setting('第1批 遥控与两轮
 <p><b>通过：</b>两轮身份不串、向前反馈为正、数据持续更新；没有运动申请时两路current_ma均0。</p>'''),
 page('第2批：左轮小电流方向', setting('第2批 左轮ID1电流方向｜robot_tune_mode=1',1,'左轮很小的正／反向电流试验；右轮始终零输出。')+'''
 <h2>先准备</h2>
-<p>两轮可靠悬空。mode先回0；左下右中、5通道回中至少300ms，轮子停稳。打开“左轮转子速度与最终电流”示波器。机械臂未使能可继续失能。</p>
+<p>两轮可靠悬空。tune_enable=0、mode先回0；左下右中、5通道回中至少300ms，轮子停稳。打开“左轮转子速度与最终电流”示波器。机械臂未使能可继续失能。</p>
 '''+table(['按顺序写','本次示例'],[
 (v('tune_wheel_current_limit_ma'),'100mA，小测试限流；硬上限300mA。'),
-(v('robot_tune_mode'),'1。切档清目标；先等ready=1、blocked=0。'),
+(v('robot_tune_mode'),'1。切档清enable和目标，先确认电流目标0。'),
+(v('tune_enable'),'参数正确、停稳、回中后写1；等ready=1、blocked=0。'),
 (v('tune_current_ma'),'+50mA。<b>最后写这一项</b>。')])+'''
 <h2>写完看什么</h2>
 <ol><li>g_robot_tune_status.mode=1、ready=1；g_chassis_status.tune_mode=1，tune_blocked=0。</li><li>current_ma[0]为小正值（量化后可能略有差别），current_ma[1]=0。</li><li>若轮子已动，measured_rpm[0]应为正，实物向前方向应一致。不一致立即命令1。</li><li>非零电流最长500ms，到期ready变0、blocked变1、reason=5，提交电流归0。</li></ol>
 <p>50mA可能不足以克服摩擦。先确认输出／反馈和实物，不直接拉满；若需增大，每次小步，保持≤300mA。</p>
 <h2>下一次怎么重新测</h2>
-<p><b>tune_current_ma=0 → robot_tune_mode=0 → 等轮子静止、全通道回中300ms → 重新选1 → ready=1 → tune_current_ma写−50。</b>只改正负或大小不能续500ms时间。</p>
+<p><b>tune_enable=0 → tune_current_ma=0 → mode0 → 等轮子静止、全通道回中300ms → 重新选1 → tune_enable=1 → ready=1 → 电流写−50。</b>只改正负或大小不能续500ms时间。</p>
 <p><b>通过：</b>正负方向一致；超时和mode回0都能停止，右轮始终零输出。current_ma只是最终接受入队的提交值，仍须看实物响应。</p>'''),
 page('第3批：右轮重复方向试验', setting('第3批 右轮ID2电流方向｜robot_tune_mode=2',2,'用同样的小电流确认右轮；不是让两轮一起转。')+'''
-<ol><li>左轮试验结束，tune_current_ma=0、mode=0，等待两轮实际停稳。</li><li>左下右中、5通道回中300ms。打开右轮示波器。</li><li>tune_wheel_current_limit_ma保留100mA。mode写2，等ready=1且blocked=0。</li><li>tune_current_ma最后写+50；应只有current_ma[1]非零，current_ma[0]=0。</li><li>看measured_rpm[1]与实物向前符号一致。最长500ms到期后归零。</li><li>回0并停稳，再明确选2、ready后写−50，验证反方向。</li></ol>
+<ol><li>左轮试验结束，tune_enable=0、电流目标0、mode0，等待两轮实际停稳。</li><li>左下右中、5通道回中300ms。打开右轮示波器。</li><li>tune_wheel_current_limit_ma保留100mA。mode写2，确认目标0、enable仍0；再写tune_enable=1，等ready=1且blocked=0。</li><li>tune_current_ma最后写+50；应只有current_ma[1]非零，current_ma[0]=0。</li><li>看measured_rpm[1]与实物向前符号一致。最长500ms到期后归零。</li><li>enable0、回mode0并停稳，再明确选2、enable1、ready后写−50，验证反方向。</li></ol>
 <h2>这三个现象必须分开看</h2>
 '''+table(['现象','处理'],[
-('ready=0或blocked=1','本次没有放行。查原因，不继续加电流；先回0再重新选档。'),
+('enable0且ready0、reason7','只选档尚未开启是正常的；准备好并回中停稳后明确enable1。'),
+('enable1后ready仍0或blocked1','本次没有放行。查原因，不继续加电流；先回0再重新选档。'),
 ('提交电流有了，但小电流下不动','可能静摩擦；先核对协议、实际反馈、方向，再小步试。'),
 ('电流一给，速度迅速上升或方向错误','立即关控，核对ID、方向和电调模式，不进入速度闭环。')])+'''
 <p>功率配置尚未确认时，仅允许这种受≤300mA限制的独立悬空调轮；不意味着正常mode0可以绕过功率。功率一旦已确认，其反馈／能量保护在调轮时也生效。</p>
 <p><b>通过：</b>左右两轮各自正反测试完成；选哪一轮就只有那一轮出力；停止与超时可重复验证。</p>'''),
 page('第4批 A：左轮速度环，先只用P', setting('第4批 两轮速度PI｜左3档 右4档',3,'从小转子rpm调速度PI；先关闭I。')+'''
-<h2>先填写本次参数，再选档</h2>
+<h2>enable保持0，先填写本次参数</h2>
 '''+table(['变量','起步示例／含义'],[
 (v('tune_wheel_kp'),'1.0，单位mA/rpm；源码占位值，不是最终答案。'),
 (v('tune_wheel_ki'),'0，先关积分。'),
 (v('tune_wheel_current_limit_ma'),'100mA，先保守；调轮硬上限300mA。'),
-(v('robot_tune_mode'),'回0、停稳、回中300ms后写3。'),
+(v('robot_tune_mode'),'enable0、回mode0、停稳后写3；选档后可改参数。'),
+(v('tune_enable'),'确认参数正确、速度目标0，回中300ms后写1。'),
 (v('tune_speed_rpm'),'ready=1后写+50，<b>3508转子rpm</b>。')])+'''
 <h2>示波器看“目标、实际、电流”</h2>
-<ol><li>先目标0，看是否有持续异响／抖动；没有再给+50。</li><li>target_rpm[0]与measured_rpm[0]同号，实际平稳靠近目标；右轮电流0。</li><li>目标写0，实际应回到零附近。然后尝试−50，仍只调左轮。</li><li>参数需要修改时，先目标0并停稳，改一项，再重复同样的小目标。</li></ol>
+<ol><li>先目标0，看是否有持续异响／抖动；没有再给+50。</li><li>target_rpm[0]与measured_rpm[0]同号，实际平稳靠近目标；右轮电流0。</li><li>目标写0，实际应回到零附近。然后尝试−50，仍只调左轮。</li><li>参数需要修改时，先目标0减速并停稳，再enable0，改一项，核对生效值；enable1、ready后重复同样小目标。</li></ol>
 <p><b>P怎样改：</b>方向正确、未顶电流但跟得慢时，P可小幅增加，例如1→1.2；出现高频抖动／啸叫先停，减P并查机械松动和反馈。不要照抄project4数值，它的量纲和电机不同。</p>
 <p class="stop">3／4速度档是持续控制，<b>没有500ms自动结束</b>。关闭FreeMASTER不会停止；必须把tune_speed_rpm写0或mode回0。</p>'''),
 page('第4批 B：少量I，再测右轮', setting('第4批；对比两条轮速示波器','先3，再4','先获得稳定P，再消除可重复的静差。')+'''
@@ -200,7 +216,7 @@ page('第4批 B：少量I，再测右轮', setting('第4批；对比两条轮速
 ('方向对、曲线稳定、还有固定速度差','把I从0小步增加，例如0.05；每次先目标0停稳再改。'),
 ('松杆回零后反复冲过零、回摆','I可能过大；先减I。')])+'''
 <h2>把相同流程交给右轮</h2>
-<ol><li>tune_speed_rpm=0，mode=0，实际静止；左下右中并回中300ms。</li><li>mode=4，ready=1后写+50；应只有右轮出力。</li><li>验证0、−50；再在已验证的小范围内试±100等目标。FreeMASTER限制|目标|≤300转子rpm。</li><li>同一组轮速P／I用于左右轮。两边差异明显时先查机械与方向，不能靠一边参数掩盖硬件问题。</li></ol>
+<ol><li>tune_speed_rpm=0、tune_enable=0、mode0，实际静止；左下右中并回中300ms。</li><li>mode=4，确认目标0，再tune_enable=1、ready=1后写+50；应只有右轮出力。</li><li>验证0、−50；再在已验证的小范围内试±100等目标。FreeMASTER限制|目标|≤300转子rpm。</li><li>同一组轮速P／I用于左右轮。两边差异明显时先查机械与方向，不能靠一边参数掩盖硬件问题。</li></ol>
 <h2>达标和记录</h2>
 <p>正负目标均不发散、不持续抖；改零能收敛，另一轮不出力；记录P、I、测试限流和曲线。g_chassis_tune_status.result=1表示参数成功；同时看实际生效P／I和g_chassis_status.tune_result。</p>
 <p>本批只验收悬空小速度，不能证明落地负载、功率制动或坡道停车。调轮最大300mA也不是正常行驶上限。</p>'''),
@@ -210,27 +226,27 @@ page('第5批：先抬臂保持，再调轮', setting('第5批 0档抬臂左下�
 <h2>抬起：只在0档正常夹取</h2>
 <ol><li>mode=0，全部目标归零，等待轮子静止；整臂有支撑。</li><li>按“02_机械臂抬起与保持.pdf”准备五轴联合零位和正常整车条件。</li><li>左中、右中，操作输入回中至少300ms，wait_neutral=0后明确写命令4；active=1、enabled_mask=31才继续。</li><li>轻推左竖抬肩，回中；再轻推右竖抬肘，回中。每次只动一个输入，不盲碰roll／夹爪。</li><li>到达已确认安全的姿态，切左下待机。所有输入回中，确认各轴稳定保持几秒，无持续下垂。</li></ol>
 <h2>测轮：保持稳定后才切档</h2>
-<p>左下右中、全部5通道回中300ms、两轮悬空且已静止；mode选1～4，ready=1后给已验证的小目标。其他已使能轴继续保持，未使能轴不会自动使能。</p>
+<p>左下右中、全部5通道回中300ms、两轮悬空且已静止；mode选1～4，参数正确、目标0后写tune_enable=1，ready=1后给已验证的小目标。其他已使能轴继续保持，未使能轴不会自动使能。</p>
 <p>偏杆、离开左下右中、关节掉线或失联会取消调参；全局关控会连机械臂保持一起撤掉。<b>退出调轮只用目标0、mode0。</b></p>
 <p class="stop">两DM当前各0.3Nm只是源码启动上限，不保证抬得起实物。顶限仍下垂时先承托，与队友核对机构／负载／力矩需求，不猛加I。</p>'''),
 page('第6批 A：Yaw人工线束中位', setting('第6批 Yaw线束中位与软限位｜先关控','5或6；校零时全部失能','只认中位和方向，不给Yaw运动目标。')+'''
 <h2>先做机械和源码确认</h2>
 <p>Yaw是GM6020电流模式、ID1、约1:1，不能用旧电压模式驱动。Arm/yaw_config.h的direction、kYawSafetyConfirmed及安全范围，Arm/arm_config.cpp的hardware_confirmed，遥控mapping_confirmed，必须按实物核对。</p>
-<ol><li>mode回0，所有测试目标0；承托整臂，命令1，确认enabled_mask=0。</li><li>Yaw在线、反馈连续。慢手转很小角度看joint[0].position_deg和velocity_deg_s方向；不要多圈转。</li><li>整理线束，找自然、未预拧的中位，在底盘与Yaw外圈做标记。对准标记并等静止。</li><li>robot_tune_mode写5或6，此时尚未校零／限位，拒绝调参是正常的；<b>保持所有轴失能</b>。</li><li>g_robot_debug_command写2。在5／6档它只申请Yaw校零；看g_arm_status.last_result=0、joint[0].calibrated=1、position_deg接近0。</li></ol>
+<ol><li>mode回0，所有测试目标0；承托整臂，命令1，确认enabled_mask=0。</li><li>Yaw在线、反馈连续。慢手转很小角度看joint[0].position_deg和velocity_deg_s方向；不要多圈转。</li><li>整理线束，找自然、未预拧的中位，在底盘与Yaw外圈做标记。对准标记并等静止。</li><li>tune_enable保持0、robot_tune_mode写5或6；只是选择，不给运动目标；<b>保持所有轴失能</b>。</li><li>g_robot_debug_command写2。在5／6档它只申请Yaw校零；看g_arm_status.last_result=0、joint[0].calibrated=1、position_deg接近0。</li></ol>
 <p class="note"><b>mode5／6的命令2只校Yaw；mode0的命令2校全部五轴。</b>不要在mode0只摆Yaw就按2。校零本身会请求停机，不能一边保持负载一边重校。</p>
-<p>本次非零档已因未就绪／校零停机而锁禁，不急着清：先完成下一页半幅，随后回0再明确选5。关控不会自动建立线束中位。</p>
+<p>本次非零档会因校零请求停机而锁禁，不急着清：先完成下一页半幅，随后回0再明确选5。关控不会自动建立线束中位。</p>
 <p class="stop">无滑环，不能转一圈找零。重启、重烧或连续角丢失后，重新整理线束、对中位标记，再人工校零。</p>'''),
 page('第6批 B：直接写一个小半幅', setting('第6批；仍保持全部轴失能','5或6，目标不动','确认真实生效范围，才允许Yaw闭环。')+'''
 <h2>只改一个变量，不填限位申请表</h2>
 <p>以人工线束中位为0。若实际确认左右各10°均安全，<b>tune_yaw_half_range_deg写10</b>，申请区间就是−10°～+10°。10只是解释半幅的例子，不是没看线束就照填。</p>
-<ol><li>整臂有支撑，命令1后确认enabled_mask=0；Yaw在线、已在真实中位校零、实际静止。</li><li>修改tune_yaw_half_range_deg，直接回车。不要再写旧g_yaw_limit_request或request_seq。</li><li>看g_yaw_limit_status.result=0、ready=1；active_half_range_deg等于所填值，min_deg／max_deg正确。</li><li>还要保证实际角、目标和参考均在新范围内，留出当前2°制动余量。</li></ol>
+<ol><li>tune_enable=0，整臂有支撑，命令1后确认enabled_mask=0；Yaw在线、已在真实中位校零、实际静止。</li><li>修改tune_yaw_half_range_deg，直接回车。不要再写旧g_yaw_limit_request或request_seq。</li><li>看g_yaw_limit_status.result=0、ready=1；active_half_range_deg等于所填值，min_deg／max_deg正确。</li><li>还要保证实际角、目标和参考均在新范围内，留出当前2°制动余量。</li></ol>
 '''+table(['result','先处理什么'],[
 ('2 / 3','配置未确认／有轴仍使能；先确认真实条件并全部关控。'),
 ('4 / 5 / 6','掉线／未校零／故障锁存。先排除原因，必要时安全重校零。'),
 ('7 / 8','还在动／范围排除了实际角、目标或参考。')])+'''
 <p><b>被拒绝的值只处理一次，不会等条件变好后补执行。</b>条件修好后需要重新编辑成另一个已确认安全的值来再次申请；仅把同一个数字再回车不算值变化。不能为了重试填未经核对的大范围。</p>
 <p>软件接受半幅&gt;2°且≤90°，这是防误填边界，不是线束可承受90°的证明。参数、零位和在线范围都只在RAM，重启重建。</p>
-<p><b>通过：</b>真实中位明确，小范围结果成功、边界值正确。随后mode回0，停稳、回中300ms，再重新选5。</p>'''),
+<p><b>通过：</b>真实中位明确，小范围结果成功、边界值正确。随后enable0、mode回0，停稳、回中300ms，再重新选5；先核对参数，enable1、ready1后才给小目标。</p>'''),
 page('第7批 A：Yaw速度内环，只用P', setting('第7批 Yaw速度内环PI｜robot_tune_mode=5',5,'先验证小角速度，位置外环不参与。')+'''
 <h2>先给小上限和参数</h2>
 '''+table(['变量','起步示例'],[
@@ -238,7 +254,8 @@ page('第7批 A：Yaw速度内环，只用P', setting('第7批 Yaw速度内环PI
 (v('tune_yaw_velocity_kp'),'20，源码占位起点，不是实测答案。'),
 (v('tune_yaw_velocity_ki'),'0，先关闭积分。'),
 (v('tune_yaw_current_limit_ma'),'100mA；Yaw调参硬上限150mA。'),
-(v('robot_tune_mode'),'回0、停稳、左下右中、回中300ms后写5。'),
+(v('robot_tune_mode'),'enable0、回mode0、停稳后写5；先填写并核对参数。'),
+(v('tune_enable'),'目标0，左下右中且回中300ms后写1，等ready=1。'),
 (v('tune_yaw_speed_deg_s'),'ready=1后最后写+1，单位度／秒。')])+'''
 <h2>先开示波器再给速度</h2>
 <ol><li>看g_robot_tune_status.yaw_parameter_result=0，生效P／I／电流与本次一致；joint[0].enabled=1。</li><li>实际velocity_deg_s与目标同号；velocity_target_deg_s可能因边界制动比输入更小；effort是提交电流mA。</li><li>只观察很短时间就把tune_yaw_speed_deg_s写0，等待静止，再写−1，随后又写0。</li><li>底盘current_ma[0]／[1]都应0。其他原已使能轴保持，未使能不新增。</li></ol>
@@ -246,7 +263,7 @@ page('第7批 A：Yaw速度内环，只用P', setting('第7批 Yaw速度内环PI
 <p><b>通过：</b>正负方向和编码器反馈一致，小速度可跟踪，改零／退出／关控都能停止。</p>'''),
 page('第7批 B：调稳速度PI和边界制动', setting('第7批；观察Yaw目标速度与反馈及电流',5,'先中间小范围调P，再少量I，最后验证限位减速。')+'''
 <h2>每次改参数先停目标</h2>
-<p>tune_yaw_speed_deg_s=0，等实际静止；修改一项P／I或电流上限，确认yaw_parameter_result=0及生效值，再重复同样±1°/s。直接修改无需seq；运行中不满足条件的申请不能当作已生效。</p>
+<p>tune_yaw_speed_deg_s=0，等实际静止；tune_enable=0后修改一项P／I或电流上限，确认yaw_parameter_result=0及生效值；再enable1、ready后重复同样±1°/s。直接修改无需seq。Yaw若只由测试新增使能，enable0会撤销该Yaw使能，先承托；原已使能Yaw则当前位置保持。</p>
 '''+table(['曲线／实物','这次只改什么'],[
 ('方向正确、电流未顶限、跟得慢','P小步增加，例如20→24；测试目标保持不变。'),
 ('电流正负快跳／啸叫','停，减P，同时查反馈连续性和机构松动。'),
@@ -282,7 +299,7 @@ page('第8批 B：IMU与功率只读核对', setting('第8批；异常用排查5
 <p>五轴反馈／零位、Yaw限位、两轮健康、IMU有效、功率新鲜足量、真实姿态配置都就绪；g_vehicle_health.healthy=1、reasons=0。机械臂不收拢时拒绝行驶应有效。</p>'''),
 page('第9批：Yaw位置双环，小角度开始', setting('第9批 Yaw位置双环｜robot_tune_mode=6',6,'速度PI已稳，再调位置P。')+'''
 <h2>准备和切档</h2>
-<ol><li>两轮仍悬空、整臂有支撑，线束中位和已测半幅仍有效；速度PI使用第7批记录值。</li><li>Yaw速度目标0、mode0，等所有本次相关机构静止。左下右中、5通道回中300ms。</li><li>tune_yaw_position_kp先保留2；Yaw测试上限先100mA。mode写6，等ready=1。</li><li>切6时tune_yaw_target_deg自动对齐当前角，<b>不是自动回0</b>；确认没有突然跳目标。</li></ol>
+<ol><li>两轮仍悬空、整臂有支撑，线束中位和已测半幅仍有效；速度PI使用第7批记录值。</li><li>Yaw速度目标0、tune_enable=0、mode0，等所有本次相关机构静止。左下右中、5通道回中300ms。</li><li>tune_yaw_position_kp先保留2；Yaw测试上限先100mA。mode写6，enable保持0，先核对实际参数与当前位置目标；再写tune_enable=1，等ready=1。</li><li>切6时tune_yaw_target_deg自动对齐当前角，<b>不是自动回0</b>；确认没有突然跳目标。</li></ol>
 <h2>给第一次很小的角度</h2>
 <p>例如当前在0°附近且范围足够，tune_yaw_target_deg先写+1°，观察稳定后写回0；再试−1°。这里是相对人工线束中位的绝对目标角，不是“每次增加1°”。目标必须在已生效软限位里。</p>
 <p>看target_deg、reference_deg、position_deg：参考受速度／加速度限制，实际应平稳靠近。再看velocity_target_deg_s和effort，判断是否顶限。</p>
@@ -291,10 +308,10 @@ page('第9批：Yaw位置双环，小角度开始', setting('第9批 Yaw位置�
 ('过冲／反复摆动','减位置P；确认内环已稳定，不能先靠加I修外环。'),
 ('电流顶限、目标总在前面','查负载／摩擦／限流；目标领先限制应生效，不盲目加P。'),
 ('靠边目标被约束','正常限位；先回安全中间，不靠扩大半幅解决。')])+'''
-<p>修改参数时先把目标设为实际附近、等稳定；核对yaw_parameter_result=0和实际值。6档持续保持目标，无自动到期。调完mode0退出；如果Yaw只由调参新增使能，退出会撤销它，先承托。</p>'''),
+<p>修改参数时先把目标设为实际附近、等稳定，enable0后再改；核对yaw_parameter_result=0和实际值，再enable1，ready后给新小目标。6档持续保持目标，无自动到期。调完mode0退出；如果Yaw只由调参新增使能，退出会撤销它，先承托。</p>'''),
 page('第10批：0档正常遥控，先慢速落地', setting('第10批 正常遥控慢速落地｜robot_tune_mode=0',0,'先悬空确认正常链，再小步落地，不先测快速档。')+'''
 <h2>恢复正常控制</h2>
-<ol><li>所有调参目标0、mode0；机械臂保留保持，两轮实际静止。</li><li>第8批真实条件全部就绪；左中夹取、右中，回中300ms、wait_neutral=0，再写命令4。</li><li>确认active=1、enabled_mask=31。若拒绝，查原因后重新明确请求，不能推杆等它突然生效。</li><li>机械臂移到已确认允许行驶的收拢姿态，左上行驶，右中，回中300ms，真实许可到位。</li></ol>
+<ol><li>所有调参目标0、tune_enable=0、mode0；机械臂保留保持，两轮实际静止。</li><li>第8批真实条件全部就绪；左中夹取、右中，回中300ms、wait_neutral=0，再写命令4。</li><li>确认active=1、enabled_mask=31。若拒绝，查原因后重新明确请求，不能推杆等它突然生效。</li><li>机械臂移到已确认允许行驶的收拢姿态，左上行驶，右中，回中300ms，真实许可到位。</li></ol>
 <h2>仍悬空先确认映射</h2>
 <p>轻推左竖：两轮规范速度同号；松杆归零。轻推右横：差速转向，右推应顺时针；左横调Yaw。不要把“右横转车”和“左横转Yaw”混淆。</p>
 <h2>落地只做小目标</h2>
@@ -352,8 +369,12 @@ page('排查0／1：心跳、切档和回中', '''
 ('4','模式／目标非法','检查模式0～6、有限数值和本档范围；回0再选。'),
 ('5','非零电流达到500ms','本次正常保护结束；目标0、mode0、停稳后再选1／2。'),
 ('6','进入时没停稳','等所调对象和已使能保持轴静止，回0再重新选档。')])+'''
-<p><b>重要：</b>切档当周期先清目标。选档后等ready，再写目标；先填目标后选档会被清零。已被拒绝／锁禁的非零档不会等条件好后补执行，从1跳2也不能清锁。</p>
+<p><b>reason=7：</b>输出未开启，tune_enable=0；仅选档时这正常，尚未检查／放行本次执行。准备参数、目标0、停稳回中300ms，再明确写enable1，等待ready1后给小目标。</p>
+<p><b>重要：</b>切档和enable0→1都会清旧运动目标，位置对齐当前角。选档→参数→enable1→等ready1→最后小目标；不要把运动目标提前写好期待自动执行。已有锁禁不能通过enable0→1解除，从1跳2也不能清锁。</p>
 <p>回中检查包括拨轮channel[4]。拨杆左下／右中必须与实物索引对应，不能只凭遥控外观猜。全部回中至少300ms后再进入非零档。</p>
+<h2>单独核对原始输入和处理后映射</h2>
+<p>三工程都可打开“遥控映射检查｜原始与处理后”。mode0、enable0、命令1关控即可观察，不需开控。当前配置raw channel3→remote_axis[0]左Y、2→[1]左X、1→[2]右Y、0→[3]右X，四方向均+1待实物确认；switch0→左、switch1→右，原码上1中3下2。</p>
+<p>原始满杆约±660、中位0；处理后范围±1、含死区。只动一杆对比对应轴，同时检查online、received_ms、remote_age_ms、good_frames确保是新数据。映射错修改operator_config.cpp，不写只读remote_axis或快照。</p>
 <p>正常0档在左中／左上回中后用命令4明确恢复；左下写4不排队，健康恢复不自动出力。</p>'''),
 page('排查2／4：CAN与两轮不转', '''
 <h2>按这个顺序查</h2>
@@ -396,19 +417,19 @@ page('排查5／8：正常整车为什么不放行', '''
 <p>不能通过在FreeMASTER把许可全写1解除；任务持续根据真实反馈生产互锁。先完成第8批再恢复0档正常遥控。</p>'''),
 page('排查6／7：Yaw不动、限位被拒', '''
 <h2>先看四个硬条件</h2>
-<p>CAN1 GM6020电流模式反馈持续；真实线束中位已人工校零；g_yaw_limit_status.ready=1且半幅真实生效；左下右中、5通道回中300ms后明确进入5／6档。</p>
+<p>CAN1 GM6020电流模式反馈持续；真实线束中位已人工校零；g_yaw_limit_status.ready=1且半幅真实生效；enable0选5／6并核对参数、左下右中、5通道回中300ms，明确enable1、ready1后给小目标。</p>
 <p>若Yaw是本次调参新增使能，退出会撤销它；其他原本失能轴不应被顺带使能。检查joint[0].enabled及enabled_mask，不能只看整车active。</p>
 <h2>限位结果／Yaw参数结果用这一张</h2>
 <p>适用于g_yaw_limit_status.result、g_robot_tune_status.yaw_parameter_result，以及g_arm_status.last_result；本表0才是成功。</p>
 '''+table(['值','含义／处理'],[
 ('0','成功，同时核对active_half_range和实际生效P／I／上限。'),
-('1 / 2','参数非法／配置未确认。'),('3','忙：限位必须所有轴失能；参数先目标0并静止。'),
+('1 / 2','参数非法／配置未确认。'),('3','忙：限位必须所有轴失能；参数先目标0、静止、enable0再改。'),
 ('4 / 5','不在线／没校零，先修连续反馈并安全重校。'),
 ('6 / 7','故障锁存／仍在动；排除原因、停稳。'),
 ('8','新范围排除了实际角、目标或参考；先安全回中。')])+'''
 <p>半幅直接写tune_yaw_half_range_deg；被拒绝后不迟到生效，要在安全条件恢复后重新编辑一个已核对的值。不要再填旧限位序号。</p>
 <p>mode5／6命令2只校Yaw；mode0命令2校五轴，必须摆好全部联合参考且失能。不能为消报警在任意姿态重新认零。</p>
-<p><b>靠边变慢：</b>看实际position_deg和受限velocity_target_deg_s，可能是正常制动；不要用增大P或半幅突破。<b>目标写了却没动：</b>先查切档是否刚把目标清掉，再查ready／blocked和实际生效参数。</p>'''),
+<p><b>靠边变慢：</b>看实际position_deg和受限velocity_target_deg_s，可能是正常制动；不要用增大P或半幅突破。<b>目标写了却没动：</b>先查切档或enable上升是否清了目标，再查enable／ready／blocked和实际生效参数；ready1后再写小目标。</p>'''),
 page('保护记录与清错：当前、历史分开看', '''
 <p>g_robot_status.protection_current_reasons是当前原因；protection_latched_reasons是历史锁存。位图可相加。历史非零不等于现在所有原因仍存在。</p>
 '''+table(['位值','含义'],[
@@ -428,7 +449,8 @@ page('保护记录与清错：当前、历史分开看', '''
 ARM = [
 page('机械臂只做一件事：慢抬后保持', '''
 <p class="note">目的只是把机械臂移到已确认安全的位置，为底盘调轮留空间。用同一Debug整车固件，<b>mode0抬起 → 左下保持 → 切1～4调轮 → mode0退出仍保持</b>。</p>
-<p>打开“机械臂简易调参与排障.pmpx”，与其余两份工程共用同一个Debug ELF。停止上一份通信再打开这一份，切换Group不切档。</p>
+<p>打开“机械臂简易调参与排障.pmpx”，与其余两份工程共用同一个Debug ELF。停止上一份通信再打开这一份，切换Group不切档。独立“遥控映射检查｜原始与处理后”可在mode0、enable0、命令1关控时观测，无需开电机。</p>
+<p>当前配置channel3→remote_axis[0]左Y、2→[1]左X、1→[2]右Y、0→[3]右X，方向均+1待实物确认；switch0左／switch1右，上1中3下2。原始满杆约±660、中位0；处理后±1含死区。对比时同时看online、good_frames和接收时间，保证是新鲜数据。</p>
 <h2>开始前必须满足</h2>
 <p>这是0档正常整车操作，需要真实IMU／功率／互锁、五轴在线校零、Yaw人工中位和在线软限位、实物配置确认。<b>若第8批尚未做好，先不抬臂，继续独立悬空调轮／Yaw。</b>不能用假许可临时放行。</p>
 '''+table(['joint下标','轴','只需要记住'],[
@@ -449,7 +471,7 @@ page('第2步：0档开控，只慢抬肩和肘', setting('第2步 0档左中简
 <p><b>没开控：</b>先查真实健康、五轴在线／校零、Yaw限位、回中和当前保护。拒绝的开控不自动补执行，条件修好再明确写命令4。</p>
 <p class="stop">正常固件左上是行驶，不能用它关控。紧急时命令1会撤掉保持，先有机械支撑。不要在机械臂尚不能稳定托住时开始轮测试。</p>'''),
 page('第4步：左下保持，再切轮子档', setting('第4步 左下待机保持｜同固件切1到4档测轮','0→1～4','保留已经使能的机构保持，不额外使能未开轴。')+'''
-<ol><li>抬臂结束，所有输入回中，左下待机、右中。</li><li>看g_robot_status.mode=3、active=1，enabled_mask仍31；几秒内角度不持续下垂、无明显抖动。</li><li>5通道含拨轮均在±30，持续300ms；两轮实际静止且继续可靠悬空。</li><li>停止机械臂工程通信，打开底盘调参第5批。选择mode1～4，等ready=1，再给已验证的小电流／轮速目标。</li><li>原已使能的机械臂保持；未使能轴不因切档自动开启。退出调轮先目标0，再mode0，机械臂继续保持。</li></ol>
+<ol><li>抬臂结束，所有输入回中，左下待机、右中。</li><li>看g_robot_status.mode=3、active=1，enabled_mask仍31；几秒内角度不持续下垂、无明显抖动。</li><li>5通道含拨轮均在±30，持续300ms；两轮实际静止且继续可靠悬空。</li><li>停止机械臂工程通信，打开底盘调参第5批。选择mode1～4，确认目标0和参数正确，再写tune_enable=1；等ready=1，最后给已验证的小电流／轮速目标。</li><li>原已使能的机械臂保持；未使能轴不因切档自动开启。退出调轮先目标0，再mode0，机械臂继续保持。</li></ol>
 <h2>要再调机械臂姿态</h2>
 <p>mode0，停轮；左中夹取，所有输入回中300ms，确认正常整车条件后写命令4恢复遥控，再轻推肩／肘。留在非零轮档推杆只会取消调参，不应自动转成抬臂。</p>
 <h2>收工</h2>

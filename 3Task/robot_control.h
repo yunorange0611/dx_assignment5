@@ -24,6 +24,10 @@ typedef struct {
     // 均为[-1,1]速度请求：纵向正=前进，turn正=逆时针，非m/s或rad/s。
     float longitudinal_speed_request, turn_rate_request, yaw_relative_deg;
     float target_deg[5], gripper_effort_limit;
+    // Read-only remote observations, also refreshed while disabled/tuning.
+    // left Y, left X, right Y, right X: mapped direction + deadband, [-1,1].
+    float remote_axis[4];
+    uint8_t remote_switch[2]; // Configured left/right switch: UP=1, MID=3, DOWN=2.
 } RobotControlStatus;
 // 整车诊断快照；底盘控制不读取本结构。原调试命令每轮取走并清零；
 // 有序号的Yaw请求由同一owner一次消费，不允许直接写状态控制电机。

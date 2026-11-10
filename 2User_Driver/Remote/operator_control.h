@@ -32,6 +32,9 @@ struct OperatorConfig {
     uint32_t gripper_close_timeout_ms;
 };
 extern const OperatorConfig kOperatorConfig;
+// Shared by normal control and read-only remote diagnostics. Invalid parameters
+// return zero; direction and deadband use the same normalized control convention.
+float remote_axis_value(const DR16Frame &, unsigned channel, int direction, float deadband);
 struct RemoteInput {
     DR16Frame frame;
     uint32_t received_ms;
@@ -101,6 +104,5 @@ class ArmOperator {
     float targets_[kJointCount]{};
     void freeze(const Status &);
     void wait_for_neutral(const Status &);
-    float axis(const DR16Frame &, unsigned channel, int direction) const;
 };
 } // namespace engineer

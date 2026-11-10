@@ -227,7 +227,10 @@ const ChassisState &ChassisControl::step_tuning(uint32_t now, const WheelFeedbac
     step(now, wheel, guarded);
     s_.tune_current_limit_ma = std::fmin(300, std::fmin(c_.max_current_ma,
                                                      tune_current_limit_ma_));
-    s_.tune_result = s_.enabled ? ChassisTuneResult::Applied : ChassisTuneResult::NotReady;
+    // Parameter acceptance remains visible while tune_enable is off; otherwise
+    // a one-period success would disappear before FreeMASTER can sample it.
+    s_.tune_result = s_.enabled || (!s_.faults && s_.tune_result == ChassisTuneResult::Applied)
+                         ? ChassisTuneResult::Applied : ChassisTuneResult::NotReady;
     if (!s_.enabled)
         return s_;
     const unsigned selected = (cmd.tune_mode == 2 || cmd.tune_mode == 4) ? 1 : 0;

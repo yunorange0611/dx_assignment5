@@ -100,6 +100,36 @@ void feed(ArmControl &a, uint32_t ms) {
 }
 } // namespace
 int test_operator() {
+    { // Control and diagnostic views share one validated channel/sign/deadband mapping.
+        DR16Frame f{};
+        f.channel[0] = 660;
+        f.channel[1] = -660;
+        f.channel[2] = 330;
+        f.channel[3] = -330;
+        CHECK(remote_axis_value(f, 0, 1, .06f) == 1);
+        CHECK(remote_axis_value(f, 1, 1, .06f) == -1);
+        CHECK(remote_axis_value(f, 0, -1, .06f) == -1);
+        CHECK(remote_axis_value(f, 1, -1, .06f) == 1);
+        CHECK(near(remote_axis_value(f, 2, 1, .06f), (.5f - .06f) / .94f));
+        CHECK(near(remote_axis_value(f, 3, -1, .06f), (.5f - .06f) / .94f));
+        f.channel[0] = 39;
+        f.channel[1] = -39;
+        CHECK(remote_axis_value(f, 0, 1, .06f) == 0);
+        CHECK(remote_axis_value(f, 1, 1, .06f) == 0);
+        f.channel[0] = 40;
+        CHECK(remote_axis_value(f, 0, 1, .06f) > 0);
+        f.channel[0] = 32767;
+        CHECK(remote_axis_value(f, 0, 1, .06f) == 1);
+        CHECK(remote_axis_value(f, 4, 1, .06f) == 0);
+        CHECK(remote_axis_value(f, ~0u, 1, .06f) == 0);
+        CHECK(remote_axis_value(f, 0, 0, .06f) == 0);
+        CHECK(remote_axis_value(f, 0, 2, .06f) == 0);
+        CHECK(remote_axis_value(f, 0, 1, 0) == 0);
+        CHECK(remote_axis_value(f, 0, 1, .5f) == 0);
+        CHECK(remote_axis_value(f, 0, 1, -.1f) == 0);
+        CHECK(remote_axis_value(f, 0, 1, std::numeric_limits<float>::quiet_NaN()) == 0);
+        CHECK(remote_axis_value(f, 0, 1, std::numeric_limits<float>::infinity()) == 0);
+    }
     { // 固定DBUS中位向量与高位校验，避免只测打包/解包互相镜像。
         uint8_t raw[18] = {0x00, 0x04, 0x20, 0x00, 0x01, 0xf8, 0xff, 0xff, 0,
                            0,    0,    0,    1,    0,    0x34, 0x12, 0,    4};

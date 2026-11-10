@@ -29,7 +29,9 @@
 
 | 先观察的字段 | 用途 |
 |---|---|
-| `g_dr16_status.frame.channel[0..3]/frame.switches[0..1]` | 首次核对通道/左右拨杆；摇杆约 ±660、回中 0，拨杆原码上=1/下=2/中=3 |
+| `g_dr16_status.frame.channel[0..4]/frame.switches[0..1]` | 解码原始五通道/两拨杆；摇杆约 ±660、回中 0，拨杆上=1/下=2/中=3 |
+| `g_robot_status.remote_axis[0..3]` | 当前配置映射后的左Y/左X/右Y/右X，含方向和死区，范围[-1,1]；失能时也刷新 |
+| `g_robot_status.remote_switch[0..1]` | 当前配置映射后的左/右拨杆，仍用上=1/中=3/下=2；结合remote_online和帧时间判断是否新鲜 |
 | `g_robot_status.joint_mask/active/block` | 当前配置、是否已开控、被哪一层阻塞；block 名称见 `OperatorBlock` |
 | `g_robot_status.protection_current_reasons/protection_latched_reasons` | 当前关控原因与锁存原因 |
 | `g_arm_status.faults/enabled_mask/last_result` | 故障、实际使能轴、最近核心操作结果 |

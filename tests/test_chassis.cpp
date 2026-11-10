@@ -107,10 +107,12 @@ int test_chassis() {
         control.step_tuning(4, wheels, cmd);
         CHECK(control.status().tune_result == ChassisTuneResult::Applied);
         CHECK(control.config().velocity_ki == 0 && control.config().max_current_ma == 1000);
+        cmd.enabled = false;
         cmd.updated_ms = 8;
         feedback(wheels, 8);
         control.step_tuning(8, wheels, cmd);
-        CHECK(control.status().enabled);
+        CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Applied);
+        cmd.enabled = true;
         cmd.updated_ms = 12;
         cmd.tune_value = 50;
         cmd.tune_velocity_kp = 2;

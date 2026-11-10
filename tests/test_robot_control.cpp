@@ -128,6 +128,24 @@ int test_robot_control() {
     CHECK(command.valid && !command.enabled && command.stop && command.brake && command.reset);
     CHECK(command.updated_ms == s.updated_ms && command.epoch == s.motion_epoch &&
           command.stop_epoch == s.stop_epoch);
+    // Mapping observations remain useful while configuration/STOP deny all output.
+    g_dr16_status.frame.channel[0] = -660;
+    g_dr16_status.frame.channel[1] = 330;
+    g_dr16_status.frame.channel[2] = -39;
+    g_dr16_status.frame.channel[3] = 660;
+    g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
+    g_dr16_status.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_UP;
+    Robot_Execute(arm, 1234, true);
+    CHECK(Robot_GetControlStatus(&s));
+    CHECK(s.remote_axis[0] == 1 && s.remote_axis[1] == 0 &&
+          std::fabs(s.remote_axis[2] - (.5f - .06f) / .94f) < .0001f && s.remote_axis[3] == -1);
+    CHECK(s.remote_switch[0] == DR16_SWITCH_MID && s.remote_switch[1] == DR16_SWITCH_UP);
+    CHECK(!s.active && !arm.status().enabled_mask && Robot_GetChassisCommand(&command) &&
+          !command.enabled && command.speed_request == 0 && command.turn_request == 0);
+    for (unsigned ch = 0; ch < 5; ++ch)
+        g_dr16_status.frame.channel[ch] = 0;
+    g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+    g_dr16_status.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
     // Diagnostic storage cannot turn into a control request, including its source time.
     const auto saved_diagnostics = g_robot_status;
     g_robot_status.active = 1;
@@ -353,6 +371,22 @@ int test_robot_control() {
               !g_robot_tune_status.blocked);
         CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.tune_mode == 0);
         CHECK(!yaw_only.status().enabled_mask);
+        now += 4;
+        fresh_inputs(now);
+        robot_tune_mode = ROBOT_TUNE_LEFT_SPEED;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = -660;
+        g_dr16_status.frame.channel[kOperatorConfig.left_x_channel] = 660;
+        g_dr16_status.frame.channel[kOperatorConfig.right_y_channel] = 39;
+        g_dr16_status.frame.channel[kOperatorConfig.right_x_channel] = -330;
+        g_dr16_status.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_DOWN;
+        Robot_Execute(yaw_only, now, true);
+        CHECK(Robot_GetControlStatus(&s));
+        CHECK(s.remote_axis[0] == -1 && s.remote_axis[1] == 1 && s.remote_axis[2] == 0 &&
+              std::fabs(s.remote_axis[3] + (.5f - .06f) / .94f) < .0001f);
+        CHECK(s.remote_switch[0] == DR16_SWITCH_DOWN && s.remote_switch[1] == DR16_SWITCH_DOWN);
+        CHECK(!s.active && !yaw_only.status().enabled_mask && !tune_enable &&
+              Robot_GetChassisCommand(&command) && !command.enabled && command.tune_value == 0);
+        robot_tune_mode = 0;
         test_hal_tick = 1234;
     }
     return 0;

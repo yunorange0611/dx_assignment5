@@ -121,6 +121,12 @@ CH_COMMON = variables('g_chassis_status', [('updated_ms','底盘发布时间','m
             ('tune_current_limit_ma','底盘测试生效限流','mA')])
 REMOTE = variables('g_dr16_status', [('valid','接收帧有效',''),('consecutive_frames','连续有效帧数',''),
             ('good_frames','有效帧累计',''),('rejected_frames','拒收累计',''),('uart_errors','串口错误累计',''),('restart_errors','DMA重启错误累计','')]) + [V(f'g_dr16_status.frame.channel[{i}]', f'遥控通道{i} 中位约0') for i in range(5)] + [V(f'g_dr16_status.frame.switches[{i}]', f'拨杆原码{i} 上1中3下2') for i in range(2)]
+REMOTE_MAPPING = REMOTE + [V(f'g_robot_status.remote_axis[{i}]',label,'[-1,1]') for i,label in enumerate(
+    ('处理后左竖Y 当前原始channel3','处理后左横X 当前原始channel2','处理后右竖Y 当前原始channel1','处理后右横X 当前原始channel0'))] + [
+    V(f'g_robot_status.remote_switch[{i}]','处理后'+side+'拨杆原码 上1中3下2') for i,side in enumerate(('左','右'))] + [
+    V('uwTick','系统毫秒计数','ms'),V('g_dr16_status.received_ms','原始帧最近接收时刻','ms'),
+    V('g_robot_status.updated_ms','处理后快照发布时间','ms'),V('g_robot_status.remote_online','遥控在线'),
+    V('g_robot_status.remote_age_ms','原始帧年龄','ms')]
 CH_CURRENT = [V('tune_current_ma','单轮电流测试目标','mA',True,-300,300,
                 note='先选1或2档、tune_enable=1、ready=1，再从0小步填写；非零电流最多500ms，到期锁禁，先回0档再明确选档。')]
 CH_SPEED = [V('tune_speed_rpm','单轮速度目标 3508转子rpm','rpm',True,-300,300)]
@@ -189,6 +195,10 @@ def G(title, data, curves=()):
     return dict(title=title, variables=dedup, scopes=[dict(title=t,exprs=e,period=.01) for t,e in curves])
 
 
+def remote_mapping_group():
+    return G('遥控映射检查｜原始与处理后',REMOTE_MAPPING)
+
+
 def wheel_scope(i):
     return ('左轮转子速度与最终电流' if i == 0 else '右轮转子速度与最终电流',
             [f'g_chassis_status.{n}[{i}]' for n in ('target_rpm','measured_rpm','current_ma')])
@@ -226,11 +236,14 @@ def groups():
                    G('排查6 Yaw零位限位与生效参数',COMMON+YAW_LIMIT+YAW_TUNE+joint(0),[arm_scope(0)]),
                    G('排查7 Yaw调参不动或不能切档',COMMON+YAW_LIMIT+YAW_SPEED+YAW_POSITION+joint(0)),
                    G('排查8 IMU翻车及正常遥控不放行',COMMON+CH_COMMON+IMU)]
+    tune.insert(2, remote_mapping_group())
+    diagnostics.insert(2, remote_mapping_group())
     return tune, diagnostics
 
 
 def arm_groups():
     return [G('第0步 关控与连接｜单固件Debug',COMMON+[V('g_arm_status.updated_ms','机械臂发布时间','ms'),V('g_arm_status.ready','机械臂任务就绪')]),
+            remote_mapping_group(),
             G('第1步 双Pitch人工联合零位｜命令2',COMMON+[V('g_arm_status.last_result','Arm最近操作结果'),V('g_arm_status.configuration_valid','Arm配置合法')]+joint(1)+joint(2)+ARM_OTHER_HEALTH),
             G('第2步 0档左中简易抬肩抬肘｜遥控操作',COMMON+joint(1)+joint(2),[arm_scope(1),arm_scope(2)]),
             G('第3步 少量改PI与限流｜承托后全局关控',COMMON+ARM_TUNE+joint(1)+joint(2)),

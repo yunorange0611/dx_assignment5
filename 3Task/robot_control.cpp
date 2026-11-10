@@ -60,6 +60,16 @@ void publish_protection(RobotControlStatus &s) {
     s.protection_latched_reasons = p.latched_reasons;
     s.protection_last_trip_ms = p.last_trip_ms;
 }
+void observe_remote(RobotControlStatus &s, const engineer::RemoteInput &r) {
+    const auto &c = engineer::kOperatorConfig;
+    const uint8_t channels[] = {c.left_y_channel, c.left_x_channel,
+                                c.right_y_channel, c.right_x_channel};
+    for (unsigned i = 0; i < 4; ++i)
+        s.remote_axis[i] = engineer::remote_axis_value(r.frame, channels[i], c.axis_direction[i],
+                                                      c.deadband);
+    s.remote_switch[0] = c.left_switch_index < 2 ? r.frame.switches[c.left_switch_index] : 0;
+    s.remote_switch[1] = c.right_switch_index < 2 ? r.frame.switches[c.right_switch_index] : 0;
+}
 
 // Same owner as normal ArmOperator: this path selects a control layer, never a
 // second motor or sender. Only already-enabled non-selected axes are held.
@@ -313,6 +323,7 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     else if (state.ready)
         Task_Protect_TryArm(); // Only after an explicit, healthy tuning enable.
     RobotControlStatus next{};
+    observe_remote(next, remote);
     next.updated_ms = now;
     next.ready = 1;
     next.mode = ROBOT_STANDBY;
@@ -539,6 +550,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         }
     }
     RobotControlStatus next{};
+    observe_remote(next, input);
     next.updated_ms = now;
     taskENTER_CRITICAL();
     next.stop_epoch = stop_epoch;
@@ -615,10 +627,16 @@ void Robot_ReportArmState(const engineer::Status &s) {
         chassis_command.turn_request = 0;
         chassis_command.tune_value = 0;
         if (tuning_owns) {
+            engineer::TuneInput failed{};
+            failed.mode = tuning.status().mode;
+            failed.now_ms = HAL_GetTick();
+            failed.stop = true;
+            const auto &blocked = tuning.step(failed);
             tune_enable = 0;
             zero_tune_targets(s.joint[engineer::Yaw].position_deg);
             g_robot_tune_status.ready = 0;
             g_robot_tune_status.blocked = 1;
+            g_robot_tune_status.reason = blocked.reason;
         }
     }
     taskEXIT_CRITICAL();

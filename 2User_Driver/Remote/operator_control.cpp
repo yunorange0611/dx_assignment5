@@ -99,11 +99,14 @@ void ArmOperator::wait_for_neutral(const Status &s) {
     yaw_was_allowed_ = false;
     freeze(s);
 }
-float ArmOperator::axis(const DR16Frame &f, unsigned ch, int sign) const {
-    const float x = clamp(float(f.channel[ch]) / 660.0f, -1, 1) * sign;
-    if (std::fabs(x) <= config_.deadband)
+float remote_axis_value(const DR16Frame &f, unsigned ch, int sign, float deadband) {
+    if (ch >= 4 || (sign != 1 && sign != -1) || !finite(deadband) || deadband <= 0 ||
+        deadband >= .5f)
         return 0;
-    return (x > 0 ? 1.0f : -1.0f) * (std::fabs(x) - config_.deadband) / (1 - config_.deadband);
+    const float x = clamp(float(f.channel[ch]) / 660.0f, -1, 1) * sign;
+    if (std::fabs(x) <= deadband)
+        return 0;
+    return (x > 0 ? 1.0f : -1.0f) * (std::fabs(x) - deadband) / (1 - deadband);
 }
 
 OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, const Status &s,
@@ -192,10 +195,14 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         wait_for_neutral(s);
         permission_blocked_ = false;
     }
-    const float ly = axis(r.frame, config_.left_y_channel, config_.axis_direction[0]);
-    const float lx = axis(r.frame, config_.left_x_channel, config_.axis_direction[1]);
-    const float ry = axis(r.frame, config_.right_y_channel, config_.axis_direction[2]);
-    const float rx = axis(r.frame, config_.right_x_channel, config_.axis_direction[3]);
+    const float ly = remote_axis_value(r.frame, config_.left_y_channel,
+                                       config_.axis_direction[0], config_.deadband);
+    const float lx = remote_axis_value(r.frame, config_.left_x_channel,
+                                       config_.axis_direction[1], config_.deadband);
+    const float ry = remote_axis_value(r.frame, config_.right_y_channel,
+                                       config_.axis_direction[2], config_.deadband);
+    const float rx = remote_axis_value(r.frame, config_.right_x_channel,
+                                       config_.axis_direction[3], config_.deadband);
     const bool neutral = ly == 0 && lx == 0 && ry == 0 && rx == 0 && right == DR16_SWITCH_MID;
     if (bench && (!neutral || mode_ != RobotMode::Grab || !joints_ready || !s.configuration_valid ||
                   s.faults))
