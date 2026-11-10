@@ -61,7 +61,6 @@ struct ChassisRuntime {
     ChassisControl control{kChassisConfig};
     ChassisPower energy;
     WheelFeedback wheels[2]{};
-    RobotControlStatus robot{};
     ChassisCommand command{};
     ChassisDebugRequest debug_request{};
     float final_ma[2]{}; // 轮组正向坐标，mA；组帧前已经过所有限制。
@@ -159,8 +158,8 @@ void read_bench_command(ChassisRuntime &runtime) {
         remote.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP &&
         remote.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
     input.owner_idle = arm.ready && arm.enabled_mask == 0;
-    input.robot_ready = runtime.robot.ready;
-    input.robot_updated_ms = runtime.robot.updated_ms;
+    input.robot_ready = runtime.command.valid;
+    input.robot_updated_ms = runtime.command.updated_ms;
 
     const auto feedback =
         chassis_bench_feedback_health(runtime.now_ms, runtime.wheels, kChassisConfig);
@@ -179,7 +178,7 @@ void read_bench_command(ChassisRuntime &runtime) {
     health.controller_faulted = runtime.control.status().faults != 0;
     health.controller_enabled = runtime.control.status().enabled;
     health.global_stop = runtime.explicit_stop;
-    health.stop_epoch = runtime.robot.stop_epoch;
+    health.stop_epoch = runtime.command.stop_epoch;
 
     const auto &request = runtime.debug_request;
     const ChassisBenchRequest pulse{request.mode,
@@ -205,6 +204,7 @@ void read_bench_command(ChassisRuntime &runtime) {
 }
 #else
 void read_local_stop_request(ChassisRuntime &runtime) {
+    const bool owner_disabled = !runtime.command.enabled;
     const auto &request = runtime.debug_request;
     if (request.request_seq != runtime.debug_seq) {
         runtime.debug_seq = request.request_seq;
@@ -230,7 +230,7 @@ void read_local_stop_request(ChassisRuntime &runtime) {
     }
     if (runtime.local_stop_latched) {
         runtime.command.enabled = false;
-        if (!runtime.robot.active) {
+        if (owner_disabled) {
             runtime.local_stop_latched = false;
         }
     }
@@ -239,26 +239,14 @@ void read_local_stop_request(ChassisRuntime &runtime) {
 
 // 输入：唯一整车 owner 的速度请求[-1,1]、模式及停控事件；调试请求只消费一次。
 void read_command(ChassisRuntime &runtime) {
-    Robot_GetControlStatus(&runtime.robot);
-    runtime.explicit_stop = runtime.robot.stop_epoch != runtime.previous_stop_epoch;
-    runtime.previous_stop_epoch = runtime.robot.stop_epoch;
+    Robot_GetChassisCommand(&runtime.command);
+    runtime.explicit_stop = runtime.command.stop_epoch != runtime.previous_stop_epoch;
+    runtime.previous_stop_epoch = runtime.command.stop_epoch;
     if (runtime.explicit_stop) {
         runtime.bench_active = false;
         can_cancel_pending(2);
     }
 
-    auto &command = runtime.command;
-    command = {};
-    command.updated_ms = runtime.robot.updated_ms;
-    command.epoch = runtime.robot.motion_epoch;
-    command.valid = runtime.robot.ready && runtime.robot.joint_mask == ARM_ALL_JOINTS;
-    command.enabled =
-        VEHICLE_SAFETY_ENABLED && runtime.robot.active && !runtime.robot.emergency_stop;
-    command.stop = runtime.robot.stop_chassis;
-    command.brake = runtime.robot.longitudinal_brake;
-    command.reset = runtime.robot.reset_chassis_motion;
-    command.speed_request = runtime.robot.longitudinal_speed_request;
-    command.turn_request = runtime.robot.turn_rate_request;
     runtime.debug_request = read_debug_request();
 #if CHASSIS_SUSPENDED_BENCH
     read_bench_command(runtime);

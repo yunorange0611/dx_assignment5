@@ -1,6 +1,7 @@
 #include "robot_control.h"
 #include "robot_control_internal.h"
 #include "Remote/operator_control.h"
+#include "Chassis/chassis_control.h"
 #include "yaw_service.h"
 #include "task_protect.h"
 #include "vehicle_state_task.h"
@@ -15,6 +16,7 @@ volatile uint32_t g_robot_debug_command = ROBOT_DEBUG_IDLE;
 }
 namespace {
 engineer::Interlocks shared_interlocks;
+engineer::ChassisCommand chassis_command;
 bool arm_requested = false, stop_requested = false;
 uint32_t stop_epoch = 0;
 uint32_t vehicle_protection(uint32_t now) {
@@ -78,6 +80,14 @@ extern "C" int Robot_GetControlStatus(RobotControlStatus *v) {
     *v = g_robot_status;
     taskEXIT_CRITICAL();
     return v->ready;
+}
+bool Robot_GetChassisCommand(engineer::ChassisCommand *command) {
+    if (!command)
+        return false;
+    taskENTER_CRITICAL();
+    *command = chassis_command;
+    taskEXIT_CRITICAL();
+    return command->valid;
 }
 void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     using namespace engineer;
@@ -164,6 +174,10 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         publish_protection(next);
         taskENTER_CRITICAL();
         g_robot_status = next;
+        chassis_command = {};
+        chassis_command.valid = true;
+        chassis_command.updated_ms = now;
+        chassis_command.stop_epoch = current_stop_epoch;
         taskEXIT_CRITICAL();
         return;
     }
@@ -197,7 +211,6 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         result.reset_chassis_motion = true;
         result.fast_requested = false;
         result.drive_gear = DriveGear::Slow;
-        result.yaw_follow = false;
         result.longitudinal_speed_request = 0;
         result.turn_rate_request = 0;
         result.block = OperatorBlock::ArmUnavailable;
@@ -248,7 +261,6 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     next.longitudinal_brake = result.longitudinal_brake;
     next.reset_chassis_motion = result.reset_chassis_motion;
     next.motion_epoch = result.motion_epoch;
-    next.yaw_follow = 0;
     next.fast_requested = result.fast_requested;
     next.drive_gear = uint8_t(result.drive_gear);
     next.drive_yaw_limited = result.drive_yaw_limited;
@@ -259,8 +271,26 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     for (unsigned i = 0; i < kJointCount; ++i)
         next.target_deg[i] = result.target_deg[i];
     publish_protection(next);
+    // Publish the control input directly from this decision, independently of
+    // the diagnostic snapshot. Four-axis and all tuning builds deny driving.
+    ChassisCommand command{};
+    command.valid = true;
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH &&                  \
+    !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+    command.enabled =
+        kArmConfig.joint_mask == kAllJoints && result.active && !result.emergency_stop;
+#endif
+    command.stop = result.stop_chassis;
+    command.brake = result.longitudinal_brake;
+    command.reset = result.reset_chassis_motion;
+    command.speed_request = result.longitudinal_speed_request;
+    command.turn_request = result.turn_rate_request;
+    command.updated_ms = now;
+    command.epoch = result.motion_epoch;
+    command.stop_epoch = next.stop_epoch;
     taskENTER_CRITICAL();
     g_robot_status = next;
+    chassis_command = command;
     taskEXIT_CRITICAL();
 }
 void Robot_ReportArmState(const engineer::Status &s) {
@@ -275,11 +305,16 @@ void Robot_ReportArmState(const engineer::Status &s) {
         g_robot_status.reset_chassis_motion = 1;
         g_robot_status.fast_requested = 0;
         g_robot_status.drive_gear = ROBOT_GEAR_SLOW;
-        g_robot_status.yaw_follow = 0;
         g_robot_status.longitudinal_speed_request = 0;
         g_robot_status.turn_rate_request = 0;
         g_robot_status.block = uint8_t(engineer::OperatorBlock::ArmUnavailable);
         publish_protection(g_robot_status);
+        chassis_command.enabled = false;
+        chassis_command.stop = true;
+        chassis_command.brake = true;
+        chassis_command.reset = true;
+        chassis_command.speed_request = 0;
+        chassis_command.turn_request = 0;
     }
     taskEXIT_CRITICAL();
 }

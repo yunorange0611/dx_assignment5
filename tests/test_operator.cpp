@@ -128,7 +128,7 @@ int test_operator() {
         r.rc.frame.channel[1] = -660;
         r.rc.frame.channel[0] = -660;
         o = r.tick();
-        CHECK(o.mode == RobotMode::Grab && o.stop_chassis && !o.yaw_follow);
+        CHECK(o.mode == RobotMode::Grab && o.stop_chassis);
         CHECK(o.target_deg[BigPitch] > 0 && o.target_deg[Roll] > 0);
         CHECK(o.target_deg[SmallPitch] < 0 && o.target_deg[Yaw] < 0);
         CHECK(o.turn_rate_request == 0 && o.longitudinal_speed_request == 0);
@@ -144,7 +144,7 @@ int test_operator() {
         r.rc.frame.channel[2] = 660;
         auto o = r.tick();
         CHECK(near(o.target_deg[Yaw], 0.008f));
-        CHECK(o.turn_rate_request == 0 && o.longitudinal_speed_request == 0 && !o.yaw_follow);
+        CHECK(o.turn_rate_request == 0 && o.longitudinal_speed_request == 0);
         CHECK(o.target_deg[Roll] == 0 && o.target_deg[BigPitch] == 0 &&
               o.target_deg[SmallPitch] == 0);
         const float yaw = o.target_deg[Yaw];
@@ -160,7 +160,7 @@ int test_operator() {
         CHECK(o.longitudinal_speed_request == 1 && o.turn_rate_request == -1 &&
               !o.longitudinal_brake);
         CHECK(o.target_deg[Yaw] > yaw && o.target_deg[SmallPitch] == 0);
-        CHECK(!o.yaw_follow && !o.reset_chassis_motion);
+        CHECK(!o.reset_chassis_motion);
         r.rc.frame.channel[3] = -660;
         o = r.tick();
         CHECK(o.longitudinal_speed_request == -1 &&
@@ -208,7 +208,7 @@ int test_operator() {
         o = r.tick();
         CHECK(o.block == OperatorBlock::WaitChassisStop && o.stop_chassis &&
               o.reset_chassis_motion);
-        CHECK(o.motion_epoch != epoch && !o.disable_arm && !o.yaw_follow);
+        CHECK(o.motion_epoch != epoch && !o.disable_arm);
         r.neutral();
         for (unsigned n = 0; n < 5; ++n) {
             o = r.tick();
@@ -272,7 +272,7 @@ int test_operator() {
             CHECK(o.active && !o.disable_arm && !o.request_enable && o.stop_chassis);
             CHECK(o.longitudinal_speed_request == 0 && o.turn_rate_request == 0 &&
                   o.longitudinal_brake);
-            CHECK(!o.fast_requested && !o.yaw_follow && o.drive_gear == DriveGear::Slow);
+            CHECK(!o.fast_requested && o.drive_gear == DriveGear::Slow);
             CHECK(o.motion_epoch == entered.motion_epoch);
             for (unsigned j = 0; j < kJointCount; ++j)
                 CHECK(o.target_deg[j] == entered.target_deg[j]);
@@ -355,7 +355,7 @@ int test_operator() {
         r.rc.frame.channel[0] = 660;
         o = r.tick();
         CHECK(o.drive_yaw_limited && o.target_deg[Yaw] == 18);
-        CHECK(o.turn_rate_request == -1 && o.active && !o.yaw_follow);
+        CHECK(o.turn_rate_request == -1 && o.active);
         r.arm.joint[Yaw].position_deg = 18.5f;
         o = r.tick();
         CHECK(o.target_deg[Yaw] == 18);

@@ -31,7 +31,7 @@
 
 ```text
 receive_feedback       取CAN2队列帧，保留源时间，检查本地总线异常
-read_command           取Robot速度/停止/epoch，正常固件只接受停止或清错调试请求
+read_command           直接取ChassisCommand，正常固件只接受停止或清错调试请求
 control_and_limit      同一个差速/斜坡/轮速PI，再执行功率和最终安全限制
 submit_output          chassis_motor统一编码，返回量化实际值，提交CAN并反馈PI
 publish_status         发布真实反馈、许可、故障和队列接受的量化提交值
@@ -39,6 +39,8 @@ wait_next_cycle        阻塞到下周期，迟到时不连续补跑
 ```
 
 这些私有函数及运行上下文留在chassis_task.cpp中。ChassisControl、ChassisPower和ChassisMotor仍各持有自己需要的状态，没有为缩短任务而新增五个调度文件。
+
+协调入口直接发布现有 `ChassisCommand`，底盘通过 `Robot_GetChassisCommand()` 一次取得请求，不再经历 `RobotControlStatus → ChassisCommand` 的搬运。请求只含原运行/停车/复位、速度/转向、时间和必要事件；整车快照保留诊断及INS标定状态来源。`Robot_ReportArmState`在同一临界区撤销底盘请求，保留发送后发现故障的同周期覆盖。恒零的yaw_follow和历史API版本宏已删；这轮不增加动作枚举、不移动健康线程或再拆模块。
 
 先看`Chassis/chassis_config.h`，再看`chassis_control.*`理解差速、斜坡、PI；电调报文/方向/量化看`chassis_motor.*`，功率协议看`Power/power_meter.*`，能量停车与制动限流看`Power/chassis_power.*`。悬空请求的纯门控在`chassis_bench.*`，任务只适配输入与发送。
 
@@ -94,9 +96,9 @@ cmake --preset VehicleDebug
 cmake --build --preset VehicleDebug
 ```
 
-全部固件仍从同一工程配置构建，默认四轴、整车、底盘悬空、Yaw悬空和独立配ID入口不变。API仍为0x0203；公共调试状态名字保留。底盘方向/PI、Yaw线束中位/限位、IMU安装、带载撤力、限功率停车距离和慢速整车协作仍是实物待验项目，代码重构不代替上车验收。
+全部固件仍从同一工程配置构建，默认四轴、整车、底盘悬空、Yaw悬空和独立配ID入口不变。单板内部直接共享底盘请求类型，不再维护历史0x0203版本宏；诊断符号继续保留，加载对应新ELF读取。底盘方向/PI、Yaw线束中位/限位、IMU安装、带载撤力、限功率停车距离和慢速整车协作仍是实物待验项目，代码重构不代替上车验收。
 
-## 本轮实际验证记录
+## 本轮实际验证记录（此前架构重构，属于请求收拢前历史）
 
 | 检查 | 本次结果 |
 |---|---|

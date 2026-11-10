@@ -16,6 +16,7 @@ struct ChassisCommand {
     bool valid = false, enabled = false, stop = true, brake = true, reset = true;
     float speed_request = 0, turn_request = 0;
     uint32_t updated_ms = 0, epoch = 0;
+    uint32_t stop_epoch = 0; // Explicit stop cancels pulses even when already disabled.
 };
 struct ChassisState {
     uint32_t updated_ms = 0, faults = 0;

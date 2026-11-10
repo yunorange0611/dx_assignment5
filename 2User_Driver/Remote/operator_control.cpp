@@ -274,7 +274,7 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         }
         if (!bench)
             constrain_yaw_target();
-        // yaw_follow始终false；其余机械臂轴不接受行驶摇杆新目标。
+        // 其余机械臂轴不接受行驶摇杆新目标。
     } else if (mode_ == RobotMode::Grab) {
         const auto &b = arm_.joint[BigPitch];
         const auto &elbow_config = arm_.joint[SmallPitch];

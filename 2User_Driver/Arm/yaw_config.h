@@ -12,14 +12,14 @@ inline constexpr JointConfig kYawConfig = {
     0, // 用户确认：电流模式；CAN1；ID1，反馈0x205，指令0x1FE第一槽
     1.0f,
     1, // 37T:37T同步带比例；反馈正向待确认
-    -90,
-    90,
-    10,
-    30, // 角范围deg、参考速度deg/s、加速度deg/s²
-    300.0f,
-    2.0f,
-    20.0f,
-    5.0f, // 电流mA、位置P、速度PI
+    -90,    // min_deg：静态最小角，deg
+    90,     // max_deg：静态最大角，deg
+    10,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
+    30,     // max_accel_deg_s2：参考加速度上限
+    300.0f, // max_effort：电流上限，mA
+    2.0f,   // position_kp：位置P
+    20.0f,  // velocity_kp：速度P
+    5.0f,   // velocity_ki：速度I
     0,
     0,
     0,

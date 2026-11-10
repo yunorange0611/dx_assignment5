@@ -2,6 +2,7 @@
 #include "robot_control_internal.h"
 #include "task_protect.h"
 #include "Remote/operator_control.h"
+#include "Chassis/chassis_control.h"
 #include "dr16_bsp.h"
 #include "vehicle_state_task.h"
 #include "task_ins.h"
@@ -33,10 +34,14 @@ extern "C" int DR16_GetStatus(DR16Status *out) {
     return out->valid;
 }
 int test_robot_control() {
-    static_assert(ROBOT_CONTROL_API_VERSION == 0x0203u);
+    static_assert(sizeof(ChassisCommand) < sizeof(RobotControlStatus));
     static_assert(unsigned(RobotMode::Standby) == ROBOT_STANDBY);
     static_assert(unsigned(RobotMode::Drive) == ROBOT_DRIVE);
     static_assert(unsigned(DriveGear::Fast) == ROBOT_GEAR_FAST);
+    ChassisCommand command{};
+    CHECK(!Robot_GetChassisCommand(nullptr));
+    CHECK(!Robot_GetChassisCommand(&command));
+    CHECK(!command.enabled && command.stop && command.brake && command.reset);
 #if YAW_SUSPENDED_BENCH
     // Dedicated yaw build keeps all chassis commands disabled; default false
     // confirmations prevent tuning requests from enabling even with valid RX.
@@ -50,6 +55,9 @@ int test_robot_control() {
     RobotControlStatus s{};
     Robot_Execute(arm, 1234, false);
     CHECK(Robot_GetControlStatus(&s));
+    CHECK(Robot_GetChassisCommand(&command));
+    CHECK(command.valid && !command.enabled && command.stop && command.brake && command.reset);
+    CHECK(command.updated_ms == 1234 && command.stop_epoch == s.stop_epoch);
     CHECK(!s.active && s.emergency_stop && s.stop_chassis && s.longitudinal_brake);
     CHECK(s.longitudinal_speed_request == 0 && s.turn_rate_request == 0 && !s.fast_requested);
     CHECK(s.protection_current_reasons & PROTECT_CONFIG);
@@ -74,6 +82,9 @@ int test_robot_control() {
     Robot_StopControl();
     Robot_Execute(arm, 1234, false);
     CHECK(Robot_GetControlStatus(&s) && s.stop_epoch != epoch);
+    CHECK(Robot_GetChassisCommand(&command) && command.stop_epoch == s.stop_epoch);
+    CHECK(!command.enabled && command.stop && command.speed_request == 0 &&
+          command.turn_request == 0);
     CHECK(s.protection_current_reasons & PROTECT_STOP_REQUEST);
     CHECK(!g_yaw_debug_status.active && arm.status().enabled_mask == 0);
     CHECK(g_yaw_debug_status.consumed_seq == 2); // A stop also consumes a concurrent new pulse.
@@ -130,10 +141,25 @@ int test_robot_control() {
     CHECK(!(s.protection_current_reasons & PROTECT_INTERLOCK));
     CHECK(!(s.protection_current_reasons & (PROTECT_CHASSIS | PROTECT_IMU | PROTECT_TIPPED |
                                             PROTECT_VEHICLE_STATE | PROTECT_POWER)));
-    CHECK(s.longitudinal_brake && s.reset_chassis_motion && !s.yaw_follow);
+    CHECK(s.longitudinal_brake && s.reset_chassis_motion);
     CHECK(!s.fast_requested && s.drive_gear == ROBOT_GEAR_SLOW);
     CHECK(s.longitudinal_speed_request == 0 && s.turn_rate_request == 0 &&
           arm.status().enabled_mask == 0);
+    CHECK(Robot_GetChassisCommand(&command));
+    CHECK(command.valid && !command.enabled && command.stop && command.brake && command.reset);
+    CHECK(command.updated_ms == s.updated_ms && command.epoch == s.motion_epoch &&
+          command.stop_epoch == s.stop_epoch);
+    // Diagnostic storage cannot turn into a control request, including its source time.
+    const auto saved_diagnostics = g_robot_status;
+    g_robot_status.active = 1;
+    g_robot_status.emergency_stop = 0;
+    g_robot_status.longitudinal_speed_request = 1;
+    g_robot_status.turn_rate_request = -1;
+    g_robot_status.updated_ms = 99999;
+    CHECK(Robot_GetChassisCommand(&command));
+    CHECK(!command.enabled && command.speed_request == 0 && command.turn_request == 0 &&
+          command.updated_ms == 1234);
+    g_robot_status = saved_diagnostics;
     for (unsigned bad = 0; bad < 8; ++bad) {
         auto invalid = locks;
         if (bad == 0)
@@ -166,17 +192,26 @@ int test_robot_control() {
     locks.drive_yaw_max_deg = 0;
     locks.drive_yaw_max_speed_deg_s = 0;
     CHECK(Robot_SetInterlocks(&locks));
+    const uint32_t previous_stop_epoch = command.stop_epoch;
     Robot_StopControl();
     Robot_Execute(arm, 1234, false);
     CHECK(Robot_GetControlStatus(&s));
     CHECK(s.protection_current_reasons & PROTECT_STOP_REQUEST);
     CHECK(!s.active && s.emergency_stop && s.turn_rate_request == 0);
+    CHECK(Robot_GetChassisCommand(&command));
+    CHECK(command.stop_epoch != previous_stop_epoch && command.stop_epoch == s.stop_epoch &&
+          !command.enabled && command.speed_request == 0 && command.turn_request == 0);
     Status fault{};
     fault.faults = FeedbackTimeout;
     Robot_ReportArmState(fault);
     CHECK(Robot_GetControlStatus(&s));
     CHECK((s.protection_latched_reasons & PROTECT_ARM_FAULT) && s.protection_disabled);
     CHECK(s.stop_chassis && s.emergency_stop && s.reset_chassis_motion);
+    CHECK(Robot_GetChassisCommand(&command));
+    CHECK(!command.enabled && command.stop && command.brake && command.reset &&
+          command.speed_request == 0 && command.turn_request == 0 && command.updated_ms == 1234);
+    Robot_ReportArmState(Status{});
+    CHECK(Robot_GetChassisCommand(&command) && !command.enabled); // Healthy report cannot restart.
     // Stable debugger command symbol consumes each command once and preserves default disable.
     for (unsigned j = 0; j < kJointCount; ++j)
         if (kArmConfig.joint_mask & (1u << j)) {

@@ -2,7 +2,7 @@
 
 工程基于 [dx_assignment5_freertos](https://github.com/liqibei/dx_assignment5_freertos/tree/80450f4790afac2a29b0d66d94a6952ad3ab08e1)。机械臂负责人维护大/小 pitch、roll、夹爪四轴；另一位同学维护两台 M3508 底盘和大 yaw GM6020。yaw 参数独立在 `2User_Driver`，运行时仍由统一 CAN1 五轴任务控制。协作入口见 [AGENTS.md](AGENTS.md)；原教学模板说明完整保存在 [docs/TEMPLATE_README.md](docs/TEMPLATE_README.md)。
 
-整车已按《遥控器.docx》V2.1 接入 DR16 的行驶、夹取、待机模式，以及参考 `RM_task_Chassis/task_protect` 结构的关控保护。日常 `Debug/Release`（兼容入口 `BenchDebug`）提供仅两 pitch、roll、夹爪的固定四轴配置，不依赖 yaw 或底盘；整车显式使用 `VehicleDebug/VehicleRelease`。台架操作、调试变量、遥控接线和底盘 API `0x0202` 集中见 [README_REMOTE.md](README_REMOTE.md)；底盘实际差速控制仍待接入。
+整车已按《遥控器.docx》V2.1 接入 DR16 的行驶、夹取、待机模式，以及参考 `RM_task_Chassis/task_protect` 结构的关控保护。日常 `Debug/Release`（兼容入口 `BenchDebug`）提供仅两 pitch、roll、夹爪的固定四轴配置，不依赖 yaw 或底盘；整车显式使用 `VehicleDebug/VehicleRelease`。台架操作、调试变量、遥控接线和底盘请求接口集中见 [README_REMOTE.md](README_REMOTE.md)；CAN2差速控制已接入，仍待实物验收。
 
 ## 当前实现
 
@@ -152,11 +152,11 @@ CAN BSP 发送队列已改成 `can_tx_frame` 按值拷贝。修复了缓冲区�
 
 CubeMX `.ioc` 已同步发送队列类型和USART3/DMA配置；新增任务放在 `freertos.c` 的 USER CODE 区。重新生成后要核对主 CMake、PC11、100000 baud、9B+偶校验、DMA_NORMAL，以及 USART3/DMA IRQ 定义，避免重复定义。DR16 接收/解码和操作映射已接入，但物理通道、正向及三处使能门槛待实机确认。
 
-V2.1 行驶模式左横独立控制 yaw、右横发布底盘转向请求，`yaw_follow` 恒为 0。行驶 yaw 许可和角度/目标变化速度包络由 `RobotInterlocks.drive_yaw_*` 提供；未许可时不接受行驶 yaw 新目标，合法包络缩小但当前反馈/目标/参考越界时请求底盘停车并等待处理。该包络不是碰撞检测，也不替代机构安全行程实测。
+V2.1 行驶模式左横独立控制 yaw、右横发布底盘转向请求，无Yaw跟随功能及对应预留字段。行驶 yaw 许可和角度/目标变化速度包络由 `RobotInterlocks.drive_yaw_*` 提供；未许可时不接受行驶 yaw 新目标，合法包络缩小但当前反馈/目标/参考越界时请求底盘停车并等待处理。该包络不是碰撞检测，也不替代机构安全行程实测。
 
 其中 `drive_yaw_max_speed_deg_s` 已同时约束遥控目标、底层参考与内层速度目标；Yaw在线半幅、真实边界减速、领先限制及原owner内调参见README_YAW.md。实际制动能力仍须实测。
 
-共享接口为 `0x0203`，纵向为 `longitudinal_speed_request`。CAN2底盘已实现本端源时间检查、轮速PI/差速/斜坡、停止与epoch处理、最终输出抗饱和及功率计0x31/保守限幅。真实互锁与IMU保护见README_VEHICLE.md。台架0x1e保持禁止底盘；软件接入不代替实物停车与功率验收。
+底盘直接读取 `Robot_GetChassisCommand()` 提供的现有 `ChassisCommand`，不再将整车诊断快照转换为控制命令；不维护单板内部API版本宏。CAN2底盘已实现本端源时间检查、轮速PI/差速/斜坡、停止与epoch处理、最终输出抗饱和及功率计0x31/保守限幅。真实互锁与IMU保护见README_VEHICLE.md。台架0x1e保持禁止底盘；软件接入不代替实物停车与功率验收。
 
 ## 构建与验证
 

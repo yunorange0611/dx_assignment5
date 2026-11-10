@@ -1,6 +1,6 @@
 # 两轮底盘：分批实现与悬空调试
 
-第一批：速度API为`0x0203`，纵向字段`longitudinal_speed_request`，取值[-1,1]，回中映射零速度，再经加减速斜坡。原加速度字段已删除，所有调用方须重新编译。右横转向仍为逆时针正，倒车不翻转；无Yaw跟随。
+当前底盘通过 `Robot_GetChassisCommand()` 直接取得现有 `ChassisCommand`，不再读取整车诊断快照或逐字段转换。`speed_request/turn_request`取值[-1,1]；回中映射零速度，再经加减速斜坡。右横转向为逆时针正，倒车不翻转，不做Yaw跟随。第一批曾用`0x0203`标记内部速度字段变更；该历史版本宏已移除，不作为单板内部协议维护。
 
 CAN1为机械臂/Yaw；CAN2为两台M3508/C620和功率计。用户确认CAN2左轮ID1、右轮ID2，对应反馈0x201/0x202、共用0x200第一/二槽；转动方向仍须实测。功率计标准帧0x31、DLC4，功率与缓冲为有符号小端int16×0.1W/J，保留首帧及源时间。第三批已接保守功率限幅和低能量/功率反馈超时的受控停车，完整边界见README_VEHICLE.md；严格瞬态50W保证与实测停车距离仍未验收。
 
@@ -15,6 +15,21 @@ CAN1为机械臂/Yaw；CAN2为两台M3508/C620和功率计。用户确认CAN2左
 | DmIdConfig | 独立配ID，不启动底盘 |
 
 默认`ChassisConfig.hardware_confirmed=false`，遥控映射确认也为false；不会因编译成功自动开轮。先核对电调ID、方向、齿比、悬空固定与摇杆/拨杆原码，再据实设置确认标记。方向通过低电流短时试验确认，不先接反向反馈的闭环。
+
+## 修改入口
+
+以下均在 `2User_Driver/Chassis/chassis_config.h` 的 `ChassisConfig`；确认标记保持默认false，测完对应项目再据实填写。
+
+| 修改内容 | 字段 |
+|---|---|
+| 左右ID、方向 | `motor_id[2]`（已确认左1右2）、`direction[2]`（待测） |
+| 轮径、轮距、总齿比 | `diameter_m`、`track_m`、`gear_ratio` |
+| 慢速与转向上限 | `max_speed_m_s`、`max_turn_rad_s` |
+| 加减速、转向斜坡 | `acceleration_m_s2`、`deceleration_m_s2`、`angular_accel_rad_s2` |
+| 轮速PI、电流上限 | `velocity_kp`、`velocity_ki`、`max_current_ma` |
+| 反馈/请求超时、轮停判定 | `feedback_timeout_ms`、`command_timeout_ms`、`stationary_rpm`、`stationary_ms` |
+
+当前没有独立快速档参数，快速请求不会使底盘变快；`fast_requested/drive_gear`仅保留在整车诊断。功率/能量停车参数在 `Power/chassis_power.h`，与轮速PI参数分开实测。
 
 ## 悬空入口
 

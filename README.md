@@ -1,6 +1,6 @@
 # RM Robosister 工程车
 
-> 当前已在三批功能基础上完成三层架构重构，API 0x0203。结构与调用关系先看 README_ARCHITECTURE；调参依据为 README_CHASSIS、README_YAW、README_VEHICLE。所有实测确认默认关闭，尚未烧录或实物验收。本轮只做本地Git提交，不推送。
+> 当前已在三批功能基础上完成三层架构重构，并将底盘控制请求与整车诊断快照分开。结构与调用关系先看 README_ARCHITECTURE；调参依据为 README_CHASSIS、README_YAW、README_VEHICLE。所有实测确认默认关闭，尚未烧录或实物验收。本轮只做本地Git提交，不推送。
 
 单块 RoboMaster C 板（STM32F407IGH6）运行 FreeRTOS，使用 DR16 遥控协议 V2.1。两位电控同学共同维护同一份固件：机械臂负责人调试大/小 pitch、roll、夹爪；底盘/yaw 负责人调试两台 M3508 和大 yaw GM6020。
 
@@ -41,7 +41,7 @@
 | 两台 M3508/C620 | CAN2 | 用户确认左ID1/右ID2，反馈0x201/0x202，指令0x200第1/2槽，方向待实测 |
 | 功率计 | CAN2 | 标准0x31，DLC4，signed int16小端×0.1W/J |
 
-CAN1、CAN2 均为 1 Mbps。CAN1 同一指令 ID 不能由多个任务分别发送；两条总线可以独立使用同号 ID。底盘任务读取 `3Task` 的 API `0x0203`，消费转向/纵向请求、档位和停止标志；`vehicle_state_task` 聚合真实底盘、机械臂和INS状态，统一发布互锁。整车配置中 `Robot_SetInterlocks()` 超过 100 ms 未更新会停止控制。底盘还须自行检查快照 `updated_ms`，处理 `motion_epoch` 变化和 CAN2 停机。四轴台架的 `joint_mask=0x1e`，始终发布底盘 `stop_chassis=1/emergency_stop=1`，不构成底盘驾驶模式。
+CAN1、CAN2 均为 1 Mbps。CAN1 同一指令 ID 不能由多个任务分别发送；两条总线可以独立使用同号 ID。底盘通过 `Robot_GetChassisCommand()` 直接取得现有 `ChassisCommand`，消费运行许可、停车/复位、速度/转向、源时间和停止事件；不再读取整车大快照再转换。`RobotControlStatus`保留诊断及INS校准状态来源。`vehicle_state_task`继续聚合真实底盘、机械臂和INS状态；互锁超过100 ms未更新会停止控制。底盘本地检查请求时效、`epoch/stop_epoch`及CAN2故障，四轴台架始终发布底盘失能请求。
 
 功率计已接CAN2。50W/500J为规则边界，首版使用40W预算占位及低缓冲预留，推进和制动分别限流；这不是精细功率模型或严格瞬态功率保证。功率反馈超时/低能量而轮反馈健康时先有时限停车，轮/总线故障立即撤力；参数和距离须实测。
 
@@ -75,7 +75,7 @@ python tests/check_architecture.py
 
 `ARM_FOUR_AXIS_BENCH` 默认 ON；`Debug/Release/BenchDebug` 明确 ON，`VehicleDebug/VehicleRelease` 明确 OFF。四轴日常输出在 `build/Debug/`，整车在 `build/VehicleDebug/`：固件为 `engineer_arm.bin/.hex`，调试符号为 `dx_assignment5_freertos.elf`。原 `BenchDebug` 仍输出到 `build/BenchDebug/`。测试默认四轴，`--vehicle` 测整车，保留 `--bench` 作为显式四轴选项。烧录和调试必须使用同一配置的文件。`firmware_disabled/` 是旧本地固件副本，请从当前源码重新构建；构建输出、IDE 文件和本地测试依赖已由 `.gitignore` 排除。
 
-2026-11-10 当前架构重构复验：四轴46,036、整车46,064、YawBench46,018条断言通过；Debug、VehicleDebug、VehicleRelease、ChassisBenchDebug、YawBenchDebug、DmIdConfig六种固件编译链接通过。VehicleDebug为FLASH 93,336 B/RAM 58,976 B，VehicleRelease为FLASH 51,520 B/RAM 58,976 B。架构检查通过，13个业务公开头独立编译，业务源不提供Task/HAL/RTOS搜索路径也可编译。旧DJI/pid不再进入构建；测试ELF的RWX段警告仍在。测试使用ARM机器码、合成输入与HAL/RTOS替身，未烧录/实物待验。
+2026-11-10 架构重构阶段历史复验（本轮请求收拢前）：四轴46,036、整车46,064、YawBench46,018条断言通过；Debug、VehicleDebug、VehicleRelease、ChassisBenchDebug、YawBenchDebug、DmIdConfig六种固件编译链接通过。VehicleDebug为FLASH 93,336 B/RAM 58,976 B，VehicleRelease为FLASH 51,520 B/RAM 58,976 B。架构检查通过，13个业务公开头独立编译，业务源不提供Task/HAL/RTOS搜索路径也可编译。旧DJI/pid不再进入构建；测试ELF的RWX段警告仍在。测试使用ARM机器码、合成输入与HAL/RTOS替身，未烧录/实物待验。
 
 以下为重构前历史记录，不代表当前固件占用：2026-11-10 固定四轴默认配置复验时，`Debug`（四轴）与 `VehicleDebug`（整车）均构建通过，各使用 Flash 65,144 B、RAM 58,624 B；四轴 42,584 条、整车 42,585 条断言通过。软件测试不覆盖真实 UART/CAN、方向、负载保持或底盘制动。
 

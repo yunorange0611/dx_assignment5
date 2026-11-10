@@ -50,7 +50,7 @@ struct OperatorOutput {
     RobotMode mode = RobotMode::Safe;
     OperatorBlock block = OperatorBlock::RemoteOffline;
     bool active = false, wait_neutral = true, request_enable = false, disable_arm = true;
-    bool stop_chassis = true, emergency_stop = true, yaw_follow = false;
+    bool stop_chassis = true, emergency_stop = true;
     bool longitudinal_brake = true, reset_chassis_motion = true, fast_requested = false;
     bool drive_yaw_limited = false;
     DriveGear drive_gear = DriveGear::Slow;

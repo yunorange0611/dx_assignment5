@@ -4,8 +4,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define ROBOT_CONTROL_API_VERSION 0x0203u
-// 0x0203: longitudinal_speed_request replaces the incompatible acceleration field.
 enum RobotModeCode { ROBOT_SAFE, ROBOT_DRIVE, ROBOT_GRAB, ROBOT_STANDBY };
 enum RobotDriveGear { ROBOT_GEAR_SLOW, ROBOT_GEAR_FAST };
 typedef struct {
@@ -18,7 +16,6 @@ typedef struct {
 typedef struct {
     uint8_t ready, mode, block, active, wait_neutral, remote_online;
     uint8_t emergency_stop, stop_chassis, longitudinal_brake, reset_chassis_motion;
-    uint8_t yaw_follow; // V2.1固定0，底盘不得根据yaw_relative_deg自行跟随。
     uint8_t fast_requested, drive_gear, drive_yaw_limited, protection_disabled;
     uint8_t joint_mask;  // 0x1f整车 / 0x1e四轴；台架始终发布底盘停控
     uint32_t stop_epoch; // Explicit global stop event, including an already-disabled robot.
@@ -28,7 +25,7 @@ typedef struct {
     float longitudinal_speed_request, turn_rate_request, yaw_relative_deg;
     float target_deg[5], gripper_effort_limit;
 } RobotControlStatus;
-// 状态符号只读；任务间仍使用Get接口。原调试命令每轮取走并清零；
+// 整车诊断快照；底盘控制不读取本结构。原调试命令每轮取走并清零；
 // 有序号的Yaw请求由同一owner一次消费，不允许直接写状态控制电机。
 extern RobotControlStatus g_robot_status;
 enum RobotDebugCommand {
@@ -46,11 +43,15 @@ int Robot_SetInterlocks(const RobotInterlocks *state);
 // 回中/停车、反馈和校零就绪后显式请求一次；待机中忽略、不排队等待以后开控。
 int Robot_RequestControl(void);
 void Robot_StopControl(void);
-int Robot_GetControlStatus(RobotControlStatus *status);
-// 消费规则：ready/active失效、emergency_stop或(now-updated_ms)过期 -> 底盘自行执行安全停机。
-// stop_chassis -> 受控停车；longitudinal_brake -> 即使原地转向也将纵向速度制动到0。
-// reset_chassis_motion为1或motion_epoch变化 -> 清旧积分目标/历史，再按实测斜坡停车。
-// DriveGear为许可后的档位，并不实现速度限制；底盘负责轮速/功率/加速度及停机输出。
+int Robot_GetControlStatus(RobotControlStatus *status); // Diagnostics and calibration state only.
 #ifdef __cplusplus
 }
+
+namespace engineer {
+struct ChassisCommand;
+}
+// One atomic copy of the existing control command; no diagnostic fields or conversion in chassis.
+// valid means the producer has published; enabled also includes the full-vehicle build gate.
+// The chassis checks updated_ms locally and retains its feedback/power/fault vetoes.
+bool Robot_GetChassisCommand(engineer::ChassisCommand *command);
 #endif
