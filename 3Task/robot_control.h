@@ -36,6 +36,25 @@ enum RobotDebugCommand {
     ROBOT_DEBUG_REQUEST_CONTROL
 };
 extern volatile uint32_t g_robot_debug_command;
+// One daily firmware. Remote Drive/Grab/Standby remains independent of these
+// owner-consumed FreeMASTER inputs. Switching mode clears motion targets.
+enum RobotTuneMode {
+    ROBOT_TUNE_NORMAL, ROBOT_TUNE_LEFT_CURRENT, ROBOT_TUNE_RIGHT_CURRENT,
+    ROBOT_TUNE_LEFT_SPEED, ROBOT_TUNE_RIGHT_SPEED, ROBOT_TUNE_YAW_SPEED,
+    ROBOT_TUNE_YAW_POSITION
+};
+extern volatile uint32_t robot_tune_mode;
+extern volatile float tune_current_ma, tune_speed_rpm, tune_yaw_speed_deg_s, tune_yaw_target_deg;
+extern volatile float tune_wheel_kp, tune_wheel_ki, tune_wheel_current_limit_ma;
+extern volatile float tune_yaw_position_kp, tune_yaw_velocity_kp, tune_yaw_velocity_ki,
+    tune_yaw_current_limit_ma, tune_yaw_half_range_deg;
+typedef struct {
+    uint32_t updated_ms, mode, epoch, reason;
+    uint8_t ready, blocked, held_mask;
+    uint32_t yaw_parameter_result;
+    float yaw_position_kp, yaw_velocity_kp, yaw_velocity_ki, yaw_current_limit_ma;
+} RobotTuneStatus;
+extern RobotTuneStatus g_robot_tune_status; // Read-only accepted mode / limits.
 // ZERO/CLEAR同时请求关控，已使能时核心返回Busy；绝不自动校零/自动开控。
 // 单C板：底盘/安全管理约每20ms更新真实状态；100ms过期禁止运动。
 // 非法输入立即使互锁无效，不继续沿用旧许可。无底盘任务时不要伪造全部为1。

@@ -111,14 +111,21 @@ class ArmControl {
     explicit ArmControl(const Config &config);
     bool receive(uint8_t bus, uint16_t id, const uint8_t *data, uint8_t len, uint32_t now_ms);
     Result capture_zero(uint8_t mask, uint32_t now_ms);
+    // Explicitly add the requested axes; already-enabled axes keep their state.
     Result enable(uint8_t mask, uint32_t now_ms);
     void disable();
+    // Owner-only mode changes. Neither operation enables an axis; pitch stays paired.
+    Result hold(uint8_t mask, uint32_t now_ms);
+    Result disable_joints(uint8_t mask);
     Result clear_faults();
     Result set_targets(uint8_t mask, const float positions[kJointCount], uint32_t now_ms);
     void transport_fault();
     Result set_effort_limit(unsigned joint, float limit);
     // Disabled-only RAM tuning. Limits never exceed the startup output cap.
     Result set_tuning(unsigned joint, const JointTuning &tuning, uint32_t now_ms);
+    // Runtime tuning requires the affected drive(s) stationary and their targets
+    // and references within 0.5 deg of feedback. Other holding axes stay enabled.
+    Result set_tuning_runtime(unsigned joint, const JointTuning &tuning, uint32_t now_ms);
     bool get_tuning(unsigned joint, JointTuning &tuning) const;
     Result set_yaw_limits(const YawRuntimeLimits &limits, uint32_t now_ms);
     Result set_yaw_envelope(float min_deg, float max_deg, float speed_deg_s);
@@ -165,6 +172,8 @@ class ArmControl {
     float drive_max(unsigned joint) const;
     float drive_speed_limit(unsigned joint) const;
     void trip(uint32_t fault, unsigned joint);
+    Result set_tuning_checked(unsigned joint, const JointTuning &tuning, uint32_t now_ms,
+                              bool runtime);
     bool valid_config() const;
     bool selected(unsigned joint) const {
         return (config_.joint_mask & (1u << joint)) != 0;

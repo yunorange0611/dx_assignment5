@@ -357,6 +357,77 @@ void ArmControl::disable() {
     pitch_path_active_ = false;
     yaw_test_active_ = false;
 }
+Result ArmControl::disable_joints(uint8_t mask) {
+    if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
+        return status_.last_result = Result::InvalidArgument;
+    status_.enabled_mask &= ~mask;
+    for (unsigned i = 0; i < kJointCount; ++i) {
+        if (!(mask & (1u << i)))
+            continue;
+        auto &s = status_.joint[i];
+        auto &r = runtime_[i];
+        s.enabled = false;
+        s.effort = 0;
+        s.velocity_target_deg_s = 0;
+        s.drive_reference_velocity_deg_s = 0;
+        r.integral = 0;
+        r.reference_velocity = 0;
+        r.dm_was_enabled = false;
+    }
+    if (mask & kPitchPair) {
+        pitch_speed_ = 0;
+        pitch_path_active_ = false;
+    }
+    if (mask & (1u << Yaw)) {
+        yaw_test_active_ = false;
+        yaw_test_speed_ = 0;
+    }
+    return status_.last_result = Result::Ok;
+}
+Result ArmControl::hold(uint8_t mask, uint32_t now) {
+    if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
+        return status_.last_result = Result::InvalidArgument;
+    refresh(now);
+    if (status_.faults)
+        return status_.last_result = Result::FaultLatched;
+    // Disabled axes are deliberately left untouched, including their targets.
+    const uint8_t active = mask & status_.enabled_mask;
+    for (unsigned i = 0; i < kJointCount; ++i) {
+        if (!(active & (1u << i)))
+            continue;
+        const auto &s = status_.joint[i];
+        const auto &c = config_.joint[i];
+        if (!s.online)
+            return status_.last_result = Result::NotOnline;
+        if (!s.calibrated)
+            return status_.last_result = Result::NotCalibrated;
+        if (!finite(s.position_deg) || s.position_deg < c.min_deg || s.position_deg > c.max_deg ||
+            !finite(s.drive_position_deg) || s.drive_position_deg < drive_min(i) ||
+            s.drive_position_deg > drive_max(i))
+            return status_.last_result = Result::OutOfRange;
+    }
+    for (unsigned i = 0; i < kJointCount; ++i) {
+        if (!(active & (1u << i)))
+            continue;
+        auto &s = status_.joint[i];
+        auto &r = runtime_[i];
+        s.target_deg = s.reference_deg = s.position_deg;
+        s.effort = 0;
+        s.velocity_target_deg_s = 0;
+        r.integral = r.reference_velocity = 0;
+        r.last_command_ms = now;
+    }
+    if (active & kPitchPair) {
+        pitch_speed_ = 0;
+        pitch_path_active_ = false;
+    }
+    if (active & (1u << Yaw)) {
+        yaw_test_active_ = false;
+        yaw_test_speed_ = 0;
+    }
+    update_drive_references();
+    return status_.last_result = Result::Ok;
+}
 Result ArmControl::set_yaw_limits(const YawRuntimeLimits &l, uint32_t now) {
     if (!selected(Yaw))
         return status_.last_result = Result::InvalidArgument;
@@ -406,7 +477,7 @@ Result ArmControl::set_yaw_envelope(float lo, float hi, float speed) {
     return status_.last_result = Result::Ok;
 }
 Result ArmControl::set_yaw_test_speed(float speed, uint32_t now) {
-    if (!selected(Yaw) || status_.enabled_mask != (1u << Yaw) || !finite(speed) ||
+    if (!selected(Yaw) || !(status_.enabled_mask & (1u << Yaw)) || !finite(speed) ||
         std::fabs(speed) > 5.0f || std::fabs(speed) > yaw_motion_speed_)
         return status_.last_result = Result::InvalidArgument;
     yaw_test_active_ = true;
@@ -418,7 +489,17 @@ Result ArmControl::set_yaw_test_speed(float speed, uint32_t now) {
     return status_.last_result = Result::Ok;
 }
 void ArmControl::clear_yaw_test() {
+    if (!yaw_test_active_)
+        return;
     yaw_test_active_ = false;
+    yaw_test_speed_ = 0;
+    auto &s = status_.joint[Yaw];
+    auto &r = runtime_[Yaw];
+    s.target_deg = s.reference_deg = s.position_deg;
+    s.effort = 0;
+    s.velocity_target_deg_s = 0;
+    r.integral = r.reference_velocity = 0;
+    update_drive_references();
 }
 float ArmControl::limit_yaw_speed(float requested, float dt) const {
     const auto &s = status_.joint[Yaw];
@@ -453,6 +534,15 @@ Result ArmControl::set_tuning(unsigned i, const JointTuning &tuning, uint32_t no
         return status_.last_result = Result::InvalidArgument;
     if (status_.enabled_mask)
         return status_.last_result = Result::Busy;
+    return set_tuning_checked(i, tuning, now, false);
+}
+Result ArmControl::set_tuning_runtime(unsigned i, const JointTuning &tuning, uint32_t now) {
+    if (i >= kJointCount || !selected(i))
+        return status_.last_result = Result::InvalidArgument;
+    return set_tuning_checked(i, tuning, now, true);
+}
+Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uint32_t now,
+                                       bool runtime) {
     // Numeric typo bounds, not a claim that the full range is safe on hardware.
     if (!finite(tuning.position_kp) || tuning.position_kp <= 0 || tuning.position_kp > 1000 ||
         !finite(tuning.velocity_kp) || tuning.velocity_kp < 0 || tuning.velocity_kp > 1.0e6f ||
@@ -478,6 +568,12 @@ Result ArmControl::set_tuning(unsigned i, const JointTuning &tuning, uint32_t no
         if (!finite(s.drive_velocity_deg_s) ||
             std::fabs(s.drive_velocity_deg_s) > c.stationary_speed_deg_s)
             return status_.last_result = Result::Moving;
+        if (runtime && (!finite(s.drive_target_deg) || !finite(s.drive_reference_deg) ||
+                        std::fabs(s.drive_target_deg - s.drive_position_deg) > .5f ||
+                        std::fabs(s.drive_reference_deg - s.drive_position_deg) > .5f ||
+                        std::fabs(runtime_[j].reference_velocity) > .00001f ||
+                        (j == Yaw && yaw_test_active_ && yaw_test_speed_ != 0)))
+            return status_.last_result = Result::Busy;
         if (s.faults || (c.motor != Motor::M2006 && s.temperature_c >= c.max_temperature_c) ||
             (c.motor == Motor::Dm4310Mit && s.motor_state >= 8))
             return status_.last_result = Result::FaultLatched;
@@ -590,7 +686,8 @@ Result ArmControl::capture_zero(uint8_t mask, uint32_t now) {
 Result ArmControl::enable(uint8_t mask, uint32_t now) {
     if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
         return status_.last_result = Result::InvalidArgument;
-    if (status_.enabled_mask)
+    const uint8_t added = mask & ~status_.enabled_mask;
+    if (!added)
         return status_.last_result = Result::Busy;
     if (!status_.configuration_valid || !config_.hardware_confirmed ||
         ((mask & kPitchPair) && !config_.pitch.mapping_confirmed))
@@ -599,7 +696,7 @@ Result ArmControl::enable(uint8_t mask, uint32_t now) {
     if (status_.faults)
         return status_.last_result = Result::FaultLatched;
     for (unsigned i = 0; i < kJointCount; ++i)
-        if (mask & (1u << i)) {
+        if (added & (1u << i)) {
             const auto &s = status_.joint[i];
             const auto &c = config_.joint[i];
             if (!s.online)
@@ -614,9 +711,9 @@ Result ArmControl::enable(uint8_t mask, uint32_t now) {
                 (c.motor == Motor::Dm4310Mit && s.motor_state >= 8))
                 return status_.last_result = Result::FaultLatched;
         }
-    status_.enabled_mask = mask;
+    status_.enabled_mask |= added;
     for (unsigned i = 0; i < kJointCount; ++i)
-        if (mask & (1u << i)) {
+        if (added & (1u << i)) {
             auto &s = status_.joint[i];
             auto &r = runtime_[i];
             s.enabled = true;
@@ -627,8 +724,10 @@ Result ArmControl::enable(uint8_t mask, uint32_t now) {
             r.last_command_ms = now;
             r.enable_ms = now;
         }
-    pitch_speed_ = 0;
-    pitch_path_active_ = false;
+    if (added & kPitchPair) {
+        pitch_speed_ = 0;
+        pitch_path_active_ = false;
+    }
     update_drive_references();
     return status_.last_result = Result::Ok;
 }

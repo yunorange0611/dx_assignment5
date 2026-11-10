@@ -51,7 +51,8 @@ static int begin_receive(void) {
         restart_needed = 1;
         return 0;
     }
-    __HAL_DMA_DISABLE_IT(&hdma_usart3_rx, DMA_IT_HT);
+    // 通过UART句柄取DMA，避免依赖CubeMX生成文件中DMA句柄的可见性。
+    __HAL_DMA_DISABLE_IT(huart3.hdmarx, DMA_IT_HT);
     restart_needed = 0;
     return 1;
 }
