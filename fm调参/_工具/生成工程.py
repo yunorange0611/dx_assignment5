@@ -134,6 +134,12 @@ REMOTE_MAPPING = REMOTE + [V(f'g_robot_status.remote_axis[{i}]',label,'[-1,1]') 
     V('g_robot_status.remote_age_ms','原始帧年龄','ms')]
 CH_CURRENT = [V('tune_current_ma','单轮电流测试目标','mA',True,-10000,10000,
                 note='选档后从0小步填写；非零电流开始500ms计时，写0停止。')]
+CH_MOTION = [
+    V('tune_chassis_acceleration_m_s2', '行驶加速度', 'm/s^2', True, 0.001, 100),
+    V('tune_chassis_deceleration_m_s2', '行驶减速度', 'm/s^2', True, 0.001, 100),
+    V('tune_chassis_angular_accel_rad_s2', '转向角加速度', 'rad/s^2', True, 0.001, 100),
+    V('tune_chassis_max_turn_rad_s', '最大转向角速度', 'rad/s', True, 0.001, 10),
+]
 CH_SPEED = [V('tune_speed_rpm','单轮速度目标 3508转子rpm','rpm',True,-9000,9000)]
 CH_TUNE = [V('tune_wheel_kp','轮速P','mA/rpm',True,0.001,1000),
            V('tune_wheel_ki','轮速I','mA/(rpm*s)',True,0,1000),
@@ -317,6 +323,7 @@ def groups():
           [V('g_chassis_status.tune_blocked', '底盘调参锁禁')] + tune_gate,
           [('右轮电流指令/实际/转速', ['tune_current_ma', 'g_chassis_status.current_ma[1]',
                                       'g_chassis_status.measured_rpm[1]'])]),
+        G('行驶加减速与转向', CH_MOTION),
         # 第4批：两轮速度PI；目标只上曲线，不占变量行。
         G('第4批 两轮速度PI', select + wheel_params + CH_SPEED +
           wheel_fields(0, ('measured_rpm', 'current_ma')) +

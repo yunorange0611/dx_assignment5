@@ -77,3 +77,6 @@ robot_tune_mode仅选择对象/控制层。tune_enable为旧FM兼容符号，不
 - 遥控解析、通道、方向、死区仍共用；机械臂/Yaw 代码不参与底盘输出。
 - `ChassisCommand.independent` 是内部标记；`g_chassis_status.independent` 为只读状态。FreeMASTER 的“0档底盘直驱｜左拨杆上”Group 用于观察。
 - 以后整车联调时把 `kChassisIndependent` 改回 false，恢复 `Robot_GetChassisCommand()` 的整车许可路径；底盘控制算法和 CAN2 发送入口不变。
+
+### 行驶斜坡在线调参
+FreeMASTER「行驶加减速与转向」组的四项 `tune_chassis_*` 在正常底盘控制周期生效。只接受有限正数，非法输入保留上一生效值。默认值来自 `chassis_config.h`，在线修改不保存到 Flash，不影响单轮测试、限流或停止保护。

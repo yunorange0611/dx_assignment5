@@ -9,6 +9,13 @@ float approach(float x, float goal, float step) {
     return x + clamp(goal - x, -step, step);
 }
 } // namespace
+void ChassisControl::set_motion_tuning(float accel, float decel, float angular_accel, float max_turn) {
+    // Invalid writes leave the corresponding active setting unchanged.
+    if (std::isfinite(accel) && accel > 0) c_.acceleration_m_s2 = accel;
+    if (std::isfinite(decel) && decel > 0) c_.deceleration_m_s2 = decel;
+    if (std::isfinite(angular_accel) && angular_accel > 0) c_.angular_accel_rad_s2 = angular_accel;
+    if (std::isfinite(max_turn) && max_turn > 0) c_.max_turn_rad_s = max_turn;
+}
 ChassisControl::ChassisControl(const ChassisConfig &c)
     : c_(c), startup_current_limit_ma_(c.max_current_ma) {
     const float values[] = {

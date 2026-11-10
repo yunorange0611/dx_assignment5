@@ -46,6 +46,7 @@ class ChassisControl {
     void trip(uint32_t reason);
     bool clear_faults(); // Disabled only; never reenables.
     ChassisTuneResult set_velocity_tuning(float kp, float ki, float current_ma);
+    void set_motion_tuning(float accel, float decel, float angular_accel, float max_turn);
     const ChassisConfig &config() const {
         return c_;
     }
