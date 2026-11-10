@@ -199,7 +199,7 @@ class _Builder:
         return obj
 
 
-def generate(output_path, *, title, elf_path, groups, template_path=None):
+def generate(output_path, *, title, elf_path, groups, template_path=None, root_expressions=()):
     """Generate a .pmpx and return validate()'s report.
 
     groups = [{"title": "第1批 中文组", "variables": [
@@ -255,7 +255,7 @@ def generate(output_path, *, title, elf_path, groups, template_path=None):
     for key in ("mem_offset", "filt_start", "filt_size"):
         _set(flash, key, "0x0")
     _set(doc, "flash_prog", b.ref(flash))
-    root, children = b.block(title, "NULL", [], root=True)
+    root, children = b.block(title, "NULL", root_expressions, root=True)
     _set(doc, "project_root", b.ref(root))
     for index, group in enumerate(groups):
         block, grandchildren = b.block(group["title"], b.ref(root),

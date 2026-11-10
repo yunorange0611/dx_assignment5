@@ -644,7 +644,7 @@ def bind(items, symbols):
                 raise ValueError('不可写符号: '+spec['expr'])
 
 
-def create(path, title, items, backup):
+def create(path, title, items, backup, root_expressions=()):
     elf_path = REPO / 'build' / 'Debug' / 'dx_assignment5_freertos.elf'
     if not elf_path.is_file():
         raise FileNotFoundError(f'先编译单一 Debug 整车固件，没有找到 {elf_path}')
@@ -654,7 +654,7 @@ def create(path, title, items, backup):
         if backup and path.exists():
             shutil.copy2(path,path.with_suffix('.pmpx.bak'))
         result = generate(path,title=title+'｜单固件Debug',elf_path=elf_path,groups=items,
-                          template_path=HERE/'样式模板.xml')
+                          template_path=HERE/'样式模板.xml', root_expressions=root_expressions)
         # 回读生成文件的表达式/缓存地址/宽度/权限，不能留下旧ELF地址。
         import xml.etree.ElementTree as ET
         for obj in ET.parse(path).findall('./objects/object[@type="CVariable"]'):
@@ -675,7 +675,8 @@ def main():
     parser.add_argument('--no-backup',action='store_true')
     args=parser.parse_args()
     tune,diagnostic=groups()
-    records=[create(OUTPUT/'底盘调参.pmpx','底盘与Yaw分批调参',tune,not args.no_backup),
+    records=[create(OUTPUT/'底盘调参.pmpx','底盘与Yaw分批调参',tune,not args.no_backup,
+                    root_expressions=[spec['expr'] for spec in CH_MOTION]),
              create(OUTPUT/'底盘排障.pmpx','底盘与Yaw排障',diagnostic,not args.no_backup),
              create(OUTPUT/'机械臂简易调参与排障.pmpx','机械臂抬起与保持',arm_groups(),not args.no_backup)]
     (HERE/'绑定校验.json').write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding='utf-8')
