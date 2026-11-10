@@ -17,7 +17,7 @@
 
 当前按用户选择固定四轴调试：日常构建 `Debug` 并烧录 `build/Debug/engineer_arm.bin`，以后每次上电均为四轴，无需按 C 板按钮或再次烧录来选择模式；重启仍需校零和开控。未来整车联调时才切换至 `VehicleDebug` 固件。
 
-台架不注册 yaw 反馈、不检查 yaw 在线/校零、不发送 GM6020 的 `0x2FE`，只管理四轴 CAN1 报文。CAN2 没有实际控制；台架始终发布 `stop_chassis=1`、`emergency_stop=1` 和零底盘运动请求。因此判断机械臂是否已开控应看 `active` 和 `g_arm_status.enabled_mask`，不能把此处用于底盘的 emergency 标志理解为四轴必定失能。
+台架不注册 yaw 反馈、不检查 yaw 在线/校零、不发送 GM6020 ID1 的 `0x1FE`，只管理四轴 CAN1 报文。CAN2 没有实际控制；台架始终发布 `stop_chassis=1`、`emergency_stop=1` 和零底盘运动请求。因此判断机械臂是否已开控应看 `active` 和 `g_arm_status.enabled_mask`，不能把此处用于底盘的 emergency 标志理解为四轴必定失能。
 
 台架中左竖调肩、右竖调肘相对角、左横调 roll；右横不控制电机，但开控时同样必须回中。右拨杆上张开、中保持、下闭合。左下待机只保持已经开控的关节，左上才是台架关控；这些改动不改变整车 V2.1。
 

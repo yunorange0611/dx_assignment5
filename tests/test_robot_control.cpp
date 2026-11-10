@@ -89,7 +89,7 @@ int test_robot_control() {
     unsigned yaw_frames = 0;
     for (unsigned i = 0; i < count; ++i) {
         CHECK(frames[i].bus == 1);
-        if (frames[i].id == 0x2fe) {
+        if (frames[i].id == 0x1fe) {
             ++yaw_frames;
             for (uint8_t b : frames[i].data)
                 CHECK(b == 0);

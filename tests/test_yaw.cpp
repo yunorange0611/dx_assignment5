@@ -37,7 +37,7 @@ YawRuntimeLimits limits(uint32_t version = 1) {
 }
 bool yaw_zero(const Frame *f, unsigned n) {
     for (unsigned i = 0; i < n; ++i)
-        if (f[i].id == 0x2fe)
+        if (f[i].id == 0x1fe || f[i].id == 0x2fe)
             for (uint8_t b : f[i].data)
                 if (b)
                     return false;
@@ -268,7 +268,7 @@ int test_yaw() {
         CHECK(a.set_yaw_envelope(-1, 1, 1) == Result::InvalidArgument);
         const unsigned n = a.step(0, frames);
         for (unsigned i = 0; i < n; ++i)
-            CHECK(frames[i].id != 0x2fe);
+            CHECK(frames[i].id != 0x1fe && frames[i].id != 0x2fe);
     }
     { // Operator and inner loop consume the same effective limit version.
         auto c = config();

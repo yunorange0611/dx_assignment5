@@ -1,6 +1,6 @@
 # Yaw 运行限位与独立调参
 
-第二批在原 `ArmControl / Robot_Execute / arm_task` 内增强 GM6020 Yaw。CAN1、ID5、反馈0x209、电流命令0x2FE第一槽保持不变，没有第二个电机实例、闭环线程或发送者。日常四轴 `Debug/Release/BenchDebug` 完全不启用Yaw；专用调参构建为 `YawBenchDebug`。
+第二批在原 `ArmControl / Robot_Execute / arm_task` 内增强 GM6020 Yaw。用户最新确认为CAN1、ID1，对应反馈0x205、电流命令0x1FE第一槽；原ID5配置已更新。没有第二个电机实例、闭环线程或发送者。日常四轴 `Debug/Release/BenchDebug` 完全不启用Yaw；专用调参构建为 `YawBenchDebug`。
 
 当前请求/状态声明在 `3Task/yaw_service.h`，任务适配实现在 `yaw_service.cpp`，仍由原 `Robot_Execute` 调用；`robot_control.h` 兼容包含这些声明，原调试符号保留。纯脉冲门控在 `Arm/yaw_bench.h`。三层与调用顺序见 README_ARCHITECTURE.md。
 

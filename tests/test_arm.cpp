@@ -110,7 +110,9 @@ void run() {
         for (unsigned i = 0; i < n; ++i)
             CHECK(f[i].bus == 1);
         CHECK(find(f, n, 1, 1)->data[7] == 0xfd);
-        CHECK(find(f, n, 1, 0x2fe) != nullptr); // 电流模式yaw ID5占0x2fe第一槽
+        CHECK(a.feedback_id(Yaw) == 0x205);
+        CHECK(find(f, n, 1, 0x1fe) != nullptr); // 电流模式yaw ID1占0x1fe第一槽
+        CHECK(find(f, n, 1, 0x2fe) == nullptr);
         CHECK(find(f, n, 1, 0x2ff) == nullptr); // 当前配置不再发送6020电压帧
         CHECK(kArmConfig.joint[Yaw].motor == Motor::Gm6020Current);
         ArmControl b(bench());
@@ -298,7 +300,7 @@ void run() {
         float q[5] = {20, 0, 0, 0, 0};
         a.set_targets(1, q, 0);
         auto n = a.step(0, f);
-        const auto *current = find(f, n, 1, 0x2fe);
+        const auto *current = find(f, n, 1, 0x1fe);
         CHECK(current != nullptr);
         // 默认上限300mA约对应1638原码；反向只影响报文符号，状态effort仍为关节正向mA。
         CHECK(a.status().joint[Yaw].effort == 300);
@@ -326,8 +328,8 @@ void run() {
         voltage.enable(1, 0);
         voltage.set_targets(1, q, 0);
         n = voltage.step(0, f);
-        const auto *v = find(f, n, 1, 0x2ff);
-        CHECK(v != nullptr && find(f, n, 1, 0x2fe) == nullptr);
+        const auto *v = find(f, n, 1, 0x1ff);
+        CHECK(v != nullptr && find(f, n, 1, 0x1fe) == nullptr);
         CHECK(int16_t(uint16_t(v->data[0]) << 8 | v->data[1]) == 2000);
     }
     { // 协议边界和配置冲突检查。

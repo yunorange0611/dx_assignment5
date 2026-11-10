@@ -117,7 +117,7 @@ int test_four_axis() {
         ArmControl a(four_axis());
         feed_four(a, 0);
         const uint8_t yaw[8] = {0x10, 0, 0, 0, 0, 0, 90, 0};
-        CHECK(!a.receive(1, 0x209, yaw, 8, 0));
+        CHECK(!a.receive(1, 0x205, yaw, 8, 0));
         CHECK(a.status().joint[Yaw].received == 0);
         CHECK(a.capture_zero(1u << Yaw, 0) == Result::InvalidArgument);
         CHECK(a.capture_zero(kAllJoints, 0) == Result::InvalidArgument);
