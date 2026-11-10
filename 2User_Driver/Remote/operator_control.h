@@ -1,28 +1,42 @@
 #pragma once
-#include "arm_control.h"
+#include "Arm/arm_control.h"
 #include "dr16_protocol.h"
 
 namespace engineer {
 enum class RobotMode : uint8_t { Safe, Drive, Grab, Standby };
 enum class DriveGear : uint8_t { Slow, Fast };
 enum class OperatorBlock : uint8_t {
-    None, RemoteOffline, InterlockOffline, WaitNeutral, NeedArm,
-    ArmUnavailable, WaitChassisStop, PostureDenied, Standby, InvalidConfig, Timing,
-    DriveYawDenied, InvalidInterlock
+    None,
+    RemoteOffline,
+    InterlockOffline,
+    WaitNeutral,
+    NeedArm,
+    ArmUnavailable,
+    WaitChassisStop,
+    PostureDenied,
+    Standby,
+    InvalidConfig,
+    Timing,
+    DriveYawDenied,
+    InvalidInterlock
 };
 struct OperatorConfig {
-    bool mapping_confirmed;         // 实机确认摇杆通道/拨杆左右/正向后设true
+    bool mapping_confirmed; // 实机确认摇杆通道/拨杆左右/正向后设true
     uint8_t left_switch_index, right_switch_index;
     uint8_t left_y_channel, left_x_channel, right_y_channel, right_x_channel;
-    int8_t axis_direction[4];       // 左Y/左X/右Y/右X的符号
-    float deadband;                 // 归一化[-1,1]上的死区
+    int8_t axis_direction[4]; // 左Y/左X/右Y/右X的符号
+    float deadband;           // 归一化[-1,1]上的死区
     uint32_t remote_timeout_ms, interlock_timeout_ms, neutral_ms;
     float gripper_open_deg, gripper_closed_deg;
-    float gripper_hold_current;     // C610原码，mA
+    float gripper_hold_current; // C610原码，mA
     uint32_t gripper_close_timeout_ms;
 };
 extern const OperatorConfig kOperatorConfig;
-struct RemoteInput { DR16Frame frame; uint32_t received_ms; bool valid; };
+struct RemoteInput {
+    DR16Frame frame;
+    uint32_t received_ms;
+    bool valid;
+};
 struct Interlocks {
     bool valid = false;
     uint32_t received_ms = 0;
@@ -40,9 +54,9 @@ struct OperatorOutput {
     bool longitudinal_brake = true, reset_chassis_motion = true, fast_requested = false;
     bool drive_yaw_limited = false;
     DriveGear drive_gear = DriveGear::Slow;
-    uint32_t motion_epoch = 0; // 底盘比较代号，不能漏掉两次读取之间发生的模式切换/关控。
+    uint32_t motion_epoch = 0;            // 底盘比较代号，不能漏掉两次读取之间发生的模式切换/关控。
     float longitudinal_speed_request = 0; // 归一化速度请求，底盘执行速度映射/斜坡/回中制动
-    float turn_rate_request = 0;    // [-1,1]角速度意图，逆时针为正；不是rad/s，不随倒车翻转。
+    float turn_rate_request = 0;          // [-1,1]角速度意图，逆时针为正；不是rad/s，不随倒车翻转。
     float yaw_relative_deg = 0;
     float target_deg[kJointCount]{};
     float gripper_effort_limit = 0;
@@ -50,20 +64,26 @@ struct OperatorOutput {
 
 // 与HAL/RTOS无关。唯一的模式解释器；底盘读取输出，不自行重解同一拨杆。
 class ArmOperator {
-public:
+  public:
     ArmOperator(const Config &arm, const OperatorConfig &config);
     void set_yaw_limits(const YawRuntimeLimits &limits);
-    OperatorOutput step(const RemoteInput &, const Interlocks &, const Status &,
-                        uint32_t now_ms, bool arm_request, bool stop_request);
+    OperatorOutput step(const RemoteInput &, const Interlocks &, const Status &, uint32_t now_ms,
+                        bool arm_request, bool stop_request);
     uint32_t enable_result(bool ok) {
         if (!ok) {
-            active_=false; waiting_=true; neutral_tracking_=false; last_right_=0;
-            bench_up_seen_=false; bench_arm_pending_=false;
-            yaw_was_allowed_=false; ++motion_epoch_;
+            active_ = false;
+            waiting_ = true;
+            neutral_tracking_ = false;
+            last_right_ = 0;
+            bench_up_seen_ = false;
+            bench_arm_pending_ = false;
+            yaw_was_allowed_ = false;
+            ++motion_epoch_;
         }
         return motion_epoch_;
     }
-private:
+
+  private:
     Config arm_;
     YawRuntimeLimits yaw_limits_{};
     OperatorConfig config_;
@@ -79,4 +99,4 @@ private:
     void wait_for_neutral(const Status &);
     float axis(const DR16Frame &, unsigned channel, int direction) const;
 };
-}
+} // namespace engineer

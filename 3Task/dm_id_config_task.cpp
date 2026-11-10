@@ -10,7 +10,11 @@ dmconfig::Status g_dm_config_status{};
 }
 
 namespace {
-struct Received { uint16_t id; uint8_t len, data[8]; uint32_t ms; };
+struct Received {
+    uint16_t id;
+    uint8_t len, data[8];
+    uint32_t ms;
+};
 osMessageQueueId_t feedback = nullptr;
 volatile uint32_t dropped_rx = 0;
 
@@ -18,18 +22,26 @@ void cancel_pending() {
     can_cancel_pending(1);
     osMessageQueueReset(feedback);
 }
-}
-
-extern "C" void DmIdConfig_OnCanRx(uint16_t id, const uint8_t *data, uint8_t len, uint32_t ms) {
-    if (!feedback || len > 8) return;
-    Received f{}; f.id = id; f.len = len; f.ms = ms;
+void receive_config_frame(uint16_t id, const uint8_t *data, uint8_t len, uint32_t ms) {
+    if (!feedback || len > 8)
+        return;
+    Received f{};
+    f.id = id;
+    f.len = len;
+    f.ms = ms;
     std::memcpy(f.data, data, len);
-    if (osMessageQueuePut(feedback, &f, 0, 0) != osOK) ++dropped_rx;
+    if (osMessageQueuePut(feedback, &f, 0, 0) != osOK)
+        ++dropped_rx;
 }
+} // namespace
 
 extern "C" void dm_id_config_task(void *) {
     feedback = osMessageQueueNew(32, sizeof(Received), nullptr);
-    if (!feedback || osKernelGetTickFreq() != 1000) Error_Handler();
+    if (!feedback || osKernelGetTickFreq() != 1000)
+        Error_Handler();
+    // Application selects its receiver; the BSP has no ID-configuration branch.
+    if (!can_set_bus_rx_callback(&hcan1, receive_config_frame))
+        Error_Handler();
     // 未知MST_ID（可能为0）；只在独立固件中打开CAN1标准数据帧过滤器。
     CAN_FilterTypeDef filter{};
     filter.FilterBank = 0;
@@ -39,7 +51,8 @@ extern "C" void dm_id_config_task(void *) {
     filter.FilterFIFOAssignment = CAN_RX_FIFO0;
     filter.FilterActivation = ENABLE;
     filter.SlaveStartFilterBank = 14;
-    if (HAL_CAN_ConfigFilter(&hcan1, &filter) != HAL_OK) Error_Handler();
+    if (HAL_CAN_ConfigFilter(&hcan1, &filter) != HAL_OK)
+        Error_Handler();
 
     dmconfig::Configurator config;
     uint32_t previous_errors = can_tx_error_count[0], previous_drops = dropped_rx;
@@ -61,18 +74,26 @@ extern "C" void dm_id_config_task(void *) {
         for (unsigned n = 0; n < 32 && osMessageQueueGet(feedback, &f, nullptr, 0) == osOK; ++n)
             config.receive(f.id, f.data, f.len, f.ms);
         const uint32_t errors = can_tx_error_count[0], drops = dropped_rx;
-        if (errors != previous_errors || drops != previous_drops || (hcan1.Instance->ESR & CAN_ESR_BOFF)) {
+        if (errors != previous_errors || drops != previous_drops ||
+            (hcan1.Instance->ESR & CAN_ESR_BOFF)) {
             config.transport_fault();
             cancel_pending();
         }
-        previous_errors = errors; previous_drops = drops;
+        previous_errors = errors;
+        previous_drops = drops;
         dmconfig::Frame frame{};
         if (config.step(HAL_GetTick(), frame)) {
             can_device_transmit tx(&hcan1, frame.id, frame.len, frame.data);
-            if (tx.can_send_msg() != osOK) { config.transport_fault(); cancel_pending(); }
+            if (tx.can_send_msg() != osOK) {
+                config.transport_fault();
+                cancel_pending();
+            }
         }
-        if (was_busy && !config.status().busy) cancel_pending();
-        taskENTER_CRITICAL(); g_dm_config_status = config.status(); taskEXIT_CRITICAL();
+        if (was_busy && !config.status().busy)
+            cancel_pending();
+        taskENTER_CRITICAL();
+        g_dm_config_status = config.status();
+        taskEXIT_CRITICAL();
         osDelay(2);
     }
 }

@@ -73,13 +73,6 @@ const osThreadAttr_t CAN2_Sending_Service_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
-/* Definitions for DJI_Motor_Service */
-osThreadId_t DJI_Motor_ServiceHandle;
-const osThreadAttr_t DJI_Motor_Service_attributes = {
-  .name = "DJI_Motor_Service",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
-};
 /* Definitions for can1_send_fifo */
 osMessageQueueId_t can1_send_fifoHandle;
 const osMessageQueueAttr_t can1_send_fifo_attributes = {
@@ -108,7 +101,6 @@ const osSemaphoreAttr_t CAN2CountingSem_attributes = {
 
 void can1_sending_service(void *argument);
 void can2_sending_service(void *argument);
-void DJI_motor_service(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -223,24 +215,6 @@ __weak void can2_sending_service(void *argument)
     osDelay(1);
   }
   /* USER CODE END can2_sending_service */
-}
-
-/* USER CODE BEGIN Header_DJI_motor_service */
-/**
-* @brief Function implementing the DJI_Motor_Service thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_DJI_motor_service */
-__weak void DJI_motor_service(void *argument)
-{
-  /* USER CODE BEGIN DJI_motor_service */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END DJI_motor_service */
 }
 
 /* Private application code --------------------------------------------------*/

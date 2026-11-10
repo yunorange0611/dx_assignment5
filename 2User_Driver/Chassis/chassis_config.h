@@ -16,4 +16,4 @@ struct ChassisConfig {
     uint32_t period_ms = 4;
 };
 inline constexpr ChassisConfig kChassisConfig{};
-}
+} // namespace engineer

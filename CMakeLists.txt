@@ -55,15 +55,44 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
 
-# Add sources to executable
-file(GLOB_RECURSE USER_SOURCES CONFIGURE_DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/1Bsp/*.*
-        ${CMAKE_CURRENT_SOURCE_DIR}/2User_Driver/*.*
-        ${CMAKE_CURRENT_SOURCE_DIR}/3Task/*.*
+# Explicit source ownership prevents archived/template drivers from silently
+# rejoining the firmware when files are added to the repository.
+set(BSP_SOURCES
+    1Bsp/CAN_bsp.cpp
+    1Bsp/dr16_bsp.c
+    1Bsp/dr16_protocol.c
+    1Bsp/bsp_dwt.cpp
+    1Bsp/bsp_imu.cpp
+)
+set(CONTROL_SOURCES
+    2User_Driver/Arm/arm_control.cpp
+    2User_Driver/Arm/arm_config.cpp
+    2User_Driver/Arm/dm_id_config.cpp
+    2User_Driver/Remote/operator_control.cpp
+    2User_Driver/Remote/operator_config.cpp
+    2User_Driver/Chassis/chassis_motor.cpp
+    2User_Driver/Chassis/chassis_control.cpp
+    2User_Driver/Chassis/chassis_bench.cpp
+    2User_Driver/Power/power_meter.cpp
+    2User_Driver/Power/chassis_power.cpp
+    2User_Driver/Imu/attitude_estimator.cpp
+    2User_Driver/Vehicle/vehicle_state.cpp
+)
+set(TASK_SOURCES
+    3Task/arm_task.cpp
+    3Task/robot_control.cpp
+    3Task/yaw_service.cpp
+    3Task/chassis_task.cpp
+    3Task/task_ins.cpp
+    3Task/vehicle_state_task.cpp
+    3Task/task_protect.cpp
+    3Task/dm_id_config_task.cpp
 )
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
-        ${USER_SOURCES}
+        ${BSP_SOURCES}
+        ${CONTROL_SOURCES}
+        ${TASK_SOURCES}
         Core/Src/usart.c
         Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c
 )
@@ -73,13 +102,6 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
         1Bsp
         2User_Driver
-        2User_Driver/Motor_Driver
-        2User_Driver/Arm
-        2User_Driver/Chassis
-        2User_Driver/Power
-        2User_Driver/Imu
-        2User_Driver/Vehicle
-        2User_Driver/Remote
         3Task
 )
 

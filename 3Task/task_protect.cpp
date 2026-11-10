@@ -4,11 +4,11 @@ namespace {
 // Defaults are safe even before the task explicitly calls Init.
 TaskProtectStatus state{1u, PROTECT_BOOT, PROTECT_BOOT, 0u};
 bool have_tick = false;
-constexpr uint32_t vehicle_reason_mask = PROTECT_CHASSIS | PROTECT_IMU |
-    PROTECT_TIPPED | PROTECT_VEHICLE_STATE | PROTECT_POWER;
-constexpr uint32_t known_reasons = PROTECT_BOOT | PROTECT_CONFIG | PROTECT_REMOTE |
-    PROTECT_INTERLOCK | PROTECT_STOP_REQUEST | PROTECT_TIMING | PROTECT_ARM_FAULT |
-    PROTECT_ENABLE_REJECTED | vehicle_reason_mask;
+constexpr uint32_t vehicle_reason_mask =
+    PROTECT_CHASSIS | PROTECT_IMU | PROTECT_TIPPED | PROTECT_VEHICLE_STATE | PROTECT_POWER;
+constexpr uint32_t known_reasons =
+    PROTECT_BOOT | PROTECT_CONFIG | PROTECT_REMOTE | PROTECT_INTERLOCK | PROTECT_STOP_REQUEST |
+    PROTECT_TIMING | PROTECT_ARM_FAULT | PROTECT_ENABLE_REJECTED | vehicle_reason_mask;
 
 void update_reasons(uint32_t reasons, uint32_t now_ms) {
     if (reasons != 0u) {
@@ -21,7 +21,7 @@ void update_reasons(uint32_t reasons, uint32_t now_ms) {
     }
     state.current_reasons = reasons;
 }
-}
+} // namespace
 
 void Task_Protect_Init(void) {
     state = {1u, PROTECT_BOOT, PROTECT_BOOT, 0u};
@@ -31,24 +31,30 @@ void Task_Protect_Init(void) {
 void Task_Protect_Tick(const TaskProtectInput *input, uint32_t now_ms) {
     have_tick = true;
     if (!input || input->configuration_confirmed > 1u || input->remote_online > 1u ||
-        input->interlock_online > 1u || input->stop_requested > 1u ||
-        input->timing_ok > 1u || input->arm_fault > 1u ||
-        (input->vehicle_reasons & ~vehicle_reason_mask) != 0u) {
+        input->interlock_online > 1u || input->stop_requested > 1u || input->timing_ok > 1u ||
+        input->arm_fault > 1u || (input->vehicle_reasons & ~vehicle_reason_mask) != 0u) {
         update_reasons(PROTECT_CONFIG, now_ms);
         return;
     }
     uint32_t reasons = input->vehicle_reasons;
-    if (!input->configuration_confirmed) reasons |= PROTECT_CONFIG;
-    if (!input->remote_online) reasons |= PROTECT_REMOTE;
-    if (!input->interlock_online) reasons |= PROTECT_INTERLOCK;
-    if (input->stop_requested) reasons |= PROTECT_STOP_REQUEST;
-    if (!input->timing_ok) reasons |= PROTECT_TIMING;
-    if (input->arm_fault) reasons |= PROTECT_ARM_FAULT;
+    if (!input->configuration_confirmed)
+        reasons |= PROTECT_CONFIG;
+    if (!input->remote_online)
+        reasons |= PROTECT_REMOTE;
+    if (!input->interlock_online)
+        reasons |= PROTECT_INTERLOCK;
+    if (input->stop_requested)
+        reasons |= PROTECT_STOP_REQUEST;
+    if (!input->timing_ok)
+        reasons |= PROTECT_TIMING;
+    if (input->arm_fault)
+        reasons |= PROTECT_ARM_FAULT;
     update_reasons(reasons, now_ms);
 }
 
 int Task_Protect_TryArm(void) {
-    if (!have_tick || state.current_reasons != 0u) return 0;
+    if (!have_tick || state.current_reasons != 0u)
+        return 0;
     state.disabled = 0u;
     state.latched_reasons = 0u;
     return 1;
@@ -56,7 +62,8 @@ int Task_Protect_TryArm(void) {
 
 void Task_Protect_Trip(uint32_t reason, uint32_t now_ms) {
     // A malformed caller cannot accidentally use Trip(0) to clear a stop.
-    if (reason == 0u || (reason & ~known_reasons) != 0u) reason = PROTECT_CONFIG;
+    if (reason == 0u || (reason & ~known_reasons) != 0u)
+        reason = PROTECT_CONFIG;
     update_reasons(state.current_reasons | reason, now_ms);
 }
 
