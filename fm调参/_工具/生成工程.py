@@ -96,12 +96,11 @@ def variables(prefix, names):
 
 
 TUNE_STATUS = variables('g_robot_tune_status', [('updated_ms','调参状态发布时间','ms'),
-              ('mode','实际调参档位',''),('epoch','切档代号',''),('reason','调参原因 0正常1就绪2未就绪3关控4非法5电流超时6未停稳7输出未开启',''),
-              ('ready','调参已就绪',''),('blocked','调参锁禁 先回0档',''),('held_mask','保留保持的关节掩码','')])
-MODE = [V('robot_tune_mode','调参档 0正常1左电流2右电流3左速度4右速度5Yaw速度6Yaw位置',write=True,low=0,high=6,
-          note='tune_enable=0→停稳→选档→目标确认0→左下右中全通道回中300ms→tune_enable=1→ready=1再填小目标；切档自动清enable和目标。0档退出保留已有保持；全局关控命令1。')]
-ENABLE = [V('tune_enable','当前调参输出许可 0停本次测试1明确开启',write=True,low=0,high=1,
-            note='默认0，切档自动清0；停止本次测试用0，已使能其他轴保持。Yaw只由本次测试使能时置0撤Yaw力，原已使能Yaw则当前位置保持。健康/静止/回中符合才写1，失败需先回mode0重选。')]
+              ('mode','实际调参档位',''),('epoch','切档代号',''),('reason','调参原因 0正常1就绪2未就绪3关控4非法5电流超时6保留7目标为0/未开始',''),
+              ('ready','调参已就绪',''),('blocked','调参锁禁',''),('held_mask','保留保持的关节掩码','')])
+MODE = [V('robot_tune_mode','调参对象 0正常1左电流2右电流3左速度4右速度5Yaw速度6Yaw位置',write=True,low=0,high=6,
+          note='只选对象；切档自动清旧目标。写非零电流/速度目标即开始本次测试，写0停止；位置档选档后保持在当前角。0档退出并保留已有机械臂保持。')]
+ENABLE = []  # No separate enable gate.
 COMMON = MODE + ENABLE + TUNE_STATUS + [V('uwTick', '系统毫秒计数', 'ms'), V('g_dr16_status.received_ms', '遥控最近接收时刻', 'ms'),
           V('g_robot_status.updated_ms', '整车协调发布时间', 'ms'),
           V('g_robot_status.stop_epoch', '全局关控次数'),
@@ -133,12 +132,12 @@ REMOTE_MAPPING = REMOTE + [V(f'g_robot_status.remote_axis[{i}]',label,'[-1,1]') 
     V('uwTick','系统毫秒计数','ms'),V('g_dr16_status.received_ms','原始帧最近接收时刻','ms'),
     V('g_robot_status.updated_ms','处理后快照发布时间','ms'),V('g_robot_status.remote_online','遥控在线'),
     V('g_robot_status.remote_age_ms','原始帧年龄','ms')]
-CH_CURRENT = [V('tune_current_ma','单轮电流测试目标','mA',True,-300,300,
-                note='先选1或2档、tune_enable=1、ready=1，再从0小步填写；非零电流最多500ms，到期锁禁，先回0档再明确选档。')]
+CH_CURRENT = [V('tune_current_ma','单轮电流测试目标','mA',True,-10000,10000,
+                note='选档后从0小步填写；非零电流开始500ms计时，写0停止。')]
 CH_SPEED = [V('tune_speed_rpm','单轮速度目标 3508转子rpm','rpm',True,-300,300)]
 CH_TUNE = [V('tune_wheel_kp','轮速P','mA/rpm',True,0.001,1000),
            V('tune_wheel_ki','轮速I','mA/(rpm*s)',True,0,1000),
-           V('tune_wheel_current_limit_ma','本次轮组测试限流','mA',True,1,300)] + variables('g_chassis_tune_status',
+           V('tune_wheel_current_limit_ma','本次轮组测试限流','mA',True,1,10000)] + variables('g_chassis_tune_status',
            [('result','轮参数结果 0待机1成功2非法3忙4未就绪',''),('velocity_kp','生效轮速P','mA/rpm'),
             ('velocity_ki','生效轮速I','mA/(rpm*s)'),('max_current_ma','生效运行限流','mA')])
 CH_CLEAR = [V('g_chassis_debug_request.mode','本地维护 0停止1清底盘故障',write=True,low=0,high=1,
@@ -201,8 +200,16 @@ def G(title, data, curves=()):
     return dict(title=title, variables=dedup, scopes=[dict(title=t,exprs=e,period=.01) for t,e in curves])
 
 
-def remote_mapping_group():
-    return G('遥控映射检查｜原始与处理后',REMOTE_MAPPING)
+def remote_mapping_group(compact=False):
+    if compact:
+        # 正常映射检查只对照杆量和拨杆；接收链计数留在排障工程。
+        data = [v for v in REMOTE_MAPPING if v['expr'].startswith(
+            ('g_dr16_status.frame.', 'g_robot_status.remote_axis[',
+             'g_robot_status.remote_switch['))]
+        data += [V('g_robot_status.remote_online', '遥控在线')]
+    else:
+        data = REMOTE_MAPPING
+    return G('遥控映射检查｜原始与处理后',data)
 
 
 def wheel_scope(i):
@@ -215,51 +222,389 @@ def arm_scope(i):
             [f'g_arm_status.joint[{i}].{n}' for n in ('target_deg','reference_deg','position_deg','effort')])
 
 
+def wheel_fields(i, names):
+    return [v for v in wheel(i) if v['expr'].rsplit('.', 1)[-1].split('[')[0] in names]
+
+
+def joint_fields(i, names):
+    return [v for v in joint(i) if v['expr'].rsplit('.', 1)[-1] in names]
+
+
+def attach_scope_specs(items):
+    specs = {v['expr']: v for group in items for v in group['variables']}
+    for source in (wheel(0), wheel(1), joint(0), joint(1), joint(2)):
+        specs.update({v['expr']: v for v in source})
+    for group in items:
+        shown = {v['expr'] for v in group['variables']}
+        extra = dict.fromkeys(expr for curve in group['scopes'] for expr in curve['exprs']
+                              if expr not in shown)
+        group['scope_variables'] = [specs[expr] for expr in extra]
+
+
 def groups():
-    safety = COMMON + [V('g_arm_status.updated_ms','机械臂发布时间','ms')] + CH_COMMON
-    safety += [V(f'g_chassis_status.current_ma[{i}]','轮组提交电流','mA') for i in range(2)]
-    tune = [G('第0批 安全常驻｜单固件Debug',safety),
-            G('第1批 遥控与两轮反馈｜不出力',COMMON+CH_COMMON+REMOTE+wheel(0)+wheel(1)),
-            G('第2批 左轮ID1电流方向｜robot_tune_mode=1',COMMON+CH_COMMON+CH_CURRENT+CH_TUNE+wheel(0),[wheel_scope(0)]),
-            G('第3批 右轮ID2电流方向｜robot_tune_mode=2',COMMON+CH_COMMON+CH_CURRENT+CH_TUNE+wheel(1),[wheel_scope(1)]),
-            G('第4批 两轮速度PI｜左3档 右4档',COMMON+CH_COMMON+CH_SPEED+CH_TUNE+wheel(0)+wheel(1),[wheel_scope(0),wheel_scope(1)]),
-            G('第5批 0档抬臂左下保持｜再选1到4档测轮',COMMON+CH_COMMON+CH_CURRENT+CH_SPEED+joint(1)+joint(2)+ARM_OTHER_HEALTH,[arm_scope(1),arm_scope(2)]),
-            G('第6批 Yaw线束中位与软限位｜先关控',COMMON+YAW_LIMIT+joint(0)+[V('g_arm_status.last_result','Arm最近操作结果')]),
-            G('第7批 Yaw速度内环PI｜robot_tune_mode=5',COMMON+YAW_TUNE+YAW_LIMIT+YAW_SPEED+joint(0),
-              [('Yaw目标速度与反馈及电流',['tune_yaw_speed_deg_s','g_arm_status.joint[0].velocity_target_deg_s','g_arm_status.joint[0].velocity_deg_s','g_arm_status.joint[0].effort'])]),
-            G('第8批 IMU功率与真实整车许可｜0档',COMMON+CH_COMMON+IMU+POWER),
-            G('第9批 Yaw位置双环｜robot_tune_mode=6',COMMON+YAW_TUNE+YAW_LIMIT+YAW_POSITION+joint(0),[arm_scope(0)]),
-            G('第10批 正常遥控慢速落地｜robot_tune_mode=0',COMMON+CH_COMMON+CH_TUNE+wheel(0)+wheel(1)+[V('g_chassis_status.v_m_s','轮速估计纵向速度','m/s'),V('g_chassis_status.omega_rad_s','轮速估计转向速度','rad/s'),V('g_robot_status.fast_requested','快速档请求')],[wheel_scope(0),wheel_scope(1)]),
-            G('第11批 停止清错与故障恢复｜退出和关控分开',COMMON+CH_COMMON+CH_CLEAR+IMU+POWER,
-              [('功率与缓冲',['g_chassis_status.power_w','g_chassis_status.energy_j'])]),
-            G('第12批 固化参数与重启复验',COMMON+CH_TUNE+YAW_TUNE+YAW_LIMIT)]
-    diagnostics = [G('排查0 心跳与调参锁禁｜单固件Debug',safety),
-                   G('排查1 遥控不在线或回中失败',COMMON+REMOTE),
-                   G('排查2 CAN1与机械臂反馈',COMMON+[V('can_tx_error_count[0]','CAN1发送错误累计'),V('g_arm_status.tx_errors[0]','Arm发送错误累计'),V('g_arm_status.rx_dropped','Arm接收丢帧累计')]+joint(0)+joint(1)+joint(2)+ARM_OTHER_HEALTH),
-                   G('排查3 轮调参锁禁与机械臂保持',COMMON+CH_COMMON+CH_CURRENT+CH_SPEED+CH_TUNE+CH_CLEAR+joint(1)+joint(2)+ARM_OTHER_HEALTH),
-                   G('排查4 左右轮不转反转抖动',COMMON+CH_COMMON+wheel(0)+wheel(1)+[V('can_tx_error_count[1]','CAN2发送错误累计'),V('g_chassis_status.rx_dropped','CAN2接收丢帧累计')],[wheel_scope(0),wheel_scope(1)]),
-                   G('排查5 功率计反馈与停车阶段',COMMON+CH_COMMON+POWER),
-                   G('排查6 Yaw零位限位与生效参数',COMMON+YAW_LIMIT+YAW_TUNE+joint(0),[arm_scope(0)]),
-                   G('排查7 Yaw调参不动或不能切档',COMMON+YAW_LIMIT+YAW_SPEED+YAW_POSITION+joint(0)),
-                   G('排查8 IMU翻车及正常遥控不放行',COMMON+CH_COMMON+IMU)]
-    tune.insert(2, remote_mapping_group())
-    diagnostics.insert(2, remote_mapping_group())
+    # 一个批次一个 Group；每页只放本批要写的目标、要看的反馈和必要曲线。
+    # 档位/使能只保留两行，不再加入左下右中、回中300ms、停稳等门控步骤。
+    select = MODE + ENABLE
+    command = [V('g_robot_debug_command', '整车命令 0空闲1停2校零3清错4请求开控',
+                 write=True, low=0, high=4)]
+    wheel_params = CH_TUNE[:3]
+    wheel_status = CH_TUNE[3:]
+    yaw_params = YAW_TUNE[:4]
+    yaw_status = YAW_TUNE[4:]
+    currents = [V(f'g_chassis_status.current_ma[{i}]', '轮组提交电流', 'mA') for i in range(2)]
+    tune_gate = [V('g_robot_tune_status.ready', '调参已就绪'),
+                 V('g_robot_tune_status.blocked', '调参锁禁')]
+    half_range = [V('tune_yaw_half_range_deg', 'Yaw软限位半幅', 'deg', True, 2.001, 90,
+                    note='直接填写；看result与active_half_range_deg。')]
+    tune = [
+        # 第0批：只验证关控、失联和零输出。
+        G('第0批 安全常驻', select + command + [
+            V('uwTick', '系统毫秒计数', 'ms'),
+            V('g_robot_status.stop_epoch', '全局关控次数'),
+            V('g_robot_status.protection_current_reasons', '当前保护原因位图'),
+            V('g_robot_status.protection_latched_reasons', '历史锁存原因位图'),
+            V('g_robot_status.remote_age_ms', '遥控接收年龄', 'ms'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+            V('g_chassis_status.enabled', '底盘出力使能'),
+            V('g_chassis_status.faults', '底盘故障位图'),
+            V('g_dr16_status.valid', '遥控帧有效'),
+            V('g_dr16_status.good_frames', '有效帧累计')] + currents),
+        # 第1批：只认遥控通道、拨杆、两轮反馈。
+        G('第1批 遥控与两轮反馈', select +
+          [V(f'g_dr16_status.frame.channel[{i}]', f'遥控通道{i} 中位约0') for i in range(5)] +
+          [V(f'g_dr16_status.frame.switches[{i}]', f'拨杆原码{i} 上1中3下2') for i in range(2)] +
+          [V(f'g_robot_status.remote_axis[{i}]', label) for i, label in enumerate(
+              ('左竖Y 处理后', '左横X 处理后', '右竖Y 处理后', '右横X 处理后'))] +
+          [V(f'g_robot_status.remote_switch[{i}]', f'处理后{side}拨杆')
+           for i, side in enumerate(('左', '右'))] +
+          [V('g_robot_status.remote_online', '遥控在线'),
+           V('g_robot_status.remote_age_ms', '遥控接收年龄', 'ms'),
+           V('g_dr16_status.good_frames', '有效帧累计')] +
+          wheel_fields(0, ('feedback_ms', 'measured_rpm')) +
+          wheel_fields(1, ('feedback_ms', 'measured_rpm'))),
+        # 第2/3批：单轮电流方向；另一轮只看提交电流为0。
+        G('第2批 左轮ID1电流方向', select + CH_CURRENT + wheel_params[2:] +
+          wheel_fields(0, ('measured_rpm', 'current_ma')) +
+          wheel_fields(1, ('current_ma',)) +
+          [V('g_chassis_status.tune_blocked', '底盘调参锁禁')] + tune_gate,
+          [('左轮电流指令/实际/转速', ['tune_current_ma', 'g_chassis_status.current_ma[0]',
+                                      'g_chassis_status.measured_rpm[0]'])]),
+        G('第3批 右轮ID2电流方向', select + CH_CURRENT + wheel_params[2:] +
+          wheel_fields(1, ('measured_rpm', 'current_ma')) +
+          wheel_fields(0, ('current_ma',)) +
+          [V('g_chassis_status.tune_blocked', '底盘调参锁禁')] + tune_gate,
+          [('右轮电流指令/实际/转速', ['tune_current_ma', 'g_chassis_status.current_ma[1]',
+                                      'g_chassis_status.measured_rpm[1]'])]),
+        # 第4批：两轮速度PI；目标只上曲线，不占变量行。
+        G('第4批 两轮速度PI', select + wheel_params + CH_SPEED +
+          wheel_fields(0, ('measured_rpm', 'current_ma')) +
+          wheel_fields(1, ('measured_rpm', 'current_ma')) + wheel_status +
+          [V('g_chassis_status.tune_blocked', '底盘调参锁禁')] + tune_gate,
+          [('左轮目标/实际/电流', ['g_chassis_status.target_rpm[0]',
+                                  'g_chassis_status.measured_rpm[0]',
+                                  'g_chassis_status.current_ma[0]']),
+           ('右轮目标/实际/电流', ['g_chassis_status.target_rpm[1]',
+                                  'g_chassis_status.measured_rpm[1]',
+                                  'g_chassis_status.current_ma[1]'])]),
+        # 第5批：抬臂与左下保持，只看两pitch和使能状态。
+        G('第5批 0档抬臂左下保持', select + command +
+          joint_fields(1, ('position_deg', 'target_deg', 'effort')) +
+          joint_fields(2, ('position_deg', 'target_deg', 'effort')) + [
+              V('g_robot_status.mode', '模式 0安全1行驶2夹取3待机'),
+              V('g_robot_status.active', '机械臂协调开控'),
+              V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+              V('g_chassis_status.enabled', '底盘出力使能')] + currents,
+          [('肩目标/反馈/输出', ['g_arm_status.joint[1].target_deg',
+                                'g_arm_status.joint[1].position_deg',
+                                'g_arm_status.joint[1].effort']),
+           ('肘目标/反馈/输出', ['g_arm_status.joint[2].target_deg',
+                                'g_arm_status.joint[2].position_deg',
+                                'g_arm_status.joint[2].effort'])]),
+        # 第6批：Yaw中位与半幅，不加运动曲线。
+        G('第6批 Yaw线束中位与软限位', select + command + half_range + [
+            V('g_yaw_limit_status.result', '限位结果 0成功'),
+            V('g_yaw_limit_status.active_half_range_deg', '生效半幅', 'deg'),
+            V('g_yaw_limit_status.min_deg', '生效最小角', 'deg'),
+            V('g_yaw_limit_status.max_deg', '生效最大角', 'deg'),
+            V('g_arm_status.last_result', 'Arm最近操作结果')] +
+          joint_fields(0, ('position_deg', 'calibrated')) + [
+              V('g_arm_status.enabled_mask', '机械臂使能掩码')] + tune_gate),
+        # 第7批：Yaw速度内环，目标/实际/电流同图。
+        G('第7批 Yaw速度内环PI', select + yaw_params[1:] + YAW_SPEED +
+          joint_fields(0, ('velocity_deg_s', 'velocity_target_deg_s', 'effort')) + [
+              yaw_status[0],
+              V('g_yaw_limit_status.active_half_range_deg', '生效半幅', 'deg')] +
+          currents + tune_gate,
+          [('Yaw目标速度/反馈/电流', ['tune_yaw_speed_deg_s',
+                                     'g_arm_status.joint[0].velocity_target_deg_s',
+                                     'g_arm_status.joint[0].velocity_deg_s',
+                                     'g_arm_status.joint[0].effort'])]),
+        # 第8批：IMU、功率和整车许可，只读。
+        G('第8批 IMU功率与真实整车许可', select + [
+            V('g_ins_status.valid', 'IMU有效'),
+            V('g_ins_status.calibrated', '偏置校准完成'),
+            V('g_ins_status.faults', 'IMU故障位图'),
+            V('g_ins_status.tilt_deg', '倾斜角', 'deg'),
+            V('g_ins_status.tipped', '翻车判定'),
+            V('g_ins_status.calibrating', '正在静态标定'),
+            V('g_ins_debug_command', '请求IMU静态标定 写1', write=True, low=0, high=1),
+            V('g_chassis_status.power_w', '功率计反馈', 'W'),
+            V('g_chassis_status.energy_j', '缓冲能量', 'J'),
+            V('g_chassis_status.power_phase', '功率停车阶段'),
+            V('g_chassis_status.power_reason', '功率停车原因'),
+            V('g_chassis_status.power_frames', '功率帧累计'),
+            V('g_chassis_status.power_received_ms', '功率最近接收时刻', 'ms'),
+            V('g_chassis_status.faults', '底盘故障位图'),
+            V('g_vehicle_health.reasons', '整车不放行原因位图')],
+          [('功率与缓冲', ['g_chassis_status.power_w', 'g_chassis_status.energy_j'])]),
+        # 第9批：Yaw位置双环，目标/参考/反馈/输出同图。
+        G('第9批 Yaw位置双环', select + yaw_params + YAW_POSITION +
+          joint_fields(0, ('target_deg', 'reference_deg', 'position_deg',
+                           'velocity_deg_s', 'effort')) + [
+              yaw_status[0],
+              V('g_yaw_limit_status.active_half_range_deg', '生效半幅', 'deg')] + tune_gate,
+          [('Yaw目标/参考/反馈/输出', ['g_arm_status.joint[0].target_deg',
+                                      'g_arm_status.joint[0].reference_deg',
+                                      'g_arm_status.joint[0].position_deg',
+                                      'g_arm_status.joint[0].effort'])]),
+        # 第10批：正常遥控，两轮目标/实际/电流。
+        G('第10批 正常遥控慢速落地', select + command + [
+            V('g_robot_status.mode', '模式 0安全1行驶2夹取3待机'),
+            V('g_robot_status.active', '机械臂协调开控'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+            V('g_robot_status.remote_axis[0]', '左竖 前后请求'),
+            V('g_robot_status.remote_axis[3]', '右横 转向请求'),
+            V('g_chassis_status.v_m_s', '轮速估计纵向速度', 'm/s'),
+            V('g_chassis_status.omega_rad_s', '轮速估计转向速度', 'rad/s'),
+            V('g_chassis_status.faults', '底盘故障位图')] +
+          wheel_fields(0, ('measured_rpm', 'current_ma')) +
+          wheel_fields(1, ('measured_rpm', 'current_ma')),
+          [('左轮目标/实际/电流', ['g_chassis_status.target_rpm[0]',
+                                  'g_chassis_status.measured_rpm[0]',
+                                  'g_chassis_status.current_ma[0]']),
+           ('右轮目标/实际/电流', ['g_chassis_status.target_rpm[1]',
+                                  'g_chassis_status.measured_rpm[1]',
+                                  'g_chassis_status.current_ma[1]'])]),
+        # 第11批：停止、清错和功率停车分开看。
+        G('第11批 停止清错与故障恢复', select + command + [
+            V('g_robot_status.protection_current_reasons', '当前保护原因位图'),
+            V('g_robot_status.protection_latched_reasons', '历史锁存原因位图'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+            V('g_chassis_status.enabled', '底盘出力使能'),
+            V('g_chassis_status.faults', '底盘故障位图'),
+            V('g_ins_status.faults', 'IMU故障位图'),
+            V('g_chassis_status.power_phase', '功率停车阶段'),
+            V('g_chassis_status.power_reason', '功率停车原因'),
+            V('g_chassis_status.power_w', '功率计反馈', 'W'),
+            V('g_chassis_status.energy_j', '缓冲能量', 'J')] + currents +
+          CH_CLEAR[:2] + [
+              V('g_chassis_debug_status.result', '维护结果 2已停3已请求清错5未就绪')],
+          [('功率与缓冲', ['g_chassis_status.power_w', 'g_chassis_status.energy_j'])]),
+        # 第12批：只核对准备写回源码的生效参数。
+        G('第12批 固化参数与重启复验', select + wheel_params + yaw_params + half_range +
+          wheel_status + yaw_status + [
+              V('g_yaw_limit_status.active_half_range_deg', '生效半幅', 'deg')]),
+    ]
+    diag_core = [MODE[0],
+                 V('uwTick', '系统毫秒计数', 'ms'),
+                 V('g_robot_status.updated_ms', '整车协调发布时间', 'ms'),
+                 V('g_robot_status.mode', '模式 0安全1行驶2夹取3待机'),
+                 V('g_robot_status.active', '机械臂协调开控'),
+                 V('g_robot_status.protection_current_reasons', '当前保护原因位图'),
+                 V('g_robot_status.protection_latched_reasons', '历史锁存原因位图'),
+                 V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+                 V('g_chassis_status.enabled', '底盘出力使能'),
+                 V('g_chassis_status.faults', '底盘故障位图'),
+                 V('g_ins_status.faults', 'IMU故障位图'),
+                 V('g_vehicle_health.reasons', '整车不放行原因位图')]
+    diagnostics = [
+        G('排查0 心跳与调参锁禁', diag_core + [
+            V('g_robot_tune_status.updated_ms', '调参状态发布时间', 'ms'),
+            V('g_robot_tune_status.reason', '调参原因 0正常1就绪2未就绪3关控4非法5电流超时6保留7目标为0/未开始'),
+            V('g_robot_tune_status.ready', '调参已就绪'),
+            V('g_robot_tune_status.blocked', '调参锁禁'),
+            V('g_robot_tune_status.held_mask', '保留保持的关节掩码'),
+            V('g_chassis_status.updated_ms', '底盘发布时间', 'ms'),
+            V('g_chassis_status.ready', '底盘任务就绪'),
+            V('g_chassis_status.configuration_valid', '底盘配置合法'),
+            V('g_chassis_status.hardware_confirmed', '底盘实测确认'),
+            V('g_chassis_status.tune_mode', '底盘实际调参档'),
+            V('g_chassis_status.tune_blocked', '底盘调参锁禁'),
+            V('g_chassis_status.tune_result', '底盘参数处理结果'),
+            V('g_arm_status.updated_ms', '机械臂发布时间', 'ms'),
+            V('g_arm_status.ready', '机械臂任务就绪'),
+            V('g_arm_status.configuration_valid', '机械臂配置合法'),
+            V('g_ins_status.updated_ms', 'IMU发布时间', 'ms'),
+            V('g_ins_status.ready', 'IMU任务就绪'),
+            V('g_ins_status.confirmed', 'IMU安装与阈值已确认'),
+            V('g_ins_status.calibrated', 'IMU偏置校准完成'),
+            V('g_ins_status.valid', 'IMU有效')]),
+        G('排查1 遥控不在线或回中失败', diag_core + REMOTE + [
+            V('g_robot_status.remote_online', '遥控在线'),
+            V('g_robot_status.remote_age_ms', '遥控接收年龄', 'ms')] +
+          [V(f'g_robot_status.remote_axis[{i}]', label) for i, label in enumerate(
+              ('左竖Y 处理后', '左横X 处理后', '右竖Y 处理后', '右横X 处理后'))] +
+          [V(f'g_robot_status.remote_switch[{i}]', f'处理后{side}拨杆')
+           for i, side in enumerate(('左', '右'))]),
+        G('遥控映射检查｜原始与处理后', [V('uwTick', '系统毫秒计数', 'ms'),
+            V('g_robot_status.updated_ms', '处理后快照发布时间', 'ms'),
+            V('g_dr16_status.received_ms', '原始帧最近接收时刻', 'ms'),
+            V('g_dr16_status.valid', '接收帧有效'),
+            V('g_dr16_status.good_frames', '有效帧累计'),
+            V('g_robot_status.remote_online', '遥控在线'),
+            V('g_robot_status.remote_age_ms', '原始帧年龄', 'ms')] +
+          [V(f'g_dr16_status.frame.channel[{i}]', f'遥控通道{i} 中位约0') for i in range(5)] +
+          [V(f'g_dr16_status.frame.switches[{i}]', f'拨杆原码{i} 上1中3下2') for i in range(2)] +
+          [V(f'g_robot_status.remote_axis[{i}]', label) for i, label in enumerate(
+              ('左竖Y 处理后', '左横X 处理后', '右竖Y 处理后', '右横X 处理后'))] +
+          [V(f'g_robot_status.remote_switch[{i}]', f'处理后{side}拨杆')
+           for i, side in enumerate(('左', '右'))]),
+        G('排查2 CAN1与机械臂反馈', diag_core + [
+            V('g_arm_status.faults', 'Arm总体故障'),
+            V('g_arm_status.last_result', 'Arm最近操作结果'),
+            V('can_tx_error_count[0]', 'CAN1发送错误累计'),
+            V('g_arm_status.tx_errors[0]', 'Arm发送错误累计'),
+            V('g_arm_status.rx_dropped', 'Arm接收丢帧累计')] +
+          joint_fields(0, ('online', 'calibrated', 'faults', 'feedback_age_ms',
+                           'position_deg', 'target_deg', 'effort')) +
+          joint_fields(1, ('online', 'calibrated', 'faults', 'feedback_age_ms',
+                           'position_deg', 'target_deg', 'effort')) +
+          joint_fields(2, ('online', 'calibrated', 'faults', 'feedback_age_ms',
+                           'position_deg', 'target_deg', 'effort')) +
+          joint_fields(3, ('online', 'faults')) +
+          joint_fields(4, ('online', 'faults'))),
+        G('排查3 轮调参锁禁与机械臂保持', diag_core + [
+            V('g_chassis_status.tune_mode', '底盘实际调参档'),
+            V('g_chassis_status.tune_blocked', '底盘调参锁禁'),
+            V('g_chassis_status.tune_result', '底盘参数处理结果'),
+            V('g_chassis_status.tune_current_limit_ma', '底盘测试生效限流', 'mA')] +
+          wheel_params + wheel_status +
+          wheel_fields(0, ('feedback_ms', 'measured_rpm', 'current_ma', 'temperature_c')) +
+          wheel_fields(1, ('feedback_ms', 'measured_rpm', 'current_ma', 'temperature_c')) +
+          joint_fields(1, ('online', 'calibrated', 'faults', 'position_deg')) +
+          joint_fields(2, ('online', 'calibrated', 'faults', 'position_deg'))),
+        G('排查4 左右轮不转反转抖动', diag_core + [
+            V('can_tx_error_count[1]', 'CAN2发送错误累计'),
+            V('g_chassis_status.rx_dropped', 'CAN2接收丢帧累计'),
+            V('g_chassis_status.v_m_s', '轮速估计纵向速度', 'm/s'),
+            V('g_chassis_status.omega_rad_s', '轮速估计转向速度', 'rad/s'),
+            V('g_chassis_status.wheels_stationary', '驱动轮静止确认')] +
+          wheel_fields(0, ('feedback_ms', 'measured_rpm', 'target_rpm',
+                           'current_ma', 'temperature_c')) +
+          wheel_fields(1, ('feedback_ms', 'measured_rpm', 'target_rpm',
+                           'current_ma', 'temperature_c')),
+          [wheel_scope(0), wheel_scope(1)]),
+        G('排查5 功率计反馈与停车阶段', diag_core + POWER),
+        G('排查6 Yaw零位限位与生效参数', diag_core + YAW_LIMIT + YAW_TUNE +
+          joint_fields(0, ('online', 'calibrated', 'faults', 'feedback_age_ms',
+                           'position_deg', 'target_deg', 'reference_deg',
+                           'velocity_deg_s', 'effort')) + [
+              V('g_arm_status.last_result', 'Arm最近操作结果')]),
+        G('排查7 Yaw调参不动或不能切档', diag_core + [
+            V('g_robot_tune_status.reason', '调参原因 0正常1就绪2未就绪3关控4非法5电流超时6保留7目标为0/未开始'),
+            V('g_robot_tune_status.ready', '调参已就绪'),
+            V('g_robot_tune_status.blocked', '调参锁禁')] + YAW_LIMIT + [
+                V('tune_yaw_speed_deg_s', 'Yaw速度内环目标', 'deg/s', True, -5, 5),
+                V('tune_yaw_target_deg', 'Yaw位置双环目标', 'deg', True, -90, 90)] +
+          joint_fields(0, ('online', 'calibrated', 'enabled', 'faults', 'feedback_age_ms',
+                           'position_deg', 'target_deg', 'velocity_deg_s', 'effort'))),
+        G('排查8 IMU翻车及正常遥控不放行', diag_core + IMU + [
+            V('g_chassis_status.power_phase', '功率停车阶段'),
+            V('g_chassis_status.power_reason', '功率停车原因'),
+            V('g_chassis_status.power_session_allowed', '能量允许运行'),
+            V('g_chassis_status.power_stop_requested', '功率请求受控停车'),
+            V('g_chassis_status.power_inhibited', '功率禁止重启')]),
+    ]
+    attach_scope_specs(tune)
+    attach_scope_specs(diagnostics)
     return tune, diagnostics
 
 
 def arm_groups():
-    return [G('第0步 关控与连接｜单固件Debug',COMMON+[V('g_arm_status.updated_ms','机械臂发布时间','ms'),V('g_arm_status.ready','机械臂任务就绪')]),
-            remote_mapping_group(),
-            G('第1步 双Pitch人工联合零位｜命令2',COMMON+[V('g_arm_status.last_result','Arm最近操作结果'),V('g_arm_status.configuration_valid','Arm配置合法')]+joint(1)+joint(2)+ARM_OTHER_HEALTH),
-            G('第2步 0档左中简易抬肩抬肘｜遥控操作',COMMON+joint(1)+joint(2),[arm_scope(1),arm_scope(2)]),
-            G('第3步 少量改PI与限流｜承托后全局关控',COMMON+ARM_TUNE+joint(1)+joint(2)),
-            G('第4步 左下待机保持｜同固件切1到4档测轮',COMMON+CH_COMMON+joint(1)+joint(2)+ARM_OTHER_HEALTH,[arm_scope(1),arm_scope(2)]),
-            G('排查1 不使能不抬起或下垂',COMMON+ARM_TUNE+[V('g_arm_status.last_result','Arm最近操作结果'),V('g_arm_status.faults','Arm总体故障'),V('can_tx_error_count[0]','CAN1发送错误累计')]+joint(1)+joint(2))]
+    # 机械臂页同样按“02_机械臂抬起与保持.pdf”的步骤分组，每步只留必要量。
+    select = MODE + ENABLE
+    command = [V('g_robot_debug_command', '整车命令 0空闲1停2校零3清错4请求开控',
+                 write=True, low=0, high=4)]
+    items = [
+        G('第0步 关控与连接', select + command + [
+            V('uwTick', '系统毫秒计数', 'ms'),
+            V('g_robot_status.updated_ms', '整车协调发布时间', 'ms'),
+            V('g_arm_status.updated_ms', '机械臂发布时间', 'ms'),
+            V('g_arm_status.ready', '机械臂任务就绪'),
+            V('g_arm_status.configuration_valid', '机械臂配置合法'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+            V('g_chassis_status.enabled', '底盘出力使能'),
+            V('g_robot_status.protection_current_reasons', '当前保护原因位图'),
+            V('g_robot_status.protection_latched_reasons', '历史锁存原因位图')]),
+        G('第1步 双Pitch人工联合零位', command + [
+            V('g_arm_status.last_result', 'Arm最近操作结果'),
+            V('g_arm_status.faults', 'Arm总体故障'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码')] +
+          joint_fields(1, ('position_deg', 'calibrated', 'enabled')) +
+          joint_fields(2, ('position_deg', 'calibrated', 'enabled'))),
+        G('第2步 0档简易抬肩抬肘', command + [
+            V('g_robot_status.mode', '模式 0安全1行驶2夹取3待机'),
+            V('g_robot_status.active', '机械臂协调开控'),
+            V('g_robot_status.wait_neutral', '等待摇杆回中'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+            V('g_robot_status.remote_axis[0]', '左竖 肩'),
+            V('g_robot_status.remote_axis[2]', '右竖 肘')] +
+          joint_fields(1, ('position_deg', 'target_deg', 'effort')) +
+          joint_fields(2, ('position_deg', 'target_deg', 'effort')),
+          [('肩目标/反馈/输出', ['g_arm_status.joint[1].target_deg',
+                                'g_arm_status.joint[1].position_deg',
+                                'g_arm_status.joint[1].effort']),
+           ('肘目标/反馈/输出', ['g_arm_status.joint[2].target_deg',
+                                'g_arm_status.joint[2].position_deg',
+                                'g_arm_status.joint[2].effort'])]),
+        G('第3步 少量改PI与限流', ARM_TUNE +
+          joint_fields(1, ('position_deg', 'effort')) +
+          joint_fields(2, ('position_deg', 'effort')) + [
+              V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+              V('g_arm_status.last_result', 'Arm最近操作结果')]),
+        G('第4步 左下待机保持', select + [
+            V('g_robot_status.mode', '模式 0安全1行驶2夹取3待机'),
+            V('g_robot_status.active', '机械臂协调开控'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码')] +
+          joint_fields(1, ('position_deg', 'target_deg', 'effort')) +
+          joint_fields(2, ('position_deg', 'target_deg', 'effort')) +
+          wheel_fields(0, ('measured_rpm', 'current_ma')) +
+          wheel_fields(1, ('measured_rpm', 'current_ma')),
+          [('肩目标/反馈/输出', ['g_arm_status.joint[1].target_deg',
+                                'g_arm_status.joint[1].position_deg',
+                                'g_arm_status.joint[1].effort']),
+           ('肘目标/反馈/输出', ['g_arm_status.joint[2].target_deg',
+                                'g_arm_status.joint[2].position_deg',
+                                'g_arm_status.joint[2].effort']),
+           ('左轮目标/实际/电流', ['g_chassis_status.target_rpm[0]',
+                                  'g_chassis_status.measured_rpm[0]',
+                                  'g_chassis_status.current_ma[0]']),
+           ('右轮目标/实际/电流', ['g_chassis_status.target_rpm[1]',
+                                  'g_chassis_status.measured_rpm[1]',
+                                  'g_chassis_status.current_ma[1]'])]),
+        G('排查1 不使能不抬起或下垂', [
+            V('g_arm_status.faults', 'Arm总体故障'),
+            V('g_arm_status.last_result', 'Arm最近操作结果'),
+            V('g_arm_status.configuration_valid', '机械臂配置合法'),
+            V('g_arm_status.enabled_mask', '机械臂使能掩码'),
+            V('g_robot_status.protection_current_reasons', '当前保护原因位图'),
+            V('g_robot_status.protection_latched_reasons', '历史锁存原因位图'),
+            V('can_tx_error_count[0]', 'CAN1发送错误累计'),
+            V('g_arm_status.tx_errors[0]', 'Arm发送错误累计'),
+            V('g_arm_status.rx_dropped', 'Arm接收丢帧累计')] +
+          joint_fields(1, ('online', 'calibrated', 'faults', 'position_deg',
+                           'target_deg', 'effort')) +
+          joint_fields(2, ('online', 'calibrated', 'faults', 'position_deg',
+                           'target_deg', 'effort')) +
+          joint_fields(3, ('online', 'faults')) +
+          joint_fields(4, ('online', 'faults')))]
+    attach_scope_specs(items)
+    return items
 
 
 def bind(items, symbols):
     for group in items:
-        for spec in group['variables']:
+        for spec in group['variables'] + group.get('scope_variables', []):
             address,width,treat = symbols.resolve(spec['expr'])
             if not 0x20000000 <= address < 0x20020000:
                 raise ValueError('只允许绑定片内RAM观测/请求: '+spec['expr'])
@@ -284,8 +629,8 @@ def create(path, title, items, backup):
         import xml.etree.ElementTree as ET
         for obj in ET.parse(path).findall('./objects/object[@type="CVariable"]'):
             get=lambda n:obj.find(f'member[@name="{n}"]').text
-            address,width,treat=sym.resolve(get('address'))
-            assert get('name')==get('address')
+            address,width,treat=sym.resolve(get('name'))
+            assert int(get('address'),0)==address
             assert int(get('last_addr'),0)==address and int(get('byte_size'))==width and int(get('treat_as'))==treat
         result.update(file=path.name,sha256=hashlib.sha256(elf_path.read_bytes()).hexdigest())
         return result
@@ -306,7 +651,7 @@ def main():
     (HERE/'绑定校验.json').write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding='utf-8')
     for record in records:
         print(f"已生成 {record['file']}：{record['groups']} 个中文分组，{record['variables']} 个变量，{record['scopes']} 个示波器；{Path(record['elf']).parent.name}")
-    print('三份工程绑定同一份 Debug 整车固件。选机构只改 robot_tune_mode，不需要换固件；本工具不烧录、不连接、不写目标。')
+    print('三份工程绑定同一份 Debug 整车固件；按批次分组，不需要换固件。本工具不烧录、不连接、不写目标。')
 
 
 if __name__=='__main__':

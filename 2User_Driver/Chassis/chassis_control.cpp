@@ -125,7 +125,8 @@ const ChassisState &ChassisControl::step(uint32_t now, const WheelFeedback wheel
                         std::fabs(cmd.speed_request) <= 1 && std::fabs(cmd.turn_request) <= 1;
     if (s_.enabled && (!fresh || !finite))
         trip(ChassisCommandFault);
-    if (!c_.hardware_confirmed || !s_.configuration_valid || !fresh || !finite || !cmd.enabled ||
+    if ((!c_.hardware_confirmed && !(cmd.tune_mode >= 1 && cmd.tune_mode <= 4)) ||
+        !s_.configuration_valid || !fresh || !finite || !cmd.enabled ||
         !feedback || !temp || !timing || s_.faults || rearm_required_) {
         trip(0);
         if (cmd.enabled)
@@ -172,7 +173,8 @@ const ChassisState &ChassisControl::step_tuning(uint32_t now, const WheelFeedbac
     guarded.reset = false;
     guarded.epoch = cmd.tune_epoch;
     const bool valid = cmd.tune_mode >= 1 && cmd.tune_mode <= 4 &&
-                       std::isfinite(cmd.tune_value) && std::fabs(cmd.tune_value) <= 300 &&
+                       std::isfinite(cmd.tune_value) &&
+                       std::fabs(cmd.tune_value) <= (cmd.tune_mode <= 2 ? startup_current_limit_ma_ : 300.0f) &&
                        std::isfinite(cmd.tune_velocity_kp) && cmd.tune_velocity_kp > 0 &&
                        cmd.tune_velocity_kp <= 1000 && std::isfinite(cmd.tune_velocity_ki) &&
                        cmd.tune_velocity_ki >= 0 && cmd.tune_velocity_ki <= 1000 &&
@@ -195,39 +197,25 @@ const ChassisState &ChassisControl::step_tuning(uint32_t now, const WheelFeedbac
         }
         return s_;
     }
-    bool stationary = true;
-    for (unsigned i = 0; i < 2; ++i)
-        stationary &= wheel[i].frames &&
-                      uint32_t(now - wheel[i].received_ms) <= c_.feedback_timeout_ms &&
-                      std::isfinite(wheel[i].rotor_rpm) &&
-                      std::fabs(wheel[i].rotor_rpm) < c_.stationary_rpm &&
-                      std::isfinite(wheel[i].temperature_c) &&
-                      wheel[i].temperature_c < c_.max_temperature_c;
     const bool new_values = cmd.tune_velocity_kp != c_.velocity_kp ||
                             cmd.tune_velocity_ki != c_.velocity_ki ||
                             cmd.tune_current_limit_ma != tune_current_limit_ma_;
     if (new_values) {
-        // A direct FreeMASTER gain write may never retune a moving wheel. The
-        // user first returns the target to zero; each accepted change inserts
-        // one disabled cycle and clears only this controller's history.
-        guarded.enabled = false;
-        step(now, wheel, guarded);
-        if (cmd.tune_value != 0 || !stationary || s_.faults) {
-            s_.tune_result = ChassisTuneResult::Busy;
-            return s_;
-        }
+        // Apply validated gains without stopping the wheel or requiring zero target.
+        // Preserve the integrator and constrain it to the updated output bound.
         c_.velocity_kp = cmd.tune_velocity_kp;
         c_.velocity_ki = cmd.tune_velocity_ki;
         tune_current_limit_ma_ = cmd.tune_current_limit_ma;
         s_.tune_result = ChassisTuneResult::Applied;
-        s_.tune_current_limit_ma = std::fmin(300, std::fmin(c_.max_current_ma,
-                                                         tune_current_limit_ma_));
-        return s_;
+        const float bound = std::fmin(startup_current_limit_ma_, std::fmin(c_.max_current_ma,
+                                                        tune_current_limit_ma_));
+        for (unsigned i = 0; i < 2; ++i)
+            integral_[i] = clamp(integral_[i], -bound, bound);
     }
     step(now, wheel, guarded);
-    s_.tune_current_limit_ma = std::fmin(300, std::fmin(c_.max_current_ma,
+    s_.tune_current_limit_ma = std::fmin(startup_current_limit_ma_, std::fmin(c_.max_current_ma,
                                                      tune_current_limit_ma_));
-    // Parameter acceptance remains visible while tune_enable is off; otherwise
+    // Keep successful parameter acceptance visible while the target is zero; otherwise
     // a one-period success would disappear before FreeMASTER can sample it.
     s_.tune_result = s_.enabled || (!s_.faults && s_.tune_result == ChassisTuneResult::Applied)
                          ? ChassisTuneResult::Applied : ChassisTuneResult::NotReady;
@@ -283,8 +271,8 @@ void ChassisControl::step_debug_speed(unsigned wheel, float rpm) {
         s_.target_rpm[i] = i == wheel ? rpm : 0;
         error_[i] = s_.target_rpm[i] - s_.measured_rpm[i];
         s_.candidate_ma[i] = i == wheel ? clamp(c_.velocity_kp * error_[i] + integral_[i],
-                                                -std::fmin(300, c_.max_current_ma),
-                                                std::fmin(300, c_.max_current_ma))
+                                                -c_.max_current_ma,
+                                                c_.max_current_ma)
                                         : 0;
         if (i != wheel) {
             error_[i] = 0;

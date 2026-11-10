@@ -1,32 +1,32 @@
 [
   {
-    "objects": 1905,
-    "variables": 191,
-    "groups": 14,
-    "scopes": 11,
+    "objects": 699,
+    "variables": 97,
+    "groups": 13,
+    "scopes": 12,
     "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\Debug\\dx_assignment5_freertos.elf",
     "title": "底盘与Yaw分批调参｜单固件Debug",
     "file": "底盘调参.pmpx",
-    "sha256": "49f4f8e4c32caca00f2d0736772b4d3db62e6cfad01f3d747b186195d9137c06"
+    "sha256": "34d6b4e60866b041f60de5eff0b2182df352dc5afc5eb279e315b6c3dcf580bb"
   },
   {
-    "objects": 1360,
-    "variables": 192,
+    "objects": 919,
+    "variables": 158,
     "groups": 10,
-    "scopes": 3,
+    "scopes": 2,
     "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\Debug\\dx_assignment5_freertos.elf",
     "title": "底盘与Yaw排障｜单固件Debug",
     "file": "底盘排障.pmpx",
-    "sha256": "49f4f8e4c32caca00f2d0736772b4d3db62e6cfad01f3d747b186195d9137c06"
+    "sha256": "34d6b4e60866b041f60de5eff0b2182df352dc5afc5eb279e315b6c3dcf580bb"
   },
   {
-    "objects": 1006,
-    "variables": 122,
-    "groups": 7,
-    "scopes": 4,
+    "objects": 370,
+    "variables": 59,
+    "groups": 6,
+    "scopes": 6,
     "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\Debug\\dx_assignment5_freertos.elf",
     "title": "机械臂抬起与保持｜单固件Debug",
     "file": "机械臂简易调参与排障.pmpx",
-    "sha256": "49f4f8e4c32caca00f2d0736772b4d3db62e6cfad01f3d747b186195d9137c06"
+    "sha256": "34d6b4e60866b041f60de5eff0b2182df352dc5afc5eb279e315b6c3dcf580bb"
   }
 ]

@@ -9,6 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 import re
+import tempfile
 import xml.etree.ElementTree as ET
 
 
@@ -107,7 +108,7 @@ class _Builder:
         old = self.sample("CVariable")
         obj = self.new("CVariable", old)
         replacements = {
-            "name": expr, "address": expr, "last_addr": _addr(spec["last_addr"]),
+            "name": expr, "address": _addr(spec["last_addr"]), "last_addr": _addr(spec["last_addr"]),
             "byte_size": spec["byte_size"], "treat_as": spec["treat_as"],
             "unit": spec["unit"], "period": spec["period"],
             "description": spec["description"], "comment": "",
@@ -210,7 +211,7 @@ def generate(output_path, *, title, elf_path, groups, template_path=None):
     """
     b = _Builder(template_path or DEFAULT_TEMPLATE)
     for group in groups:
-        for variable in group.get("variables", []):
+        for variable in group.get("variables", []) + group.get("scope_variables", []):
             b.register(variable)
     old_doc = b.sample("CPrjDoc")
     doc = b.new("CPrjDoc", old_doc)
@@ -266,6 +267,214 @@ def generate(output_path, *, title, elf_path, groups, template_path=None):
     output.write_text('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
                       ET.tostring(b.root, encoding="unicode") + "\n", encoding="utf-8", newline="\n")
     return validate(output)
+
+
+def update_groups(path, groups):
+    """Trim existing watches/curves without replacing connection or display settings.
+
+    Group titles identify existing blocks. Existing definitions and row/curve
+    styles are reused; new variables require a fully bound address/type spec.
+    Scopes are matched by title, then position, and never created. Validation
+    completes in a temporary file before the original is atomically replaced.
+    """
+    path = Path(path)
+    root = ET.parse(path).getroot()
+    objects = root.find("objects")
+    serial = max(int(o.get("name")[5:]) for o in objects
+                 if OBJECT_REF.fullmatch(o.get("name", ""))) + 1
+    document_id = _get(root.find("main"), "document")
+    documents = [o for o in objects if o.get("name") == document_id and
+                 o.get("type") == "CPrjDoc"]
+    if len(documents) != 1:
+        raise ValueError("Expected one unambiguous CPrjDoc")
+    if sum(o.get("name") == document_id for o in objects) > 1:
+        # FreeMASTER's native save can number the document and first variable
+        # alike. Only the explicitly typed document reference denotes CPrjDoc;
+        # generic watch/list references continue to denote the first variable.
+        new_id = f"ObjId{serial:04d}"
+        serial += 1
+        documents[0].set("name", new_id)
+        for member in root.iter("member"):
+            if member.text == document_id and member.get("type") == "CPrjDoc":
+                member.text = new_id
+
+    def signature(obj):
+        return (tuple(sorted(obj.attrib.items())), (obj.text or "").strip(),
+                tuple(signature(child) for child in obj))
+
+    unique = {}
+    for obj in list(objects):
+        name = obj.get("name")
+        if name in unique:
+            if signature(unique[name]) != signature(obj):
+                raise ValueError(f"Ambiguous duplicate object: {name}")
+            objects.remove(obj)  # Identical repeated native-save style objects.
+        else:
+            unique[name] = obj
+    byid = {o.get("name"): o for o in objects}
+    document = byid[_get(root.find("main"), "document")]
+    variable_list = byid[_get(document, "variables")]
+    variables = {_get(byid[m.text], "name"): m.text for m in variable_list}
+    all_variable_ids = [m.text for m in variable_list]
+
+    def title_key(text):
+        # Native FreeMASTER save serializes CP936 bytes as Latin-1 entities.
+        # Decode only for title matching; connection/ELF strings stay intact.
+        try:
+            decoded = text.encode("latin1").decode("gbk")
+            return decoded if any("\u4e00" <= c <= "\u9fff" for c in decoded) else text
+        except UnicodeError:
+            return text
+
+    blocks = {title_key(_get(o, "name")): o for o in objects
+              if o.get("type") == "CPrjItemBlock"}
+
+    for group in groups:
+        for spec in group.get("variables", []) + group.get("scope_variables", []):
+            expr = spec["expr"]
+            if expr in variables:
+                continue
+            if not {"last_addr", "byte_size", "treat_as"}.issubset(spec):
+                raise ValueError(f"New variable requires an ELF-bound spec: {expr}")
+            if spec["byte_size"] not in (1, 2, 4, 8) or spec["treat_as"] not in (0, 1, 2):
+                raise ValueError(f"Invalid variable type: {expr}")
+            if spec["treat_as"] == 2 and spec["byte_size"] not in (4, 8):
+                raise ValueError(f"Invalid floating variable width: {expr}")
+            obj = deepcopy(byid[all_variable_ids[0]])
+            variable_id = f"ObjId{serial:04d}"
+            serial += 1
+            obj.set("name", variable_id)
+            replacements = {
+                "name": expr, "address": _addr(spec["last_addr"]), "last_addr": _addr(spec["last_addr"]),
+                "byte_size": spec["byte_size"], "treat_as": spec["treat_as"],
+                "unit": spec.get("unit", ""), "period": spec.get("period", 100),
+                "description": spec.get("description", ""), "comment": "",
+                "type_fmt": "IEEE floating point" if spec["treat_as"] == 2 else "Fixed point number",
+                "modif_mode": int(spec.get("writable", False)),
+                "modif_set_min": "" if spec.get("min") is None else spec["min"],
+                "modif_set_max": "" if spec.get("max") is None else spec["max"],
+                "modif_set_step": "", "modif_address": "", "modif_last_addr": "0x0",
+                "enum_enabled": 0, "enum": "", "value_trf": "NULL",
+            }
+            for name, value in replacements.items():
+                _set(obj, name, value)
+            objects.append(obj)
+            byid[variable_id] = obj
+            variables[expr] = variable_id
+            all_variable_ids.append(variable_id)
+
+    def replace_list(obj, references):
+        obj[:] = []
+        for i, reference in enumerate(references):
+            _set(obj, f"item{i}", reference, "CObject_ptr")
+
+    for spec in groups:
+        if spec["title"] not in blocks:
+            raise ValueError(f"Existing group not found: {spec['title']}")
+        block = blocks[spec["title"]]
+        _set(block, "name", spec["title"])
+        watches = byid[_get(block, "watch_variables")]
+        rows = byid[_get(block, "variable_info")]
+        old_rows = {_get(rows, f"key{i}"): _get(rows, f"value{i}")
+                    for i in range(len(watches))}
+        row_template = byid[next(iter(old_rows.values()))] if old_rows else None
+        requested = list(dict.fromkeys(v["expr"] for v in spec.get("variables", [])))
+        unknown = [expr for expr in requested if expr not in variables]
+        if unknown:
+            raise ValueError(f"Variables absent from existing project: {unknown}")
+        replace_list(watches, [variables[expr] for expr in requested])
+        rows[:] = []
+        for i, expr in enumerate(requested):
+            variable_id = variables[expr]
+            row_id = old_rows.get(variable_id)
+            if row_id is None:
+                if row_template is None:
+                    raise ValueError(f"No existing row style for {spec['title']}")
+                row = deepcopy(row_template)
+                row_id = f"ObjId{serial:04d}"
+                serial += 1
+                row.set("name", row_id)
+                objects.append(row)
+                byid[row_id] = row
+            _set(rows, f"key{i}", variable_id, "CObject_ptr")
+            _set(rows, f"value{i}", row_id, "CObject_ptr")
+
+        children = byid[_get(block, "child_items")]
+        scopes = spec.get("scopes", [])
+        kept_children = []
+        scope_index = 0
+        for member in list(children):
+            child = byid[member.text]
+            if child.get("type") != "CPrjItemScope":
+                kept_children.append(member.text)
+                continue
+            desired = next((s for s in scopes if s["title"] == title_key(_get(child, "name"))), None)
+            if desired is None and scope_index < len(scopes):
+                desired = scopes[scope_index]
+            scope_index += 1
+            if desired is None:
+                continue
+            expressions = desired.get("exprs", desired.get("expressions", []))
+            if not expressions:
+                continue
+            curves = {}
+            for i in range(int(_get(child, "var_count"))):
+                curve_id = _get(child, f"var{i}_info")
+                curves[_get(byid[_get(byid[curve_id], "variable")], "name")] = curve_id
+            missing = [expr for expr in expressions if expr not in curves]
+            if missing:
+                raise ValueError(f"Curves absent from existing scope: {missing}")
+            for member in list(child):
+                if re.fullmatch(r"var\d+_info", member.get("name", "")):
+                    child.remove(member)
+            for i, expr in enumerate(expressions):
+                _set(child, f"var{i}_info", curves[expr], "CPrjItemRS_VarInfo")
+            _set(child, "var_count", len(expressions))
+            _set(child, "graph_var_count", len(expressions))
+            _set(child, "name", desired["title"])
+            kept_children.append(child.get("name"))
+        replace_list(children, kept_children)
+
+    used_variables = set()
+    for obj in objects:
+        if obj.get("type") in ("CPrjItemBlock", "CPrjItemProject"):
+            used_variables.update(m.text for m in byid[_get(obj, "watch_variables")])
+        elif obj.get("type") == "CPrjItemScope":
+            # Detached scopes are removed below; keeping their variables here
+            # would leave unused entries in the global variable list.
+            parent = byid[_get(obj, "parent_item")]
+            if obj.get("name") in {m.text for m in byid[_get(parent, "child_items")]}:
+                for i in range(int(_get(obj, "var_count"))):
+                    used_variables.add(_get(byid[_get(obj, f"var{i}_info")], "variable"))
+    replace_list(variable_list, [reference for reference in all_variable_ids
+                                if reference in used_variables])
+    reachable = set()
+
+    def mark(reference):
+        if reference in reachable:
+            return
+        reachable.add(reference)
+        for member in byid[reference].iter("member"):
+            if member.text and OBJECT_REF.fullmatch(member.text):
+                mark(member.text)
+
+    mark(_get(root.find("main"), "document"))
+    objects[:] = [obj for obj in objects if obj.get("name") in reachable]
+    ET.indent(root, space="\t")
+    payload = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+               ET.tostring(root, encoding="unicode") + "\n").encode("utf-8")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".tmp",
+                                         delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+        result = validate(temporary)
+        temporary.replace(path)
+        return result
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def validate(path):

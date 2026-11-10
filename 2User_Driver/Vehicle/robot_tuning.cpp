@@ -33,8 +33,11 @@ const TuneState &RobotTuning::step(const TuneInput &input) {
         enabled_seen_ = false;
         return state_;
     }
-    if (state_.blocked)
+    // Acknowledge a failed test with enable=0; mode=0 is not required.
+    // Do not automatically restart an expired current pulse.
+    if (state_.blocked && input.enable)
         return state_;
+    state_.blocked = false;
     if (input.mode > TuneYawPosition) {
         block(TuneInvalid);
         return state_;
@@ -65,9 +68,7 @@ const TuneState &RobotTuning::step(const TuneInput &input) {
         return state_;
     }
     if (!enabled_seen_) {
-        if (!input.stationary) {
-            block(TuneWaitingStill);
-        } else if (input.mode == TuneYawPosition) {
+        if (input.mode == TuneYawPosition) {
             if (!std::isfinite(input.yaw_position_deg))
                 block(TuneInvalid);
             else
@@ -83,7 +84,7 @@ const TuneState &RobotTuning::step(const TuneInput &input) {
     float limit = 0;
     if (input.mode == TuneLeftCurrent || input.mode == TuneRightCurrent) {
         value = input.current_ma;
-        limit = 300;
+        limit = 10000;
     } else if (input.mode == TuneLeftSpeed || input.mode == TuneRightSpeed) {
         value = input.speed_rpm;
         limit = 300;

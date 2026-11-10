@@ -290,10 +290,9 @@ int test_robot_control() {
         tune_speed_rpm = 50;
         tune_yaw_speed_deg_s = 1;
         tune_yaw_target_deg = 2;
-        tune_enable = 1;
         Robot_Execute(held, now, false);
         CHECK(g_robot_tune_status.mode == ROBOT_TUNE_LEFT_CURRENT &&
-              !g_robot_tune_status.ready && !tune_enable);
+              !g_robot_tune_status.ready);
         CHECK(tune_current_ma == 0 && tune_speed_rpm == 0 && tune_yaw_speed_deg_s == 0 &&
               tune_yaw_target_deg == held.status().joint[Yaw].position_deg);
         CHECK(held.status().enabled_mask == kFourAxisJoints);
@@ -301,9 +300,8 @@ int test_robot_control() {
         now += 4;
         fresh_inputs(now);
         CHECK(feed_all(held, now));
-        tune_enable = 1;
         Robot_Execute(held, now, false);
-        CHECK(!g_robot_tune_status.ready && g_robot_tune_status.blocked && !tune_enable);
+        CHECK(!g_robot_tune_status.ready && g_robot_tune_status.blocked);
         const auto entry_epoch = g_robot_tune_status.epoch;
         for (unsigned n = 0; n < 80; ++n) {
             now += 4;
@@ -384,7 +382,7 @@ int test_robot_control() {
         CHECK(s.remote_axis[0] == -1 && s.remote_axis[1] == 1 && s.remote_axis[2] == 0 &&
               std::fabs(s.remote_axis[3] + (.5f - .06f) / .94f) < .0001f);
         CHECK(s.remote_switch[0] == DR16_SWITCH_DOWN && s.remote_switch[1] == DR16_SWITCH_DOWN);
-        CHECK(!s.active && !yaw_only.status().enabled_mask && !tune_enable &&
+        CHECK(!s.active && !yaw_only.status().enabled_mask &&
               Robot_GetChassisCommand(&command) && !command.enabled && command.tune_value == 0);
         robot_tune_mode = 0;
         test_hal_tick = 1234;
