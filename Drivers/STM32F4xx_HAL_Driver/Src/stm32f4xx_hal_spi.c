@@ -3500,15 +3500,9 @@ static HAL_StatusTypeDef SPI_WaitFlagStateUntilTimeout(SPI_HandleTypeDef *hspi, 
   __IO uint32_t count;
   uint32_t tmp_timeout;
   uint32_t tmp_tickstart;
-  uint32_t elapsed;
 
   /* Adjust Timeout value  in case of end of transfer */
-  /* Local fix: a preempted caller can already be past its deadline here.
-     Saturate the remainder instead of underflowing to a multi-minute wait.
-     Keep the explicitly unbounded HAL_MAX_DELAY contract unchanged. */
-  elapsed = HAL_GetTick() - Tickstart;
-  tmp_timeout = Timeout == HAL_MAX_DELAY ? HAL_MAX_DELAY :
-                (elapsed >= Timeout ? 0U : Timeout - elapsed);
+  tmp_timeout   = Timeout - (HAL_GetTick() - Tickstart);
   tmp_tickstart = HAL_GetTick();
 
   /* Calculate Timeout based on a software loop to avoid blocking issue if Systick is disabled */
@@ -3948,3 +3942,4 @@ static void SPI_AbortTx_ISR(SPI_HandleTypeDef *hspi)
 /**
   * @}
   */
+

@@ -92,6 +92,11 @@ def variables(prefix, names):
 
 
 COMMON = [V('uwTick', '系统毫秒计数', 'ms'), V('g_dr16_status.received_ms', '遥控最近接收时刻', 'ms'),
+          V('g_robot_status.updated_ms', '整车协调发布时间', 'ms'),
+          V('g_robot_status.stop_epoch', '全局关控次数'),
+          V('g_robot_status.remote_age_ms', '遥控接收年龄', 'ms'),
+          V('g_robot_status.wait_neutral', '等待回中'),
+          V('g_robot_status.protection_disabled', '机械臂保护失能'),
           V('g_robot_status.remote_online', '遥控在线'), V('g_robot_status.mode', '模式 0安全1行驶2夹取3待机'),
           V('g_robot_status.active', '机械臂协调开控'), V('g_arm_status.enabled_mask', '机械臂使能掩码'),
           V('g_robot_status.protection_current_reasons', '当前保护原因位图'),
@@ -166,7 +171,12 @@ def arm_scope(i):
 
 
 def groups(profile):
-    base = G('第0批 安全常驻｜' + profile, COMMON)
+    safety = COMMON + [V('g_arm_status.updated_ms', '机械臂发布时间', 'ms')]
+    if profile == 'YawBenchDebug':
+        safety += YAW_REQUEST + joint(0)
+    else:
+        safety += CH_COMMON + [V(f'g_chassis_status.current_ma[{i}]', '轮组提交电流', 'mA') for i in range(2)]
+    base = G('第0批 安全常驻｜' + profile, safety)
     if profile == 'ChassisBenchDebug':
         tune = [base, G('第1批 遥控与两轮反馈｜不出力',COMMON+CH_COMMON+REMOTE+wheel(0)+wheel(1)),
                 G('第2批 左轮ID1方向｜mode=2',COMMON+CH_COMMON+CH_REQUEST+wheel(0),[wheel_scope(0)]),
@@ -202,7 +212,7 @@ def groups(profile):
 
 
 def arm_groups():
-    return [G('第0步 关控与连接｜ChassisBenchDebug',COMMON),
+    return [G('第0步 关控与连接｜ChassisBenchDebug',COMMON+[V('g_arm_status.updated_ms','机械臂发布时间','ms'),V('g_arm_status.ready','机械臂任务就绪')]),
             G('第1步 双Pitch人工联合零位｜命令2',COMMON+[V('g_arm_status.last_result','Arm最近操作结果'),V('g_arm_status.configuration_valid','Arm配置合法')]+joint(1)+joint(2)),
             G('第2步 简易抬肩抬肘｜左中 遥控操作',COMMON+joint(1)+joint(2),[arm_scope(1),arm_scope(2)]),
             G('第3步 少量改PI与限流｜先左上关控',COMMON+ARM_TUNE+joint(1)+joint(2)),

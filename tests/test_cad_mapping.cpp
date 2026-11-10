@@ -338,8 +338,11 @@ int test_cad_mapping() {
                        b.status().joint[Gripper].reference_deg * 36, 0.002f));
             CHECK(near(a.status().joint[Gripper].effort, b.status().joint[Gripper].effort, 0.01f));
             CHECK(find(frames, n, 0x200) != nullptr && find(old_frames, old_n, 0x200) != nullptr);
-            CHECK(std::abs(current(*find(frames, n, 0x200), 1) -
-                           current(*find(old_frames, old_n, 0x200), 1)) <= 1);
+            const unsigned slot = (cfg.joint[Gripper].motor_id - 1) % 4;
+            CHECK(current(*find(frames, n, 0x200), slot) ==
+                  int16_t(a.status().joint[Gripper].effort));
+            CHECK(std::abs(current(*find(frames, n, 0x200), slot) -
+                           current(*find(old_frames, old_n, 0x200), slot)) <= 1);
         }
     }
     return 0;

@@ -153,7 +153,10 @@ int test_four_axis() {
     { // Missing one real axis still blocks enable; yaw absence is the only removed dependency.
         ArmControl a(four_axis());
         const uint8_t dji[8] = {3, 232, 0, 0, 0, 0, 0, 0};
-        a.receive(1, 0x201, dji, 8, 0);
+        CHECK(a.feedback_id(Roll) == 0x203 && a.feedback_id(Gripper) == 0x204);
+        CHECK(!a.receive(1, 0x201, dji, 8, 0));
+        CHECK(!a.receive(1, 0x202, dji, 8, 0));
+        CHECK(a.receive(1, a.feedback_id(Roll), dji, 8, 0));
         CHECK(a.capture_zero(kFourAxisJoints, 0) == Result::NotOnline);
         CHECK(a.enable(kFourAxisJoints, 0) == Result::NotOnline);
     }

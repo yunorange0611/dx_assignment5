@@ -163,6 +163,20 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles DMA1 stream1 global interrupt.
+  */
+void DMA1_Stream1_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream1_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream1_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_usart3_rx);
+  /* USER CODE BEGIN DMA1_Stream1_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream1_IRQn 1 */
+}
+
+/**
   * @brief This function handles CAN1 TX interrupts.
   */
 void CAN1_TX_IRQHandler(void)
@@ -232,10 +246,19 @@ void CAN2_RX1_IRQHandler(void)
   /* USER CODE END CAN2_RX1_IRQn 1 */
 }
 
-void USART3_IRQHandler(void) { HAL_UART_IRQHandler(&huart3); }
-void DMA1_Stream1_IRQHandler(void) { HAL_DMA_IRQHandler(&hdma_usart3_rx); }
+/**
+  * @brief This function handles CAN2 SCE interrupt.
+  */
+void CAN2_SCE_IRQHandler(void)
+{
+  /* USER CODE BEGIN CAN2_SCE_IRQn 0 */
+
+  /* USER CODE END CAN2_SCE_IRQn 0 */
+  HAL_CAN_IRQHandler(&hcan2);
+  /* USER CODE BEGIN CAN2_SCE_IRQn 1 */
+
+  /* USER CODE END CAN2_SCE_IRQn 1 */
+}
+
 /* USER CODE BEGIN 1 */
 /* USER CODE END 1 */
-
-void CAN1_SCE_IRQHandler(void) { HAL_CAN_IRQHandler(&hcan1); }
-void CAN2_SCE_IRQHandler(void) { HAL_CAN_IRQHandler(&hcan2); }

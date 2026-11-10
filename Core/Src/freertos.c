@@ -149,11 +149,7 @@ void MX_FREERTOS_Init(void) {
   CAN1_Sending_ServiceHandle = osThreadNew(can1_sending_service, NULL, &CAN1_Sending_Service_attributes);
 
   /* creation of CAN2_Sending_Service */
-#if !DM_ID_CONFIG_MODE
   CAN2_Sending_ServiceHandle = osThreadNew(can2_sending_service, NULL, &CAN2_Sending_Service_attributes);
-
-  /* Legacy DJI service intentionally not started: CAN groups have explicit owners. */
-#endif
 
   /* USER CODE BEGIN RTOS_THREADS */
 #if DM_ID_CONFIG_MODE

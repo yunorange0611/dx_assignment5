@@ -137,11 +137,12 @@ void run() {
         CHECK(std::fabs(a.status().joint[Roll].position_deg - 4 * 360.0f / 8192 / 36) < 0.0001f);
         dji(a, Roll, 8190, 2);
         CHECK(std::fabs(a.status().joint[Roll].position_deg) < 0.0001f);
+        const auto feedback = a.feedback_id(Roll);
         uint8_t bad[8]{};
-        CHECK(!a.receive(1, 0x201, bad, 7, 3));
-        CHECK(!a.receive(2, 0x201, bad, 8, 3));
+        CHECK(!a.receive(1, feedback, bad, 7, 3));
+        CHECK(!a.receive(2, feedback, bad, 8, 3));
         bad[0] = 0xff;
-        CHECK(!a.receive(1, 0x201, bad, 8, 3));
+        CHECK(!a.receive(1, feedback, bad, 8, 3));
         dji(a, Roll, 8190, 10);
         CHECK(!a.status().joint[Roll].calibrated);
     }
@@ -249,9 +250,13 @@ void run() {
             CHECK(std::fabs(v - previous_v) <= 0.13f);
             previous_q = s.reference_deg;
             previous_v = v;
-            CHECK(int16_t(uint16_t(find(f, n, 1, 0x200)->data[0]) << 8 |
-                          find(f, n, 1, 0x200)->data[1]) <= 0);
-            CHECK(find(f, n, 1, 0x200)->data[2] == 0 && find(f, n, 1, 0x200)->data[3] == 0);
+            const unsigned id = cfg.joint[Roll].motor_id, byte = ((id - 1) % 4) * 2;
+            const auto *current = find(f, n, 1, id <= 4 ? 0x200 : 0x1ff);
+            CHECK(current != nullptr);
+            const int raw = int16_t(uint16_t(current->data[byte]) << 8 | current->data[byte + 1]);
+            CHECK(raw == int16_t(-s.effort) && raw <= 0);
+            for (unsigned j = 0; j < 8; ++j)
+                if (j != byte && j != byte + 1) CHECK(current->data[j] == 0);
         }
         a.transport_fault();
         auto n = a.step(4000, f);
@@ -339,7 +344,7 @@ void run() {
         pack_dm_torque(-99, 12.5f, 30, 10, d);
         CHECK(d[6] == 0 && d[7] == 0);
         Config c = bench();
-        c.joint[Gripper].motor_id = 1;
+        c.joint[Gripper].motor_id = c.joint[Roll].motor_id;
         ArmControl a(c);
         CHECK(!a.status().configuration_valid);
         CHECK(a.step(0, f) == 0);
@@ -370,8 +375,14 @@ void run() {
         float q[5] = {0, 0, 0, 0, 45};
         a.set_targets(1u << Gripper, q, 0);
         CHECK(a.set_effort_limit(Gripper, 150) == Result::Ok);
-        a.step(0, f);
+        auto n = a.step(0, f);
         CHECK(a.status().joint[Gripper].effort == 150);
+        const unsigned id = c.joint[Gripper].motor_id, byte = ((id - 1) % 4) * 2;
+        const auto *current = find(f, n, 1, id <= 4 ? 0x200 : 0x1ff);
+        CHECK(current != nullptr);
+        CHECK(int16_t(uint16_t(current->data[byte]) << 8 | current->data[byte + 1]) == 150);
+        for (unsigned j = 0; j < 8; ++j)
+            if (j != byte && j != byte + 1) CHECK(current->data[j] == 0);
         CHECK(a.set_effort_limit(Gripper, 0) == Result::Ok);
         all(a, 4);
         a.step(4, f);
