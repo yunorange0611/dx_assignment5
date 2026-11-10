@@ -577,9 +577,75 @@ int test_chassis() {
         a.step(2008, w, cmd);
         CHECK(a.status().reference_v_m_s >= 0 && a.status().reference_v_m_s < last);
     }
+    { // Angular deceleration uses its own rate when the turn request falls.
+        auto c = confirmed();
+        c.max_turn_rad_s = 1.0f;
+        c.angular_accel_rad_s2 = 1000.0f;
+        c.angular_decel_rad_s2 = 2.0f;
+        ChassisControl a(c);
+        WheelFeedback w[2]{};
+        feedback(w, 0);
+        a.step(0, w, request(0, 0, 1));
+        CHECK(a.status().enabled);
+        CHECK(near(a.status().reference_omega_rad_s, 1.0f, .00001f));
+        feedback(w, 4);
+        auto cmd = request(4, 0, 0);
+        cmd.stop = cmd.brake = true;
+        a.step(4, w, cmd);
+        CHECK(near(a.status().reference_omega_rad_s, 1.0f - c.angular_decel_rad_s2 * .004f,
+                   .00001f));
+    }
+    { // A zero drive request clears the speed-loop integral instead of freezing it.
+        auto c = confirmed();
+        c.max_turn_rad_s = 1.0f;
+        c.angular_accel_rad_s2 = 1000.0f;
+        c.angular_decel_rad_s2 = 1000.0f;
+        c.velocity_kp = 1.0f;
+        c.velocity_ki = 1000.0f;
+        ChassisControl a(c);
+        WheelFeedback w[2]{};
+        for (uint32_t t = 0; t <= 16; t += 4) {
+            feedback(w, t);
+            auto cmd = request(t, 0, 1);
+            a.step(t, w, cmd);
+            float final[2] = {a.status().candidate_ma[0], a.status().candidate_ma[1]};
+            a.apply(final, true);
+        }
+        CHECK(a.status().candidate_ma[0] < 0 || a.status().candidate_ma[1] > 0);
+        auto stop = request(20, 0, 0);
+        stop.stop = stop.brake = true;
+        feedback(w, 20);
+        a.step(20, w, stop);
+        CHECK(a.status().candidate_ma[0] == 0 && a.status().candidate_ma[1] == 0);
+    }
+    { // Single-wheel speed tuning keeps its integrator across step_tuning calls.
+        auto c = confirmed();
+        c.velocity_kp = 1.0f;
+        c.velocity_ki = 1000.0f;
+        ChassisControl a(c);
+        WheelFeedback w[2]{};
+        auto cmd = request(0);
+        cmd.tune_mode = 3;
+        cmd.tune_epoch = 1;
+        cmd.tune_value = 100;
+        cmd.tune_velocity_kp = c.velocity_kp;
+        cmd.tune_velocity_ki = c.velocity_ki;
+        cmd.tune_current_limit_ma = c.max_current_ma;
+        feedback(w, 0);
+        a.step_tuning(0, w, cmd);
+        for (uint32_t t = 4; t <= 8; t += 4) {
+            feedback(w, t);
+            cmd.updated_ms = t;
+            a.step_tuning(t, w, cmd);
+            float final[2] = {a.status().candidate_ma[0], a.status().candidate_ma[1]};
+            a.apply(final, true);
+        }
+        CHECK(a.status().candidate_ma[0] > 100); // P alone would be 100 mA.
+    }
     { // Common wheel-speed saturation preserves differential curvature.
         auto c = confirmed();
         c.max_rotor_rpm = 100;
+        c.max_turn_rad_s = 2.0f;
         c.acceleration_m_s2 = 1000;
         c.angular_accel_rad_s2 = 1000;
         ChassisControl a(c);

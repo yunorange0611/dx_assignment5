@@ -13,7 +13,7 @@ CAN2左轮ID1、右轮ID2，反馈0x201/0x202，输出0x200第一/二槽；CAN1�
 | 电调ID、正方向 | `motor_id[2]`、`direction[2]` |
 | 有效轮径、轮距、总齿比 | `diameter_m`、`track_m`、`gear_ratio` |
 | 慢速/转向上限 | `max_speed_m_s`、`max_turn_rad_s` |
-| 加减速/转向斜坡 | `acceleration_m_s2`、`deceleration_m_s2`、`angular_accel_rad_s2` |
+| 加减速/转向斜坡 | `acceleration_m_s2`、`deceleration_m_s2`、`angular_accel_rad_s2`、`angular_decel_rad_s2` |
 | 轮速PI/运行限流 | `velocity_kp`、`velocity_ki`、`max_current_ma` |
 | 超时、轮静止确认 | `feedback_timeout_ms`、`command_timeout_ms`、`stationary_rpm`、`stationary_ms` |
 
@@ -79,4 +79,6 @@ robot_tune_mode仅选择对象/控制层。tune_enable为旧FM兼容符号，不
 - 以后整车联调时把 `kChassisIndependent` 改回 false，恢复 `Robot_GetChassisCommand()` 的整车许可路径；底盘控制算法和 CAN2 发送入口不变。
 
 ### 行驶斜坡在线调参
-FreeMASTER「行驶加减速与转向」组的四项 `tune_chassis_*` 在正常底盘控制周期生效。只接受有限正数，非法输入保留上一生效值。默认值来自 `chassis_config.h`，在线修改不保存到 Flash，不影响单轮测试、限流或停止保护。
+FreeMASTER「行驶加减速与转向」组的五项 `tune_chassis_*` 在正常底盘控制周期生效：行驶加速/减速、转向角加速度/角减速度、最大转向角速度。只接受有限正数，非法输入保留上一生效值。默认值来自 `chassis_config.h`，在线修改不保存到 Flash，不影响单轮测试、限流或停止保护。
+
+转向松杆和回中时按 `angular_decel_rad_s2` 收参考角速度；同时 `ChassisControl::step` 在无行驶/转向请求（`stop`，或 `brake` 且转向请求为0）时每个周期清零两轮速度环积分，避免积分在静摩擦下冻结、松杆后仍持续驱动一侧轮子。该清理不作用于纯转向中的 `brake`（转向请求非0时保留积分）。

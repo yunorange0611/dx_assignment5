@@ -138,6 +138,7 @@ CH_MOTION = [
     V('tune_chassis_acceleration_m_s2', '行驶加速度', 'm/s^2', True, 0.001, 100),
     V('tune_chassis_deceleration_m_s2', '行驶减速度', 'm/s^2', True, 0.001, 100),
     V('tune_chassis_angular_accel_rad_s2', '转向角加速度', 'rad/s^2', True, 0.001, 100),
+    V('tune_chassis_angular_decel_rad_s2', '转向角减速度', 'rad/s^2', True, 0.001, 100),
     V('tune_chassis_max_turn_rad_s', '最大转向角速度', 'rad/s', True, 0.001, 10),
 ]
 CH_SPEED = [V('tune_speed_rpm','单轮速度目标 3508转子rpm','rpm',True,-9000,9000)]

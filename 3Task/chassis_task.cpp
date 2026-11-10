@@ -18,6 +18,7 @@ ChassisStatus g_chassis_status{};
 volatile float tune_chassis_acceleration_m_s2 = engineer::kChassisConfig.acceleration_m_s2;
 volatile float tune_chassis_deceleration_m_s2 = engineer::kChassisConfig.deceleration_m_s2;
 volatile float tune_chassis_angular_accel_rad_s2 = engineer::kChassisConfig.angular_accel_rad_s2;
+volatile float tune_chassis_angular_decel_rad_s2 = engineer::kChassisConfig.angular_decel_rad_s2;
 volatile float tune_chassis_max_turn_rad_s = engineer::kChassisConfig.max_turn_rad_s;
 volatile ChassisDebugRequest g_chassis_debug_request{};
 ChassisDebugStatus g_chassis_debug_status{};
@@ -320,7 +321,8 @@ void control_and_limit(ChassisRuntime &runtime) {
     } else {
         runtime.control.set_motion_tuning(
             tune_chassis_acceleration_m_s2, tune_chassis_deceleration_m_s2,
-            tune_chassis_angular_accel_rad_s2, tune_chassis_max_turn_rad_s);
+            tune_chassis_angular_accel_rad_s2, tune_chassis_angular_decel_rad_s2,
+            tune_chassis_max_turn_rad_s);
         runtime.control.step(runtime.now_ms, runtime.wheels, command);
     }
     runtime.final_ma[0] = runtime.control.status().candidate_ma[0];

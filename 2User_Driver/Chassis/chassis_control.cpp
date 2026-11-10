@@ -9,11 +9,14 @@ float approach(float x, float goal, float step) {
     return x + clamp(goal - x, -step, step);
 }
 } // namespace
-void ChassisControl::set_motion_tuning(float accel, float decel, float angular_accel, float max_turn) {
+void ChassisControl::set_motion_tuning(float accel, float decel, float angular_accel,
+                                       float angular_decel, float max_turn) {
     // Invalid writes leave the corresponding active setting unchanged.
     if (std::isfinite(accel) && accel > 0) c_.acceleration_m_s2 = accel;
     if (std::isfinite(decel) && decel > 0) c_.deceleration_m_s2 = decel;
     if (std::isfinite(angular_accel) && angular_accel > 0) c_.angular_accel_rad_s2 = angular_accel;
+    if (std::isfinite(angular_decel) && angular_decel > 0)
+        c_.angular_decel_rad_s2 = angular_decel;
     if (std::isfinite(max_turn) && max_turn > 0) c_.max_turn_rad_s = max_turn;
 }
 ChassisControl::ChassisControl(const ChassisConfig &c)
@@ -21,8 +24,8 @@ ChassisControl::ChassisControl(const ChassisConfig &c)
     const float values[] = {
         c.diameter_m,       c.track_m,           c.gear_ratio,        c.max_speed_m_s,
         c.max_turn_rad_s,   c.acceleration_m_s2, c.deceleration_m_s2, c.angular_accel_rad_s2,
-        c.max_rotor_rpm,    c.max_current_ma,    c.velocity_kp,       c.stationary_rpm,
-        c.max_temperature_c};
+        c.angular_decel_rad_s2, c.max_rotor_rpm, c.max_current_ma,   c.velocity_kp,
+        c.stationary_rpm,   c.max_temperature_c};
     bool good = true;
     for (float x : values)
         good &= std::isfinite(x) && x > 0;
@@ -153,12 +156,23 @@ const ChassisState &ChassisControl::step(uint32_t now, const WheelFeedback wheel
     s_.enabled = true;
     const float v = (cmd.stop || cmd.brake) ? 0 : cmd.speed_request * c_.max_speed_m_s;
     const float w = cmd.stop ? 0 : cmd.turn_request * c_.max_turn_rad_s;
+    // With no normal drive request, drop both integrators every cycle. Otherwise
+    // a wound-up integral can freeze against stiction and keep one wheel driven
+    // long after the reference has reached zero. Single-wheel tuning keeps its
+    // own PI state through step_tuning().
+    const bool no_drive =
+        !cmd.tune_mode && (cmd.stop || (cmd.brake && cmd.turn_request == 0));
+    if (no_drive)
+        integral_[0] = integral_[1] = 0;
     // Reverse through zero first, use the measured state on mode transitions.
     const float goal = s_.reference_v_m_s * v < 0 ? 0 : v;
     const float accel = std::fabs(goal) > std::fabs(s_.reference_v_m_s) ? c_.acceleration_m_s2
                                                                         : c_.deceleration_m_s2;
     s_.reference_v_m_s = approach(s_.reference_v_m_s, goal, accel * dt_);
-    s_.reference_omega_rad_s = approach(s_.reference_omega_rad_s, w, c_.angular_accel_rad_s2 * dt_);
+    const bool slowing = std::fabs(w) < std::fabs(s_.reference_omega_rad_s);
+    s_.reference_omega_rad_s =
+        approach(s_.reference_omega_rad_s, w,
+                 (slowing ? c_.angular_decel_rad_s2 : c_.angular_accel_rad_s2) * dt_);
     differential(s_.reference_v_m_s, s_.reference_omega_rad_s, c_.diameter_m, c_.track_m,
                  c_.gear_ratio, s_.target_rpm);
     const float peak = std::fmax(std::fabs(s_.target_rpm[0]), std::fabs(s_.target_rpm[1]));
