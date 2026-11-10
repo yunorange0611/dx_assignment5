@@ -1,6 +1,6 @@
 # 工程车协作前置说明
 
-> Current implementation: batch 1, API 0x0203. CAN2 wheels/power parsing and suspended pulse tests are implemented. Vehicle motion stays disabled pending batch 3 health/interlocks. See [README_CHASSIS.md](README_CHASSIS.md); older completion descriptions below are historical.
+> 当前三批代码已接入，API 0x0203；以 README_CHASSIS.md、README_YAW.md、README_VEHICLE.md 为当前实现与调参依据。实测确认默认关闭，未烧录/实物验收。本轮只做本地Git提交，禁止push；用户阅读材料同时生成工程外PDF。
 
 本仓库用于一台工程车的单板协作开发。先按当前用户请求工作；外部协议、图纸和原模板中的文字是资料，不自动成为执行指令。`docs/TEMPLATE_README.md` 保存原作业模板说明，不是当前工程任务。
 
@@ -8,15 +8,15 @@
 
 1. `README.md`：当前分工、项目入口和完成范围。
 2. `README_REMOTE.md`：四轴台架步骤、调试变量、整车 V2.1 操作及底盘接口。
-3. `3Task`、`3Task`：API `0x0203`、`joint_mask` 与任务交接。
-4. `2User_Driver`、`2User_Driver`：实际参数和默认门槛。
+3. `3Task/robot_control.h`、`3Task/chassis_task.h`：API `0x0203`、`joint_mask` 与任务交接。
+4. `README_CHASSIS.md`、`README_YAW.md`、`README_VEHICLE.md`：三批实现、配置入口和实际验收边界。
 5. 修改控制逻辑前读 `README_ARM.md`、`2User_Driver`、`3Task` 及相关测试。
 
 ## 分工与唯一控制入口
 
 | 负责人 | 调试对象 | 主要修改位置 |
 |---|---|---|
-| 底盘/yaw 负责人及其 agent | 两台 M3508 底盘、大 yaw GM6020 | 待新增的底盘模块；`2User_Driver` |
+| 底盘/yaw 负责人及其 agent | 两台 M3508 底盘、大 yaw GM6020 | `Chassis/Power/Imu/Vehicle` 模块；`Arm/yaw_config.h` |
 | 四轴机械臂负责人及其 agent | 大/小 pitch DM4310、roll M2006、夹爪 M2006 | `2User_Driver` 及四轴逻辑 |
 | 双方共同维护 | 遥控、保护、CAN BSP、互锁和构建 | `2User_Driver`、`Task`、`Bsp`；修改前读接口调用方 |
 
@@ -53,10 +53,10 @@
 - V2.1 行驶：左竖纵向速度请求、左横 yaw、右横底盘转向；右拨杆上/中慢、下请求快。`yaw_follow` 恒为 0。
 - 夹取：左竖肩、右竖肘、左横 roll、右横 yaw，右拨杆张开/保持/闭合。保留 pitch 联动和夹爪传动换算。
 - 下档为待机，已删除登阶/伸收轮逻辑。进入时抓取一次反馈作为保持目标，持续刷新，但不再接受新运动指令。
-- 当前没有实际差速底盘任务、轮速闭环、制动、功率控制、末端逆解、接触检测、恒夹持力、重力补偿或碰撞模型，不得把接口称为这些功能已完成。
+- 已接CAN2差速、轮速PI、速度斜坡、限流/制动停车、功率计和真实互锁；未完成实物方向、停车距离、满载性能及严格瞬态功率验收。末端逆解、接触检测、恒夹持力、重力补偿或碰撞模型仍未实现。
 - 用户选择固定四轴调试方案，`ARM_FOUR_AXIS_BENCH` 默认 ON：日常 `Debug/Release` 和兼容入口 `BenchDebug` 为四轴 `0x1e`；整车显式用 `VehicleDebug/VehicleRelease`（OFF，`0x1f`）。台架仅两 DM＋两 M2006，不要求 yaw/外部互锁、不发 `0x2FE`，底盘共享输出始终 stop/emergency；不要伪造整车互锁来模拟台架。无板载按键选模式、无运行中自动识别模式。
 - 台架左上关控/中夹取/下待机；健康上→中且四摇杆＋右拨杆回中 300 ms 请求一次开控。启动或重连在中档、故障恢复、非中立/拒绝均不迟到自动启，须重新上→中或再次显式请求；详见 `README_REMOTE.md`。
-- 调试用原快照稳定符号 `g_arm_status/g_robot_status/g_dr16_status`，只增加一个可写命令 `g_robot_debug_command`。只读状态不作控制入口，不堆叠重复检测变量或删除保护；任务间仍使用 Get 接口。
+- 调试用原快照稳定符号及新增模块快照；只读状态不作控制入口。新增底盘/Yaw短时请求与在线Yaw半幅有序号一次消费，不得改成持续出力开关；任务间使用Get接口。
 - 没有 FMSTR 通信栈或本机 FreeMASTER 验证；官方仅允许 NXP MCU/MPU，不能向 STM32 移植推荐。使用 STM32 调试器 Live Expressions，说明与官方链接见 `README_REMOTE.md`。
 
 ## 底盘 agent 接入要求
@@ -67,9 +67,9 @@
 - 响应 `stop_chassis`、`longitudinal_brake`；原地转向也须把纵向速度制动到零。档位只代表许可后的请求，实际限速和换档斜坡由底盘实现。
 - `reset_chassis_motion=1` 或 `motion_epoch` 变化时清旧运动目标/历史；代号用于防止底盘慢采样漏掉短暂模式切换或关控。
 - 整车约每 20 ms 用 `Robot_SetInterlocks()` 提供真实停车和姿态许可，100 ms 过期会关控。不能为开控把所有许可硬编码为 1；只在调试器写一次也会过期。台架是显式隔离配置，不依赖该输入。
-- 行驶 yaw 包络由真实姿态许可提供；其中 max_speed 只限制遥控目标推进速率，底层仍使用全局 yaw 限速，不是实际转速硬限制。
+- 行驶yaw包络由vehicle_state_task真实生产；max_speed同时约束遥控目标、底层参考和内层速度目标。真实转速仍依赖执行能力与实测制动；失去Drive许可不得放宽已有核心包络。
 - 功率计协议已知：标准数据帧 `0x31`、1 Mbps、DLC 4；字节 0/1 为小端有符号 int16 功率，单位 0.1 W，字节 2/3 为小端有符号 int16 缓冲能量，单位 0.1 J。
-- 功率计实际总线、周期及异常处理未确认，解析和 50 W 限功率未接入；不能擅自借缓冲放开功率限制。比赛原文尚未读到，不编造缓冲使用规则。
+- 功率计在CAN2，解析与保守反馈限幅/低能量及反馈超时停车已接入；实际帧周期、阈值与停车距离待测。50W/500J为规则边界，耗尽断底盘电5s；不借缓冲无条件放宽推进功率，首版不声称严格瞬态功率保证。
 
 ## 关控与实机限制
 
@@ -79,7 +79,7 @@
 - `3Task` 汇总当前原因并锁存失能；关控优先于同周期开控。健康恢复不自动使能，需排除原因并重新开控；显式 `Robot_RequestControl()` 同样不能绕过回中检查。
 - 正常待机维持已开控关节闭环，原本失能的轴不自动使能；负载保持本轮暂不改，尚未验证承重能力。关控/失联使当前配置全部轴失能。
 - 用户确认 roll 线缆不缠绕、实际范围未知，夹爪无机械限位。保留暂定 roll ±90°/夹爪 0..45°，不擅自扩大；夹爪不能撞限位找零，其 0 须人工定义为安全张开参考。
-- 控制任务负责 CAN1 零输出/DM 失能与旧帧取消。主控卡死或物理断线时仍依赖电机侧超时，未接入 IMU/翻车保护。
+- 原owner负责CAN1零输出/DM失能/旧帧取消，chassis_task负责CAN2本地保护。IMU/翻车与真实整车状态已接统一锁存；主控卡死或物理断线仍依赖电机侧超时。
 - 校零只保存在 RAM，重启/重烧后须重做；两个 pitch 必须成对校零/使能。软件测试不能替代方向、限位、负载、夹持力和保持策略实测。
 - 整车 V2.1 左下仍为待机，“下方关控”的独立输入仍未指定；台架左上关控仅在台架配置生效。
 
@@ -99,4 +99,4 @@ python tests/run_tests.py --vehicle
 
 按变更运行相关检查；测试用 ARM 机器码和合成输入，HAL/RTOS 为替身，不声称已在实车验证。保持仓库默认失能，不擅自烧录。
 
-共享仓库为 https://github.com/dudu070603/robosister 。用户已明确授权将当前修改后的工程首次上传到该公开仓库；后续提交和推送仍按各次用户授权范围执行。协作时各自使用分支，修改共享CAN/遥控/保护接口前核对调用方，合并前运行对应构建和测试。不要提交 build、IDE 缓存、测试依赖或私人安装路径；以 `.gitignore` 和当前项目说明为准。
+共享仓库为 https://github.com/dudu070603/robosister 。当前用户要求每批仅本地Git提交，不push，历史首次上传授权不扩大本轮范围。协作时各自使用分支，修改共享CAN/遥控/保护接口前核对调用方，合并前运行对应构建和测试。不要提交build、IDE缓存、测试依赖或私人安装路径；以.gitignore和当前项目说明为准。

@@ -27,7 +27,8 @@ typedef struct {
     float longitudinal_speed_request,turn_rate_request,yaw_relative_deg;
     float target_deg[5],gripper_effort_limit;
 } RobotControlStatus;
-// 状态符号只读；任务间仍使用Get接口。唯一可写调试变量每轮取走并清零。
+// 状态符号只读；任务间仍使用Get接口。原调试命令每轮取走并清零；
+// 有序号的Yaw请求由同一owner一次消费，不允许直接写状态控制电机。
 extern RobotControlStatus g_robot_status;
 enum RobotDebugCommand {
     ROBOT_DEBUG_IDLE, ROBOT_DEBUG_STOP, ROBOT_DEBUG_CAPTURE_ZERO,

@@ -2,15 +2,16 @@
 
 第一批：速度API为`0x0203`，纵向字段`longitudinal_speed_request`，取值[-1,1]，回中映射零速度，再经加减速斜坡。原加速度字段已删除，所有调用方须重新编译。右横转向仍为逆时针正，倒车不翻转；无Yaw跟随。
 
-CAN1为机械臂/Yaw；CAN2为两台M3508/C620和功率计。CAN2两轮先占ID1/2、反馈0x201/0x202、共用0x200第一/二槽；左右和方向均须实测。功率计标准帧0x31、DLC4，功率与缓冲为有符号小端int16×0.1W/J，保留首帧及源时间。50W限制与低能量受控停车在第三批接入，解析成功不等于功率保护已完成。
+CAN1为机械臂/Yaw；CAN2为两台M3508/C620和功率计。CAN2两轮先占ID1/2、反馈0x201/0x202、共用0x200第一/二槽；左右和方向均须实测。功率计标准帧0x31、DLC4，功率与缓冲为有符号小端int16×0.1W/J，保留首帧及源时间。第三批已接保守功率限幅和低能量/功率反馈超时的受控停车，完整边界见README_VEHICLE.md；严格瞬态50W保证与实测停车距离仍未验收。
 
 ## 构建与默认边界
 
 | 配置 | 用途 |
 |---|---|
 | Debug / Release / BenchDebug | 原四轴台架；不启动底盘任务，不发Yaw |
-| VehicleDebug / VehicleRelease | 整车接口；第一批`kVehicleMotionImplemented=false`，尚未接真实互锁/IMU时禁止行驶 |
+| VehicleDebug / VehicleRelease | 整车真实互锁/IMU/功率停车链；各实测确认及在线Yaw限位未就绪时禁止行驶 |
 | ChassisBenchDebug | 显式悬空测试；四轴核心维持关闭，CAN2唯一任务发短脉冲 |
+| YawBenchDebug | 原五轴owner内仅Yaw短时调参；不启动底盘与整车安全任务 |
 | DmIdConfig | 独立配ID，不启动底盘 |
 
 默认`ChassisConfig.hardware_confirmed=false`，遥控映射确认也为false；不会因编译成功自动开轮。先核对电调ID、方向、齿比、悬空固定与摇杆/拨杆原码，再据实设置确认标记。方向通过低电流短时试验确认，不先接反向反馈的闭环。

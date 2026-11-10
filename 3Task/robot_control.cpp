@@ -4,6 +4,8 @@
 #include "yaw_config.h"
 #include "yaw_runtime.h"
 #include "task_protect.h"
+#include "vehicle_state_task.h"
+#include "../2User_Driver/Vehicle/vehicle_state.h"
 #include "dr16_bsp.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -21,6 +23,30 @@ namespace {
 engineer::Interlocks shared_interlocks;
 bool arm_requested=false,stop_requested=false;
 uint32_t stop_epoch=0;
+uint32_t vehicle_protection(uint32_t now) {
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH && !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+    VehicleHealth health{};
+    if(!Vehicle_GetHealth(&health) || health.ready!=1 || health.healthy>1 ||
+       uint32_t(now-health.updated_ms)>engineer::kVehicleConfig.status_timeout_ms)
+        return PROTECT_VEHICLE_STATE;
+    constexpr uint32_t known=engineer::VehicleConfiguration | engineer::VehicleChassisStale |
+        engineer::VehicleArmStale | engineer::VehicleImuInvalid | engineer::VehicleTipped |
+        engineer::VehicleWheelFault | engineer::VehicleEnergyInhibited | engineer::VehicleArmFault;
+    if((health.reasons & ~known)!=0 || (!health.healthy && health.reasons==0))
+        return PROTECT_VEHICLE_STATE;
+    uint32_t reasons=0;
+    if(health.reasons & (engineer::VehicleConfiguration | engineer::VehicleArmStale | engineer::VehicleArmFault))
+        reasons |= PROTECT_VEHICLE_STATE;
+    if(health.reasons & (engineer::VehicleChassisStale | engineer::VehicleWheelFault)) reasons |= PROTECT_CHASSIS;
+    if(health.reasons & engineer::VehicleImuInvalid) reasons |= PROTECT_IMU;
+    if(health.reasons & engineer::VehicleTipped) reasons |= PROTECT_TIPPED;
+    if(health.reasons & engineer::VehicleEnergyInhibited) reasons |= PROTECT_POWER;
+    return reasons;
+#else
+    (void)now;
+    return 0;
+#endif
+}
 void publish_protection(RobotControlStatus &s) {
     const auto p=Task_Protect_GetStatus();
     s.protection_disabled=p.disabled;
@@ -202,9 +228,10 @@ void Robot_Execute(engineer::ArmControl &arm,uint32_t now,bool force_stop) {
     const TaskProtectInput protection_input{
         uint8_t(arm.status().configuration_valid && kArmConfig.hardware_confirmed &&
                 kArmConfig.pitch.mapping_confirmed && kOperatorConfig.mapping_confirmed &&
-                (bench || (kYawSafetyConfirmed && arm.yaw_limits().version!=0))),
+                (bench || (VEHICLE_SAFETY_ENABLED && kYawSafetyConfirmed && arm.yaw_limits().version!=0))),
         uint8_t(remote_ok),uint8_t(interlock_ok),uint8_t(force_stop || stop_request),
-        uint8_t(elapsed>0 && elapsed<=kArmConfig.control_period_ms+2),uint8_t(arm.status().faults!=0)};
+        uint8_t(elapsed>0 && elapsed<=kArmConfig.control_period_ms+2),uint8_t(arm.status().faults!=0),
+        vehicle_protection(now)};
     Task_Protect_Tick(&protection_input,now);
     auto result=controller.step(input,locks,arm.status(),now,arm_request,
                                 Task_Protect_GetStatus().current_reasons!=0);
@@ -221,10 +248,16 @@ void Robot_Execute(engineer::ArmControl &arm,uint32_t now,bool force_stop) {
     };
     if(!bench) {
         const auto &l=arm.yaw_limits();
-        const bool drive_envelope=result.mode==RobotMode::Drive && locks.drive_yaw_allowed;
-        const Result envelope=arm.set_yaw_envelope(drive_envelope ? locks.drive_yaw_min_deg : l.min_deg,
-            drive_envelope ? locks.drive_yaw_max_deg : l.max_deg,
-            drive_envelope ? locks.drive_yaw_max_speed_deg_s : l.max_speed_deg_s);
+        const bool driving=result.mode==RobotMode::Drive;
+        const bool drive_envelope=driving && locks.drive_yaw_allowed;
+        // Losing a Drive permission or selecting Grab/Standby must not widen
+        // the envelope while wheels are still parking. Only fresh wheel-stop
+        // confirmation permits restoring the full working range.
+        Result envelope=Result::Ok;
+        if((!driving && locks.chassis_stopped) || drive_envelope)
+            envelope=arm.set_yaw_envelope(drive_envelope ? locks.drive_yaw_min_deg : l.min_deg,
+                drive_envelope ? locks.drive_yaw_max_deg : l.max_deg,
+                drive_envelope ? locks.drive_yaw_max_speed_deg_s : l.max_speed_deg_s);
         if(envelope!=Result::Ok && result.active) {
             // Preserve the previously safe envelope, request normal parking and
             // retain the existing joint hold policy until the posture is fixed.

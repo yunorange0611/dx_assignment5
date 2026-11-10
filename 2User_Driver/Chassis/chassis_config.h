@@ -16,5 +16,4 @@ struct ChassisConfig {
     uint32_t period_ms = 4;
 };
 inline constexpr ChassisConfig kChassisConfig{};
-inline constexpr bool kVehicleMotionImplemented = false; // Batch 3 enables after real health/interlocks are connected.
 }

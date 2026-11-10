@@ -4,9 +4,11 @@ namespace {
 // Defaults are safe even before the task explicitly calls Init.
 TaskProtectStatus state{1u, PROTECT_BOOT, PROTECT_BOOT, 0u};
 bool have_tick = false;
+constexpr uint32_t vehicle_reason_mask = PROTECT_CHASSIS | PROTECT_IMU |
+    PROTECT_TIPPED | PROTECT_VEHICLE_STATE | PROTECT_POWER;
 constexpr uint32_t known_reasons = PROTECT_BOOT | PROTECT_CONFIG | PROTECT_REMOTE |
     PROTECT_INTERLOCK | PROTECT_STOP_REQUEST | PROTECT_TIMING | PROTECT_ARM_FAULT |
-    PROTECT_ENABLE_REJECTED;
+    PROTECT_ENABLE_REJECTED | vehicle_reason_mask;
 
 void update_reasons(uint32_t reasons, uint32_t now_ms) {
     if (reasons != 0u) {
@@ -30,11 +32,12 @@ void Task_Protect_Tick(const TaskProtectInput *input, uint32_t now_ms) {
     have_tick = true;
     if (!input || input->configuration_confirmed > 1u || input->remote_online > 1u ||
         input->interlock_online > 1u || input->stop_requested > 1u ||
-        input->timing_ok > 1u || input->arm_fault > 1u) {
+        input->timing_ok > 1u || input->arm_fault > 1u ||
+        (input->vehicle_reasons & ~vehicle_reason_mask) != 0u) {
         update_reasons(PROTECT_CONFIG, now_ms);
         return;
     }
-    uint32_t reasons = 0u;
+    uint32_t reasons = input->vehicle_reasons;
     if (!input->configuration_confirmed) reasons |= PROTECT_CONFIG;
     if (!input->remote_online) reasons |= PROTECT_REMOTE;
     if (!input->interlock_online) reasons |= PROTECT_INTERLOCK;

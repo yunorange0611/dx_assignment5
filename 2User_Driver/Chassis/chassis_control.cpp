@@ -93,7 +93,11 @@ void ChassisControl::apply(const float ma[2], bool submitted) {
     for(unsigned i=0;i<2;++i) {
         s_.applied_ma[i]=clamp(ma[i],-c_.max_current_ma,c_.max_current_ma);
         const float raw=c_.velocity_kp*error_[i]+integral_[i];
-        if((raw-s_.applied_ma[i])*error_[i]<=0)
+        // The final submission is quantized to a C620 integer slot. Truncation
+        // toward zero alone must not freeze PI integration every cycle.
+        constexpr float quantization_tolerance_ma=20000.0f/16384.0f+0.001f;
+        const float residual=raw-s_.applied_ma[i];
+        if(std::fabs(residual)<=quantization_tolerance_ma || residual*error_[i]<=0)
             integral_[i]=clamp(integral_[i]+c_.velocity_ki*error_[i]*dt_,-c_.max_current_ma,c_.max_current_ma);
     }
 }

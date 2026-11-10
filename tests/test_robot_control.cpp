@@ -3,11 +3,23 @@
 #include "task_protect.h"
 #include "operator_control.h"
 #include "dr16_bsp.h"
+#include "vehicle_state_task.h"
+#include "vehicle_state.h"
 #include <limits>
 using namespace engineer;
 extern "C" volatile unsigned test_checks;
 #define CHECK(x) do { ++test_checks; if(!(x)) return __LINE__; } while(0)
-namespace { DR16Status receiver{}; }
+namespace {
+DR16Status receiver{};
+VehicleHealth vehicle_health{1234,0,1,1};
+bool vehicle_available=true;
+unsigned vehicle_reads=0;
+}
+extern "C" int Vehicle_GetHealth(VehicleHealth *out) {
+    ++vehicle_reads;
+    if(!out || !vehicle_available) return 0;
+    *out=vehicle_health; return out->ready;
+}
 extern "C" int DR16_GetStatus(DR16Status *out) {
     if(!out) return 0;
     *out=receiver; return out->valid;
@@ -50,6 +62,7 @@ int test_robot_control() {
         if(frames[i].id==0x2fe) { ++yaw_frames; for(uint8_t b:frames[i].data) CHECK(b==0); }
     }
     CHECK(yaw_frames==1);
+    CHECK(vehicle_reads==0); // Isolated existing-owner yaw test does not depend on full-vehicle sensors.
     return 0;
 #else
     RobotControlStatus s{};
@@ -71,6 +84,7 @@ int test_robot_control() {
     CHECK(s.protection_current_reasons & PROTECT_CONFIG);
     CHECK(!(s.protection_current_reasons & PROTECT_REMOTE));
     CHECK(!(s.protection_current_reasons & PROTECT_INTERLOCK));
+    CHECK(!(s.protection_current_reasons & (PROTECT_CHASSIS | PROTECT_IMU | PROTECT_TIPPED | PROTECT_VEHICLE_STATE | PROTECT_POWER)));
     CHECK(s.longitudinal_brake && s.reset_chassis_motion && !s.yaw_follow);
     CHECK(!s.fast_requested && s.drive_gear==ROBOT_GEAR_SLOW);
     CHECK(s.longitudinal_speed_request==0 && s.turn_rate_request==0 && arm.status().enabled_mask==0);
@@ -123,6 +137,47 @@ int test_robot_control() {
     g_robot_debug_command=ROBOT_DEBUG_STOP; Robot_Execute(arm,1234,false);
     CHECK(g_robot_debug_command==ROBOT_DEBUG_IDLE); CHECK(Robot_GetControlStatus(&s));
     CHECK(s.protection_current_reasons & PROTECT_STOP_REQUEST);
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH
+    {
+        const uint32_t vehicle_mask=PROTECT_CHASSIS | PROTECT_IMU | PROTECT_TIPPED |
+            PROTECT_VEHICLE_STATE | PROTECT_POWER;
+        const uint32_t source[]={VehicleConfiguration,VehicleChassisStale,VehicleArmStale,
+            VehicleImuInvalid,VehicleTipped,VehicleWheelFault,VehicleEnergyInhibited,VehicleArmFault};
+        const uint32_t expected[]={PROTECT_VEHICLE_STATE,PROTECT_CHASSIS,PROTECT_VEHICLE_STATE,
+            PROTECT_IMU,PROTECT_TIPPED,PROTECT_CHASSIS,PROTECT_POWER,PROTECT_VEHICLE_STATE};
+        for(unsigned n=0;n<8;++n) {
+            vehicle_health={1234,source[n],1,0};
+            Robot_Execute(arm,1234,false); CHECK(Robot_GetControlStatus(&s));
+            CHECK((s.protection_current_reasons & vehicle_mask)==expected[n]);
+            CHECK((s.protection_latched_reasons & expected[n]) && s.protection_disabled);
+            CHECK(s.emergency_stop && s.stop_chassis && !s.active && arm.status().enabled_mask==0);
+        }
+        vehicle_health={1234,VehicleWheelFault | VehicleImuInvalid | VehicleTipped | VehicleEnergyInhibited,1,0};
+        Robot_Execute(arm,1234,false); CHECK(Robot_GetControlStatus(&s));
+        CHECK((s.protection_current_reasons & vehicle_mask)==(PROTECT_CHASSIS | PROTECT_IMU | PROTECT_TIPPED | PROTECT_POWER));
+        for(unsigned bad=0;bad<7;++bad) {
+            vehicle_health={1234,0,1,1}; vehicle_available=true;
+            if(bad==0) vehicle_health.ready=0;
+            if(bad==1) vehicle_available=false;
+            if(bad==2) vehicle_health.updated_ms=1173; // 61 ms: stale publication
+            if(bad==3) vehicle_health.healthy=2;
+            if(bad==4) vehicle_health.healthy=0; // Unknown unhealthy state cannot be treated healthy.
+            if(bad==5) vehicle_health.reasons=1u<<31;
+            if(bad==6) vehicle_health.updated_ms=1235;
+            Robot_Execute(arm,1234,false); CHECK(Robot_GetControlStatus(&s));
+            CHECK((s.protection_current_reasons & vehicle_mask)==PROTECT_VEHICLE_STATE);
+            CHECK(s.protection_disabled && s.emergency_stop);
+        }
+        vehicle_available=true; vehicle_health={1174,0,1,1};
+        Robot_Execute(arm,1234,false); CHECK(Robot_GetControlStatus(&s));
+        CHECK(!(s.protection_current_reasons & vehicle_mask)); // Exact timeout remains fresh.
+        CHECK(s.protection_disabled && !s.active); // Healthy source alone cannot restart.
+        CHECK(s.protection_latched_reasons & PROTECT_VEHICLE_STATE);
+        CHECK(vehicle_reads>0);
+    }
+#else
+    CHECK(vehicle_reads==0); // Teammate's four-axis bench remains independent.
+#endif
     return 0;
 #endif
 }

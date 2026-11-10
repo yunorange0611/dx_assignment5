@@ -2,6 +2,7 @@
 #include "chassis_control.h"
 #include "chassis_bench.h"
 #include "power_meter.h"
+#include "chassis_power.h"
 #include "robot_control.h"
 #include "arm_task.h"
 #include "operator_control.h"
@@ -9,6 +10,9 @@
 #include "CAN_bsp.h"
 #include <cmath>
 #include <cstring>
+#ifndef VEHICLE_SAFETY_ENABLED
+#define VEHICLE_SAFETY_ENABLED 0
+#endif
 extern "C" {
 ChassisStatus g_chassis_status{};
 volatile ChassisDebugRequest g_chassis_debug_request{};
@@ -41,9 +45,13 @@ extern "C" void chassis_task(void *) {
     rx_queue=osMessageQueueNew(64,sizeof(Rx),nullptr);
     if(!rx_queue || osKernelGetTickFreq()!=1000) Error_Handler();
     ChassisMotor motors[2]; PowerMeter power; ChassisControl control(kChassisConfig);
+    ChassisPower energy;
     if(!control.status().configuration_valid) {
         taskENTER_CRITICAL();
         g_chassis_status.ready=1; g_chassis_status.faults=ChassisConfigFault;
+        g_chassis_status.hardware_confirmed=kChassisConfig.hardware_confirmed;
+        g_chassis_status.power_configuration_valid=energy.status().configuration_valid;
+        g_chassis_status.power_confirmed=energy.status().confirmed;
         g_chassis_status.updated_ms=HAL_GetTick();
         taskEXIT_CRITICAL();
         for(;;) osDelay(100);
@@ -76,7 +84,7 @@ extern "C" void chassis_task(void *) {
         if(explicit_stop) { bench_active=false; can_cancel_pending(2); }
         ChassisCommand cmd{}; cmd.updated_ms=robot.updated_ms; cmd.epoch=robot.motion_epoch;
         cmd.valid=robot.ready && robot.joint_mask==ARM_ALL_JOINTS;
-        cmd.enabled=kVehicleMotionImplemented && robot.active && !robot.emergency_stop;
+        cmd.enabled=VEHICLE_SAFETY_ENABLED && robot.active && !robot.emergency_stop;
         cmd.stop=robot.stop_chassis; cmd.brake=robot.longitudinal_brake; cmd.reset=robot.reset_chassis_motion;
         cmd.speed_request=robot.longitudinal_speed_request; cmd.turn_request=robot.turn_rate_request;
         ChassisDebugRequest request{};
@@ -124,13 +132,24 @@ extern "C" void chassis_task(void *) {
             if(request.mode==CHASSIS_DEBUG_STOP || request.mode==CHASSIS_DEBUG_CLEAR) {
                 local_stop_latched=true; cmd.enabled=false; control.trip(0); can_cancel_pending(2);
                 Robot_StopControl();
-                if(request.mode==CHASSIS_DEBUG_CLEAR) control.clear_faults();
+                if(request.mode==CHASSIS_DEBUG_CLEAR) {
+                    const bool wheels_cleared=control.clear_faults();
+                    const bool power_cleared=energy.clear(now,power.status(),true);
+                    g_chassis_debug_status.result=uint32_t(wheels_cleared && power_cleared ?
+                        ChassisBenchResult::ClearRequested : ChassisBenchResult::NotReady);
+                } else g_chassis_debug_status.result=uint32_t(ChassisBenchResult::Stopped);
             }
         }
         if(local_stop_latched) {
             cmd.enabled=false;
             if(!robot.active) local_stop_latched=false;
         }
+#endif
+        const auto &energy_state=energy.step(now,power.status(),control.status().enabled,control.status().wheels_stationary);
+#if !CHASSIS_SUSPENDED_BENCH
+        cmd.enabled &= energy_state.session_allowed;
+        if(energy_state.stop_requested) { cmd.stop=true; cmd.brake=true; cmd.speed_request=0; cmd.turn_request=0; }
+        else { cmd.speed_request*=energy_state.speed_scale; cmd.turn_request*=energy_state.speed_scale; }
 #endif
         control.step(now,wheels,cmd);
         float final_ma[2]={control.status().candidate_ma[0],control.status().candidate_ma[1]};
@@ -147,17 +166,32 @@ extern "C" void chassis_task(void *) {
             }
         }
 #endif
+#if !CHASSIS_SUSPENDED_BENCH
+        energy.limit(control.status().candidate_ma,control.status().measured_rpm,final_ma);
+#endif
         if(!control.status().enabled) final_ma[0]=final_ma[1]=0;
         if(previous_enabled && !control.status().enabled) can_cancel_pending(2);
         uint8_t data[8]; ChassisMotor::pack_current(final_ma[0],final_ma[1],kChassisConfig.motor_id,kChassisConfig.direction,data);
+        // Track exactly the quantized slot values accepted by the CAN queue,
+        // after power limiting, safety gating and C620 integer conversion.
+        float submitted_ma[2]{};
+        for(unsigned i=0;i<2;++i) {
+            const unsigned slot=2*(kChassisConfig.motor_id[i]-1);
+            const int16_t raw=int16_t(uint16_t(data[slot])<<8 | uint16_t(data[slot+1]));
+            submitted_ma[i]=raw*(20000.0f/16384.0f)*kChassisConfig.direction[i];
+        }
         can_device_transmit tx(&hcan2,0x200,8,data);
-        const bool sent=tx.can_send_msg()==osOK; control.apply(final_ma,sent);
+        const bool sent=tx.can_send_msg()==osOK; control.apply(submitted_ma,sent);
         if(!sent) { bench_active=false; can_cancel_pending(2); }
         previous_enabled=control.status().enabled;
         ChassisStatus next{}; const auto &s=control.status(); const auto &p=power.status();
         next.ready=1; next.updated_ms=now; next.configuration_valid=s.configuration_valid;
+        next.hardware_confirmed=kChassisConfig.hardware_confirmed;
+        next.power_configuration_valid=energy_state.configuration_valid; next.power_confirmed=energy_state.confirmed;
         next.enabled=s.enabled; next.wheels_stationary=s.wheels_stationary; next.bench_active=bench_active && s.enabled;
         next.faults=s.faults; next.rx_dropped=drops; next.tx_errors=can_tx_error_count[1];
+        next.power_session_allowed=energy_state.session_allowed; next.power_stop_requested=energy_state.stop_requested;
+        next.power_inhibited=energy_state.inhibited; next.power_phase=uint8_t(energy_state.phase); next.power_reason=uint8_t(energy_state.reason);
         next.v_m_s=s.v_m_s; next.omega_rad_s=s.omega_rad_s;
         next.power_w=p.power_w; next.energy_j=p.energy_j; next.power_received_ms=p.received_ms; next.power_frames=p.frames;
         for(unsigned i=0;i<2;++i) {

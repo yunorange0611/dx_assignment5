@@ -218,6 +218,30 @@ int test_chassis() {
         const float applied[2]={initial,initial}; a.apply(applied,true);
         feedback(w,408); a.step(408,w,request(408,.25f)); CHECK(a.status().candidate_ma[0]>initial);
     }
+    { // C620 integer quantization alone must not suppress small-error integration.
+        const int signs[2]={-1,1};
+        for(int sign:signs) {
+            auto c=confirmed(); c.velocity_kp=1; c.velocity_ki=10; c.direction[0]=-1;
+            ChassisControl a(c); WheelFeedback w[2]{}; float initial=0;
+            for(uint32_t t=0;t<=200;t+=4) {
+                feedback(w,t); a.step(t,w,request(t)); a.step_debug_speed(0,float(sign));
+                const float candidate=a.status().candidate_ma[0];
+                if(!t) initial=candidate;
+                uint8_t frame[8];
+                ChassisMotor::pack_current(candidate,a.status().candidate_ma[1],c.motor_id,c.direction,frame);
+                float submitted[2]{};
+                for(unsigned i=0;i<2;++i)
+                    submitted[i]=be16(frame+2*(c.motor_id[i]-1))*(20000.0f/16384.0f)*c.direction[i];
+                CHECK(std::fabs(candidate-submitted[0])<20000.0f/16384.0f+.001f);
+                a.apply(submitted,true);
+                CHECK(a.status().applied_ma[0]==submitted[0] && a.status().applied_ma[1]==0);
+            }
+            CHECK(sign*(a.status().candidate_ma[0]-initial)>1.5f);
+            auto off=request(204); off.enabled=false; feedback(w,204); a.step(204,w,off);
+            feedback(w,208); a.step(208,w,request(208)); a.step_debug_speed(0,float(sign));
+            CHECK(near(a.status().candidate_ma[0],initial)); // Explicit disable still clears integration.
+        }
+    }
     { // The suspended speed helper uses the same PI, refuses invalid/disabled requests.
         ChassisControl a(confirmed()); a.step_debug_speed(0,300);
         CHECK(a.status().candidate_ma[0]==0);

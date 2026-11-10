@@ -15,6 +15,7 @@ volatile unsigned test_four_axis_failed_line = 0;
 volatile unsigned test_dm_config_failed_line = 0;
 volatile unsigned test_chassis_failed_line = 0;
 volatile unsigned test_yaw_failed_line = 0;
+volatile unsigned test_vehicle_failed_line = 0;
 }
 int test_can_tx();
 int test_operator();
@@ -25,6 +26,7 @@ int test_four_axis();
 int test_dm_id_config();
 int test_chassis();
 int test_yaw();
+int test_vehicle();
 #define CHECK(x) do { ++test_checks; if (!(x)) { test_failed_line = __LINE__; return; } } while (0)
 namespace {
 Config bench() { Config c = kArmConfig; c.joint_mask = kAllJoints; c.hardware_confirmed = true; c.pitch.mapping_confirmed = true; return c; }
@@ -55,6 +57,7 @@ bool dji_zero(const Frame *f, unsigned n) {
 void run() {
     test_chassis_failed_line = test_chassis(); CHECK(test_chassis_failed_line == 0);
     test_yaw_failed_line = test_yaw(); CHECK(test_yaw_failed_line == 0);
+    test_vehicle_failed_line = test_vehicle(); CHECK(test_vehicle_failed_line == 0);
     test_dm_config_failed_line = test_dm_id_config(); CHECK(test_dm_config_failed_line == 0);
     test_protect_failed_line = test_protect(); CHECK(test_protect_failed_line == 0);
     test_can_failed_line = test_can_tx(); CHECK(test_can_failed_line == 0);

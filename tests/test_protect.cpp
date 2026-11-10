@@ -144,6 +144,33 @@ int test_protect() {
         CHECK(!Task_Protect_TryArm());
     }
     {
+        // Each real vehicle fault enters the same latched protection owner.
+        const unsigned causes[]={PROTECT_CHASSIS,PROTECT_IMU,PROTECT_TIPPED,PROTECT_VEHICLE_STATE,PROTECT_POWER};
+        unsigned combined=0;
+        for(unsigned cause:causes) {
+            combined |= cause;
+            Task_Protect_Init(); auto in=healthy(); Task_Protect_Tick(&in,0);
+            CHECK(Task_Protect_TryArm());
+            in.vehicle_reasons=cause; Task_Protect_Tick(&in,4);
+            auto s=Task_Protect_GetStatus();
+            CHECK(s.disabled && s.current_reasons==cause && s.latched_reasons==cause);
+            CHECK(!Task_Protect_TryArm());
+            in.vehicle_reasons=0; Task_Protect_Tick(&in,8);
+            CHECK(Task_Protect_GetStatus().disabled && Task_Protect_GetStatus().latched_reasons==cause);
+            CHECK(Task_Protect_TryArm());
+        }
+        auto in=healthy(); in.vehicle_reasons=combined; Task_Protect_Tick(&in,12);
+        CHECK(Task_Protect_GetStatus().current_reasons==combined && !Task_Protect_TryArm());
+        // Existing reason bits are invalid in the dedicated vehicle input field.
+        in.vehicle_reasons=PROTECT_REMOTE; Task_Protect_Tick(&in,16);
+        CHECK(Task_Protect_GetStatus().current_reasons==PROTECT_CONFIG);
+        in.vehicle_reasons=1u<<31; Task_Protect_Tick(&in,20);
+        CHECK(Task_Protect_GetStatus().current_reasons==PROTECT_CONFIG);
+        in=healthy(); Task_Protect_Tick(&in,24); CHECK(Task_Protect_TryArm());
+        Task_Protect_Trip(PROTECT_TIPPED | PROTECT_IMU,28);
+        CHECK(Task_Protect_GetStatus().current_reasons==(PROTECT_TIPPED | PROTECT_IMU));
+    }
+    {
         // Timestamp wrap is retained verbatim; no elapsed-time arithmetic here.
         Task_Protect_Init(); auto in = healthy();
         Task_Protect_Tick(&in, 0xfffffff0u); CHECK(Task_Protect_TryArm());

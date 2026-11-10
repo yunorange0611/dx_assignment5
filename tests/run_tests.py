@@ -37,17 +37,21 @@ cmd = ["arm-none-eabi-g++", "-std=c++17", "-O1", "-g", "-mcpu=cortex-m4", "-mthu
        str(ROOT / "tests" / "test_cad_mapping.cpp"),
        str(ROOT / "tests" / "test_chassis.cpp"),
        str(ROOT / "tests" / "test_yaw.cpp"),
+       str(ROOT / "tests" / "test_vehicle.cpp"),
        str(ROOT / "2User_Driver/Chassis/chassis_control.cpp"),
        str(ROOT / "2User_Driver/Chassis/chassis_motor.cpp"),
        str(ROOT / "2User_Driver/Chassis/chassis_bench.cpp"),
        str(ROOT / "2User_Driver/Power/power_meter.cpp"),
+       str(ROOT / "2User_Driver/Power/chassis_power.cpp"),
+       str(ROOT / "2User_Driver/Vehicle/vehicle_state.cpp"),
+       str(ROOT / "2User_Driver/Imu/attitude_estimator.cpp"),
        str(ROOT / "tests" / "test_dm_id_config.cpp"), str(ROOT / "2User_Driver" / "Arm" / "dm_id_config.cpp"),
        str(ROOT / "2User_Driver/Remote/dr16_protocol.c"),
        str(ROOT / "2User_Driver/Remote/operator_control.cpp"),
        str(ROOT / "2User_Driver/Remote/operator_config.cpp"),
        "-DUSE_HAL_DRIVER", "-DSTM32F407xx",
        "-lm", "-lc", "-lgcc", "-o", str(elf)]
-for include in ["3Task", "1Bsp", "Core/Inc", "2User_Driver/Chassis", "2User_Driver/Power", "2User_Driver/Remote", "Drivers/STM32F4xx_HAL_Driver/Inc",
+for include in ["3Task", "1Bsp", "Core/Inc", "2User_Driver/Chassis", "2User_Driver/Power", "2User_Driver/Vehicle", "2User_Driver/Imu", "2User_Driver/Remote", "Drivers/STM32F4xx_HAL_Driver/Inc",
                 "Drivers/CMSIS/Include", "Drivers/CMSIS/Device/ST/STM32F4xx/Include",
                 "Middlewares/Third_Party/FreeRTOS/Source/include",
                 "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
@@ -55,6 +59,7 @@ for include in ["3Task", "1Bsp", "Core/Inc", "2User_Driver/Chassis", "2User_Driv
     cmd.extend(["-I", str(ROOT / include)])
 cmd.append(f"-DARM_FOUR_AXIS_BENCH={int(args.bench)}")
 cmd.append(f"-DYAW_SUSPENDED_BENCH={int(args.yaw_bench)}")
+cmd.append(f"-DVEHICLE_SAFETY_ENABLED={int(not args.bench and not args.yaw_bench)}")
 subprocess.run(cmd, check=True)
 emu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
 emu.mem_map(0x10000, 0x400000)
@@ -74,9 +79,9 @@ if not done:
     raise SystemExit(
         f"FAIL: test firmware did not reach completion; checks={checks}; "
         f"arm line={failed}; CAN line={read('test_can_failed_line')}; protect line={read('test_protect_failed_line')}; bridge line={read('test_robot_failed_line')}; four-axis line={read('test_four_axis_failed_line')}; "
-        f"remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')}; "
+        f"remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')}; vehicle line={read('test_vehicle_failed_line')}; "
         f"PC=0x{emu.reg_read(UC_ARM_REG_PC):08x} (100M instructions / 30s limit)"
     )
 if failed:
-    raise SystemExit(f"FAIL at tests/test_arm.cpp:{failed}; CAN line={read('test_can_failed_line')}; remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; protect line={read('test_protect_failed_line')}; bridge line={read('test_robot_failed_line')}; four-axis line={read('test_four_axis_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')} ({checks} checks executed)")
+    raise SystemExit(f"FAIL at tests/test_arm.cpp:{failed}; CAN line={read('test_can_failed_line')}; remote line={read('test_operator_failed_line')}; CAD line={read('test_cad_failed_line')}; protect line={read('test_protect_failed_line')}; bridge line={read('test_robot_failed_line')}; four-axis line={read('test_four_axis_failed_line')}; DM config line={read('test_dm_config_failed_line')}; chassis line={read('test_chassis_failed_line')}; yaw line={read('test_yaw_failed_line')}; vehicle line={read('test_vehicle_failed_line')} ({checks} checks executed)")
 print(f"PASS [{profile}]: {checks} assertions; ARM machine code, synthetic CAN frames; no hardware validation")

@@ -30,6 +30,13 @@ option(ARM_FOUR_AXIS_BENCH "Four-axis arm bench: no yaw or chassis control" ON)
 option(DM_ID_CONFIG_MODE "Standalone CAN1 DM ID configuration; no arm control" OFF)
 option(CHASSIS_SUSPENDED_BENCH "Explicit suspended chassis pulse testing only" OFF)
 option(YAW_SUSPENDED_BENCH "Explicit limited Yaw tuning in the existing owner" OFF)
+option(VEHICLE_SAFETY_ENABLED "Real IMU, posture interlocks and conservative power stopping" ON)
+if(YAW_SUSPENDED_BENCH AND (ARM_FOUR_AXIS_BENCH OR CHASSIS_SUSPENDED_BENCH OR DM_ID_CONFIG_MODE))
+    message(FATAL_ERROR "Yaw bench requires the five-axis owner and excludes other test modes")
+endif()
+if(CHASSIS_SUSPENDED_BENCH AND (NOT ARM_FOUR_AXIS_BENCH OR DM_ID_CONFIG_MODE))
+    message(FATAL_ERROR "Chassis bench requires the disabled four-axis owner and excludes ID configuration")
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 message("Build type: " ${CMAKE_BUILD_TYPE})
@@ -70,6 +77,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         2User_Driver/Arm
         2User_Driver/Chassis
         2User_Driver/Power
+        2User_Driver/Imu
+        2User_Driver/Vehicle
         2User_Driver/Remote
         3Task
 )
@@ -80,6 +89,7 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     DM_ID_CONFIG_MODE=$<BOOL:${DM_ID_CONFIG_MODE}>
     CHASSIS_SUSPENDED_BENCH=$<BOOL:${CHASSIS_SUSPENDED_BENCH}>
     YAW_SUSPENDED_BENCH=$<BOOL:${YAW_SUSPENDED_BENCH}>
+    VEHICLE_SAFETY_ENABLED=$<BOOL:${VEHICLE_SAFETY_ENABLED}>
 )
 
 # Remove wrong libob.a library dependency when using cpp files

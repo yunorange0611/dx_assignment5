@@ -29,6 +29,8 @@
 #include "arm_task.h"
 #include "chassis_task.h"
 #include "dm_id_config_task.h"
+#include "task_ins.h"
+#include "vehicle_state_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -169,6 +171,14 @@ void MX_FREERTOS_Init(void) {
 #if (!ARM_FOUR_AXIS_BENCH && !YAW_SUSPENDED_BENCH) || CHASSIS_SUSPENDED_BENCH
   static const osThreadAttr_t chassis_attributes = { .name="Chassis", .stack_size=3072, .priority=osPriorityAboveNormal };
   if (!osThreadNew(chassis_task, NULL, &chassis_attributes)) Error_Handler();
+#endif
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH && !YAW_SUSPENDED_BENCH
+  // Sensor polling remains below the motor/remote owner. Each task blocks on
+  // its period; health evaluation only consumes bounded snapshots.
+  static const osThreadAttr_t ins_attributes = { .name="INS", .stack_size=4096, .priority=osPriorityNormal };
+  static const osThreadAttr_t vehicle_attributes = { .name="VehicleHealth", .stack_size=3072, .priority=osPriorityAboveNormal };
+  if (!osThreadNew(ins_task, NULL, &ins_attributes) ||
+      !osThreadNew(vehicle_state_task, NULL, &vehicle_attributes)) Error_Handler();
 #endif
 #endif
   /* USER CODE END RTOS_THREADS */

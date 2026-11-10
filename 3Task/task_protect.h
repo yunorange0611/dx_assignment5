@@ -13,7 +13,12 @@ enum ProtectReason {
     PROTECT_STOP_REQUEST = 1u << 4,
     PROTECT_TIMING = 1u << 5,
     PROTECT_ARM_FAULT = 1u << 6,
-    PROTECT_ENABLE_REJECTED = 1u << 7
+    PROTECT_ENABLE_REJECTED = 1u << 7,
+    PROTECT_CHASSIS = 1u << 8,
+    PROTECT_IMU = 1u << 9,
+    PROTECT_TIPPED = 1u << 10,
+    PROTECT_VEHICLE_STATE = 1u << 11,
+    PROTECT_POWER = 1u << 12
 };
 
 typedef struct {
@@ -23,6 +28,9 @@ typedef struct {
     uint8_t stop_requested;
     uint8_t timing_ok;
     uint8_t arm_fault;
+    // Mapped by the unique control owner from a fresh VehicleHealth snapshot.
+    // Only the five vehicle reason bits above are accepted here.
+    uint32_t vehicle_reasons;
 } TaskProtectInput;
 
 typedef struct {

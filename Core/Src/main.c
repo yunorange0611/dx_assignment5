@@ -25,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "usart.h"
+#include "spi.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,6 +101,9 @@ int main(void)
   MX_CAN2_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !CHASSIS_SUSPENDED_BENCH && !YAW_SUSPENDED_BENCH && !DM_ID_CONFIG_MODE
+    MX_SPI1_Init();
+#endif
     bsp_can_init();
   /* USER CODE END 2 */
 
