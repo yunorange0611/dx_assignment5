@@ -186,8 +186,10 @@ extern "C" void arm_control_task(void *argument) {
     const uint32_t period = kArmConfig.control_period_ms;
     if (!arm.status().configuration_valid) {
         publish(arm, HAL_GetTick());
-        for (;;)
-            osDelay(100); // 错误配置禁止注册过滤器/发送电机帧
+        for (;;) {
+            DR16_Service(); // Receiving/recovery must also work with invalid motor config.
+            osDelay(4); // 错误配置禁止注册过滤器/发送电机帧
+        }
     }
     for (unsigned i = 0; i < kJointCount; ++i)
         if (kArmConfig.joint_mask & (1u << i))

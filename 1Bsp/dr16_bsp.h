@@ -19,6 +19,11 @@ typedef struct {
     DR16Frame frame;
     uint32_t received_ms, good_frames, rejected_frames, uart_errors, restart_errors;
     uint8_t valid, consecutive_frames;
+    // Read-only reception diagnostics: distinguish task start, UART/DMA bytes,
+    // rejected framing and a stalled receiver without enabling any motor.
+    uint32_t start_calls, service_ms, rx_events, rx_bytes, last_event_ms, last_size;
+    uint32_t last_uart_error, last_start_result, uart_rx_state, dma_remaining;
+    uint8_t rx_running;
 } DR16Status;
 // 原接收快照的稳定观察符号，外部只读；任务间用DR16_GetStatus复制。
 extern volatile DR16Status g_dr16_status;

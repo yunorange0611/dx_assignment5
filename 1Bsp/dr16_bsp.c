@@ -42,31 +42,48 @@ static uint8_t buffers[2][72];
 static unsigned active_buffer;
 static volatile uint8_t restart_needed;
 volatile DR16Status g_dr16_status;
+static void sample_receiver(void) {
+    g_dr16_status.uart_rx_state = huart3.RxState;
+    const int configured = huart3.Instance && huart3.hdmarx && huart3.hdmarx->Instance;
+    g_dr16_status.dma_remaining = configured ? __HAL_DMA_GET_COUNTER(huart3.hdmarx) : 0;
+    g_dr16_status.rx_running = configured && !restart_needed &&
+        huart3.RxState == HAL_UART_STATE_BUSY_RX &&
+        (huart3.Instance->CR3 & USART_CR3_DMAR) &&
+        (huart3.hdmarx->Instance->CR & DMA_SxCR_EN);
+}
 static int begin_receive(void) {
-    if (HAL_UARTEx_ReceiveToIdle_DMA(&huart3, buffers[active_buffer], sizeof(buffers[0])) !=
-        HAL_OK) {
+    const HAL_StatusTypeDef result = huart3.Instance && huart3.hdmarx && huart3.hdmarx->Instance
+        ? HAL_UARTEx_ReceiveToIdle_DMA(&huart3, buffers[active_buffer], sizeof(buffers[0]))
+        : HAL_ERROR;
+    g_dr16_status.last_start_result = result;
+    if (result != HAL_OK) {
         g_dr16_status.valid = 0;
         g_dr16_status.consecutive_frames = 0;
         ++g_dr16_status.restart_errors;
         restart_needed = 1;
+        sample_receiver();
         return 0;
     }
     // 通过UART句柄取DMA，避免依赖CubeMX生成文件中DMA句柄的可见性。
     __HAL_DMA_DISABLE_IT(huart3.hdmarx, DMA_IT_HT);
     restart_needed = 0;
+    sample_receiver();
     return 1;
 }
 void DR16_Start(void) {
+    ++g_dr16_status.start_calls;
     active_buffer = 0;
     begin_receive();
 }
 void DR16_Service(void) {
-    if (!restart_needed)
-        return;
     taskENTER_CRITICAL();
-    HAL_UART_AbortReceive(&huart3);
-    active_buffer ^= 1;
-    begin_receive();
+    g_dr16_status.service_ms = HAL_GetTick();
+    if (restart_needed) {
+        HAL_UART_AbortReceive(&huart3);
+        active_buffer ^= 1;
+        begin_receive();
+    }
+    sample_receiver();
     taskEXIT_CRITICAL();
 }
 int DR16_GetStatus(DR16Status *s) {
@@ -80,24 +97,35 @@ int DR16_GetStatus(DR16Status *s) {
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *h, uint16_t size) {
     if (h != &huart3)
         return;
+    const uint32_t now = HAL_GetTick();
+    ++g_dr16_status.rx_events;
+    g_dr16_status.rx_bytes += size;
+    g_dr16_status.last_event_ms = now;
+    g_dr16_status.last_size = size;
     uint8_t *completed = buffers[active_buffer];
     active_buffer ^= 1;
     const int rearmed = begin_receive(); // 换缓冲后先重启DMA，再解析完整帧
     DR16Frame f;
-    if (!rearmed || !DR16_Decode(completed, size, &f)) {
+    // IDLE can report several complete DBUS frames after a delayed interrupt.
+    // Preserve frame boundaries: accept only aligned batches, validate every
+    // frame, then publish the newest one. Never scan noise for a plausible frame.
+    int decoded = size && size <= sizeof(buffers[0]) && size % DR16_FRAME_SIZE == 0;
+    for (uint16_t offset = 0; decoded && offset < size; offset += DR16_FRAME_SIZE)
+        decoded = DR16_Decode(completed + offset, DR16_FRAME_SIZE, &f);
+    if (!rearmed || !decoded) {
         g_dr16_status.valid = 0;
         g_dr16_status.consecutive_frames = 0;
         ++g_dr16_status.rejected_frames;
         return;
     }
-    const uint32_t now = HAL_GetTick();
     if (g_dr16_status.good_frames && (uint32_t)(now - g_dr16_status.received_ms) > 100)
         g_dr16_status.consecutive_frames = 0;
     g_dr16_status.frame = f;
     g_dr16_status.received_ms = now;
-    ++g_dr16_status.good_frames;
-    if (g_dr16_status.consecutive_frames < 255)
-        ++g_dr16_status.consecutive_frames;
+    const uint16_t count = size / DR16_FRAME_SIZE;
+    g_dr16_status.good_frames += count;
+    const uint16_t consecutive = g_dr16_status.consecutive_frames + count;
+    g_dr16_status.consecutive_frames = consecutive > 255 ? 255 : (uint8_t)consecutive;
     g_dr16_status.valid = 1;
 }
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *h) {
@@ -106,5 +134,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *h) {
     g_dr16_status.valid = 0;
     g_dr16_status.consecutive_frames = 0;
     ++g_dr16_status.uart_errors;
+    g_dr16_status.last_uart_error = h->ErrorCode;
     restart_needed = 1;
+    sample_receiver();
 }

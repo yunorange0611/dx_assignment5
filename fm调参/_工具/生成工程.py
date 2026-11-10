@@ -120,7 +120,13 @@ CH_COMMON = variables('g_chassis_status', [('updated_ms','底盘发布时间','m
             ('tune_blocked','底盘调参锁禁',''),('tune_result','底盘参数处理结果',''),
             ('tune_current_limit_ma','底盘测试生效限流','mA')])
 REMOTE = variables('g_dr16_status', [('valid','接收帧有效',''),('consecutive_frames','连续有效帧数',''),
-            ('good_frames','有效帧累计',''),('rejected_frames','拒收累计',''),('uart_errors','串口错误累计',''),('restart_errors','DMA重启错误累计','')]) + [V(f'g_dr16_status.frame.channel[{i}]', f'遥控通道{i} 中位约0') for i in range(5)] + [V(f'g_dr16_status.frame.switches[{i}]', f'拨杆原码{i} 上1中3下2') for i in range(2)]
+            ('good_frames','有效帧累计',''),('rejected_frames','拒收批次累计',''),('uart_errors','串口错误累计',''),('restart_errors','DMA重启错误累计',''),
+            ('start_calls','接收初始化调用次数 正常至少1',''),('service_ms','接收维护心跳','ms'),
+            ('rx_running','UART及DMA接收已运行',''),('last_start_result','最近启动结果 0成功1错误2忙3超时',''),
+            ('rx_events','UART DMA接收回调累计',''),('rx_bytes','接收回调累计字节数','byte'),
+            ('last_event_ms','最近接收回调时间','ms'),('last_size','最近回调字节数 合法18/36/54/72','byte'),
+            ('last_uart_error','最近串口错误位 1校验2噪声4帧8溢出16DMA',''),
+            ('uart_rx_state','UART接收状态 32就绪34接收中',''),('dma_remaining','当前DMA剩余计数 初始72','byte')]) + [V(f'g_dr16_status.frame.channel[{i}]', f'遥控通道{i} 中位约0') for i in range(5)] + [V(f'g_dr16_status.frame.switches[{i}]', f'拨杆原码{i} 上1中3下2') for i in range(2)]
 REMOTE_MAPPING = REMOTE + [V(f'g_robot_status.remote_axis[{i}]',label,'[-1,1]') for i,label in enumerate(
     ('处理后左竖Y 当前原始channel3','处理后左横X 当前原始channel2','处理后右竖Y 当前原始channel1','处理后右横X 当前原始channel0'))] + [
     V(f'g_robot_status.remote_switch[{i}]','处理后'+side+'拨杆原码 上1中3下2') for i,side in enumerate(('左','右'))] + [
