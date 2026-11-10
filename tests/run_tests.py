@@ -24,6 +24,12 @@ profile = "YawBench" if args.yaw_bench else ("FourAxis" if args.bench else "Vehi
 build = ROOT / "build" / ("tests_yaw_bench" if args.yaw_bench else ("tests_bench" if args.bench else "tests"))
 build.mkdir(parents=True, exist_ok=True)
 elf = build / "test_arm.elf"
+# Compile the merged BSP as C, as in firmware; the C++ tests use its real decoder/getter.
+dr16_object = build / "dr16_bsp.o"
+c_cmd = ["arm-none-eabi-gcc", "-std=c11", "-O1", "-g", "-mcpu=cortex-m4", "-mthumb",
+         "-mfloat-abi=soft", "-ffunction-sections", "-fdata-sections",
+         "-DUSE_HAL_DRIVER", "-DSTM32F407xx", "-c", str(ROOT / "1Bsp/dr16_bsp.c"),
+         "-o", str(dr16_object)]
 cmd = ["arm-none-eabi-g++", "-std=c++17", "-O1", "-g", "-mcpu=cortex-m4", "-mthumb",
        "-mfloat-abi=soft", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics", "-fno-builtin",
        "-ffunction-sections", "-fdata-sections", "-nostartfiles", "-Wl,--gc-sections",
@@ -47,7 +53,7 @@ cmd = ["arm-none-eabi-g++", "-std=c++17", "-O1", "-g", "-mcpu=cortex-m4", "-mthu
        str(ROOT / "2User_Driver/Vehicle/vehicle_state.cpp"),
        str(ROOT / "2User_Driver/Imu/attitude_estimator.cpp"),
        str(ROOT / "tests" / "test_dm_id_config.cpp"), str(ROOT / "2User_Driver" / "Arm" / "dm_id_config.cpp"),
-       str(ROOT / "1Bsp/dr16_protocol.c"),
+       str(dr16_object),
        str(ROOT / "2User_Driver/Remote/operator_control.cpp"),
        str(ROOT / "2User_Driver/Remote/operator_config.cpp"),
        "-DUSE_HAL_DRIVER", "-DSTM32F407xx",
@@ -58,9 +64,11 @@ for include in ["3Task", "1Bsp", "Core/Inc", "2User_Driver", "Drivers/STM32F4xx_
                 "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2",
                 "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F"]:
     cmd.extend(["-I", str(ROOT / include)])
+    c_cmd.extend(["-I", str(ROOT / include)])
 cmd.append(f"-DARM_FOUR_AXIS_BENCH={int(args.bench)}")
 cmd.append(f"-DYAW_SUSPENDED_BENCH={int(args.yaw_bench)}")
 cmd.append(f"-DVEHICLE_SAFETY_ENABLED={int(not args.bench and not args.yaw_bench)}")
+subprocess.run(c_cmd, check=True)
 subprocess.run(cmd, check=True)
 emu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
 emu.mem_map(0x10000, 0x400000)

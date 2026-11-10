@@ -60,7 +60,6 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 set(BSP_SOURCES
     1Bsp/CAN_bsp.cpp
     1Bsp/dr16_bsp.c
-    1Bsp/dr16_protocol.c
     1Bsp/bsp_dwt.cpp
     1Bsp/bsp_imu.cpp
 )

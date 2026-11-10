@@ -8,7 +8,7 @@
 |---|---|---|
 | 3Task任务与应用协调 | arm_task、robot_control、yaw_service、chassis_task、task_ins、vehicle_state_task、task_protect、dm_id_config_task | 读写快照、消费请求、RTOS周期、保护协调、调用业务核心和硬件服务。跨任务只走公开接口。yaw_service是原arm_task内的适配函数，没有新建线程。 |
 | 2User_Driver控制与设备协议 | Arm、Remote、Chassis、Power、Imu、Vehicle | 参数、报文解析/编码、运动学、轨迹与PI、门控状态机、姿态融合和纯安全判断。不包含任务头，不访问任务全局或HAL/RTOS。 |
-| 1Bsp板级服务 | CAN_bsp、dr16_bsp、dr16_protocol、bsp_imu、bsp_dwt | 中断、硬件采样、按值收发、接收回调、源时间。DR16解码随接收协议归入本层，不再让BSP反向包含上层。Core与HAL负责芯片初始化。 |
+| 1Bsp板级服务 | CAN_bsp、dr16_bsp、bsp_imu、bsp_dwt | 中断、硬件采样、按值收发、接收回调、源时间。参考project4的bsp_rc，DR16接收与解码集中在dr16_bsp.c/.h，头文件不引入HAL/RTOS。Core与HAL负责芯片初始化。 |
 
 有状态的业务模型由对应owner持有，不靠跨层extern访问内部变量。只读诊断全局保留原名字以便现有调试工具读取；写请求有独立入口，不能直接改状态快照出力。
 

@@ -16,7 +16,6 @@ extern "C" volatile unsigned test_checks;
             return __LINE__;                                                                       \
     } while (0)
 namespace {
-DR16Status receiver{};
 uint32_t vehicle_reasons = 0;
 unsigned vehicle_reads = 0, calibration_revocations = 0;
 } // namespace
@@ -26,12 +25,6 @@ extern "C" uint32_t Vehicle_GetProtectionReasons(uint32_t now) {
 }
 extern "C" void INS_RevokeCalibrationPermission(uint32_t) {
     ++calibration_revocations;
-}
-extern "C" int DR16_GetStatus(DR16Status *out) {
-    if (!out)
-        return 0;
-    *out = receiver;
-    return out->valid;
 }
 int test_robot_control() {
     static_assert(sizeof(ChassisCommand) < sizeof(RobotControlStatus));
@@ -45,12 +38,11 @@ int test_robot_control() {
 #if YAW_SUSPENDED_BENCH
     // Dedicated yaw build keeps all chassis commands disabled; default false
     // confirmations prevent tuning requests from enabling even with valid RX.
-    receiver = {};
-    receiver.valid = 1;
-    receiver.consecutive_frames = 3;
-    receiver.received_ms = 1234;
-    receiver.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-    receiver.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
+    g_dr16_status.valid = 1;
+    g_dr16_status.consecutive_frames = 3;
+    g_dr16_status.received_ms = 1234;
+    g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+    g_dr16_status.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
     ArmControl arm(kArmConfig);
     RobotControlStatus s{};
     Robot_Execute(arm, 1234, false);
@@ -124,11 +116,11 @@ int test_robot_control() {
     locks.drive_yaw_max_deg = 20;
     locks.drive_yaw_max_speed_deg_s = 2;
     CHECK(Robot_SetInterlocks(&locks));
-    receiver.valid = 1;
-    receiver.consecutive_frames = 3;
-    receiver.received_ms = 1234;
-    receiver.frame.switches[0] = DR16_SWITCH_UP;
-    receiver.frame.switches[1] = DR16_SWITCH_MID;
+    g_dr16_status.valid = 1;
+    g_dr16_status.consecutive_frames = 3;
+    g_dr16_status.received_ms = 1234;
+    g_dr16_status.frame.switches[0] = DR16_SWITCH_UP;
+    g_dr16_status.frame.switches[1] = DR16_SWITCH_MID;
     CHECK(Robot_RequestControl());
     ArmControl arm(kArmConfig);
     Robot_Execute(arm, 1234, false);
