@@ -48,9 +48,9 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 file(GLOB_RECURSE USER_SOURCES CONFIGURE_DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/Bsp/*.*
-        ${CMAKE_CURRENT_SOURCE_DIR}/User_Driver/*.*
-        ${CMAKE_CURRENT_SOURCE_DIR}/Task/*.*
+        ${CMAKE_CURRENT_SOURCE_DIR}/1Bsp/*.*
+        ${CMAKE_CURRENT_SOURCE_DIR}/2User_Driver/*.*
+        ${CMAKE_CURRENT_SOURCE_DIR}/3Task/*.*
 )
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
@@ -62,12 +62,12 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
-        Bsp
-        User_Driver
-        User_Driver/Motor_Driver
-        User_Driver/Arm
-        User_Driver/Remote
-        Task
+        1Bsp
+        2User_Driver
+        2User_Driver/Motor_Driver
+        2User_Driver/Arm
+        2User_Driver/Remote
+        3Task
 )
 
 # Add project symbols (macros)

@@ -74,8 +74,8 @@ cmake --build --preset DmIdConfig
 
 ## 实现和依据
 
-- `User_Driver/Arm/dm_id_config.*`：无HAL依赖的短状态机，命令一次性消费、应答200ms超时、写后20ms再读、保存应答后等满30ms。只有RID7/8可写。
-- `Task/dm_id_config_task.*`：独立任务与两个调试结构，CAN1任意标准反馈ID接收（包括默认MST=0），丢包/发送错误结束操作并取消待发帧。
+- `2User_Driver`：无HAL依赖的短状态机，命令一次性消费、应答200ms超时、写后20ms再读、保存应答后等满30ms。只有RID7/8可写。
+- `3Task`：独立任务与两个调试结构，CAN1任意标准反馈ID接收（包括默认MST=0），丢包/发送错误结束操作并取消待发帧。
 - `DM_ID_CONFIG_MODE` 默认 OFF，只有 `DmIdConfig` preset 打开；该构建不启动机械臂/遥控任务，CAN1关闭硬件自动重发。正常四轴/整车发送与过滤路径保留。
 - 协议按[官方4310P型号手册V1.3](https://github.com/dmBots/DM-J4310P-2EC/blob/master/manual/DM-J4310P-2EC%20%E5%87%8F%E9%80%9F%E7%94%B5%E6%9C%BA%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E4%B9%A6%20V1.3%202026-09-14.pdf)第13–18页：RID7=MST、RID8=ESC，保存命令为 `AA 01`。通用SDK存在 `AA 00` 的差异，本版不自动尝试另一种。若读/改正常但保存无应答，保留固件版本原码并先做掉电验证。
 

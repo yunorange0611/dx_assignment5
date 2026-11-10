@@ -6,17 +6,17 @@
 
 1. `README.md`：当前分工、项目入口和完成范围。
 2. `README_REMOTE.md`：四轴台架步骤、调试变量、整车 V2.1 操作及底盘接口。
-3. `Task/robot_control.h`、`Task/robot_control.cpp`：API `0x0202`、`joint_mask` 与任务交接。
-4. `User_Driver/Arm/yaw_config.h`、`User_Driver/Arm/arm_config.cpp`：实际参数和默认门槛。
-5. 修改控制逻辑前读 `README_ARM.md`、`User_Driver/Arm/arm_control.cpp`、`Task/arm_task.cpp` 及相关测试。
+3. `3Task`、`3Task`：API `0x0202`、`joint_mask` 与任务交接。
+4. `2User_Driver`、`2User_Driver`：实际参数和默认门槛。
+5. 修改控制逻辑前读 `README_ARM.md`、`2User_Driver`、`3Task` 及相关测试。
 
 ## 分工与唯一控制入口
 
 | 负责人 | 调试对象 | 主要修改位置 |
 |---|---|---|
-| 底盘/yaw 负责人及其 agent | 两台 M3508 底盘、大 yaw GM6020 | 待新增的底盘模块；`User_Driver/Arm/yaw_config.h` |
-| 四轴机械臂负责人及其 agent | 大/小 pitch DM4310、roll M2006、夹爪 M2006 | `User_Driver/Arm/arm_config.cpp` 及四轴逻辑 |
-| 双方共同维护 | 遥控、保护、CAN BSP、互锁和构建 | `User_Driver/Remote`、`Task`、`Bsp`；修改前读接口调用方 |
+| 底盘/yaw 负责人及其 agent | 两台 M3508 底盘、大 yaw GM6020 | 待新增的底盘模块；`2User_Driver` |
+| 四轴机械臂负责人及其 agent | 大/小 pitch DM4310、roll M2006、夹爪 M2006 | `2User_Driver` 及四轴逻辑 |
+| 双方共同维护 | 遥控、保护、CAN BSP、互锁和构建 | `2User_Driver`、`Task`、`Bsp`；修改前读接口调用方 |
 
 - 主控是一块 RoboMaster C 板，STM32F407。沿用单板 FreeRTOS 架构，不引入第二块主控或板间 `0x0A1` 协议。
 - DR16 只解码一次，模式只由 `ArmOperator` 解释；底盘读取统一输出，不另行解释拨杆。
@@ -74,7 +74,7 @@
 - `DmIdConfig` 是独立CAN1电机ID配置固件，`DM_ID_CONFIG_MODE`默认OFF；它替代机械臂任务，禁止运动/使能/自动写参数，只能逐台配置ESC/MST。不得在正常四轴/整车任务中调用配置状态机。操作、两个调试结构及协议差异见 `README_DM_ID.md`。用户明确沿用已有FreeMASTER读取方式，不擅自修改其配置或通信栈。
 
 - 保留 `hardware_confirmed=false`、`pitch.mapping_confirmed=false`、遥控 `mapping_confirmed=false` 的默认配置；参数未经实测不当成已确认。
-- `Task/task_protect` 汇总当前原因并锁存失能；关控优先于同周期开控。健康恢复不自动使能，需排除原因并重新开控；显式 `Robot_RequestControl()` 同样不能绕过回中检查。
+- `3Task` 汇总当前原因并锁存失能；关控优先于同周期开控。健康恢复不自动使能，需排除原因并重新开控；显式 `Robot_RequestControl()` 同样不能绕过回中检查。
 - 正常待机维持已开控关节闭环，原本失能的轴不自动使能；负载保持本轮暂不改，尚未验证承重能力。关控/失联使当前配置全部轴失能。
 - 用户确认 roll 线缆不缠绕、实际范围未知，夹爪无机械限位。保留暂定 roll ±90°/夹爪 0..45°，不擅自扩大；夹爪不能撞限位找零，其 0 须人工定义为安全张开参考。
 - 控制任务负责 CAN1 零输出/DM 失能与旧帧取消。主控卡死或物理断线时仍依赖电机侧超时，未接入 IMU/翻车保护。

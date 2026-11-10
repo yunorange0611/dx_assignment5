@@ -4,7 +4,7 @@
 
 你已确认每车只用一块 C 板、机械臂不能直接接触基地。机械臂与底盘任务共享模式和互锁，不分别解释同一拨杆。V2.1 不启用云台与底盘跟随，旧的登阶、履带和伸收轮遥控路径已移除。
 
-协作分工：机械臂负责人维护两 pitch、roll、夹爪；底盘/yaw负责人维护两台 M3508 和 GM6020。GM6020 参数在 `User_Driver/Arm/yaw_config.h`，仍由原 CAN1 任务统一发送；完整交接见 [AGENTS.md](AGENTS.md)。
+协作分工：机械臂负责人维护两 pitch、roll、夹爪；底盘/yaw负责人维护两台 M3508 和 GM6020。GM6020 参数在 `2User_Driver`，仍由原 CAN1 任务统一发送；完整交接见 [AGENTS.md](AGENTS.md)。
 
 ## 四轴台架：选配置与操作
 
@@ -88,7 +88,7 @@
 
 ## 关控保护
 
-`Task/task_protect.h/.cpp` 参考 `RM_task_Chassis/Task/task_protect.c` 的默认禁止输出、保护优先、取消旧指令再停机结构。没有复制参考工程的两板 `0x0A1` 通信、IMU/翻车条件、21/30 ms 超时或自动恢复行为；这些输入尚未接入本工程。
+`3Task` 参考 `RM_task_Chassis/Task/task_protect.c` 的默认禁止输出、保护优先、取消旧指令再停机结构。没有复制参考工程的两板 `0x0A1` 通信、IMU/翻车条件、21/30 ms 超时或自动恢复行为；这些输入尚未接入本工程。
 
 每 4 ms 控制周期在处理运动输出前汇总保护输入。`Task_Protect_Init()` 默认失能；健康输入只清当前原因，不自动开控。所选配置的回中、反馈、校零等条件就绪后，显式开控请求（台架也可用上→中事件）才尝试解锁；整车另要求真实停车与互锁。开控被拒绝、输出提交失败或底层故障仍会锁存停机；底层控制计算期间发现的故障同周期覆盖共享状态。
 
@@ -127,7 +127,7 @@
 
 ## 底盘共享接口
 
-`Task/robot_control.h` 的 `ROBOT_CONTROL_API_VERSION=0x0202`，新增 `joint_mask`；底盘应按新结构接入。共享状态通过同一 MCU 内的临界区快照传递；本版本不向未知 CAN2 电机 ID 发送臆造的停车帧。
+`3Task` 的 `ROBOT_CONTROL_API_VERSION=0x0202`，新增 `joint_mask`；底盘应按新结构接入。共享状态通过同一 MCU 内的临界区快照传递；本版本不向未知 CAN2 电机 ID 发送臆造的停车帧。
 
 整车底盘/安全管理约每 20 ms 更新真实互锁状态；100 ms 过期会触发保护。非法布尔值或非法 yaw 包络使互锁立即无效，不继续沿用旧许可。无底盘任务时不能为了开控把全部字段写成 1。
 
@@ -163,13 +163,13 @@
 
 | 文件 | 内容 |
 |---|---|
-| `User_Driver/Remote/dr16_protocol.c` | 完整 18 字节 DBUS 解码和输入验证 |
-| `Bsp/dr16_bsp.c` | DMA+空闲中断、双缓冲、有效帧及错误计数 |
-| `User_Driver/Remote/operator_config.cpp` | 实物通道/正向、死区、超时、夹爪占位参数 |
-| `User_Driver/Remote/operator_control.cpp` | V2.1 映射、待机、停车回中和姿态许可 |
-| `Task/robot_control.h/.cpp` | 单板接口、保护连接、目标提交与状态快照 |
-| `Task/task_protect.h/.cpp` | 默认失能、保护原因汇总与重新开控锁存 |
-| `User_Driver/Arm/arm_config.cpp`、`yaw_config.h` | 四轴与 yaw 分开维护参数，聚合为统一 CAN1 五轴配置 |
+| `2User_Driver` | 完整 18 字节 DBUS 解码和输入验证 |
+| `1Bsp` | DMA+空闲中断、双缓冲、有效帧及错误计数 |
+| `2User_Driver` | 实物通道/正向、死区、超时、夹爪占位参数 |
+| `2User_Driver` | V2.1 映射、待机、停车回中和姿态许可 |
+| `3Task` | 单板接口、保护连接、目标提交与状态快照 |
+| `3Task` | 默认失能、保护原因汇总与重新开控锁存 |
+| `2User_Driver`、`yaw_config.h` | 四轴与 yaw 分开维护参数，聚合为统一 CAN1 五轴配置 |
 
 默认仍保留 `hardware_confirmed=false`、`pitch.mapping_confirmed=false`、遥控 `mapping_confirmed=false`。刷入默认固件后不会使能电机，不应把“已经编译通过”当作可直接带载操作。
 

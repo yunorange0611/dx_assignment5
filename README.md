@@ -10,9 +10,9 @@
 
 | 负责人 | 内容 | 主要入口 |
 |---|---|---|
-| 机械臂负责人 | 大/小 pitch 两台 DM4310、roll 和夹爪两台 M2006 | `User_Driver/Arm/arm_config.cpp` 中四轴参数；`arm_control.cpp` 的传动与闭环 |
-| 底盘/yaw 负责人 | 两台 M3508 的差速底盘与大 yaw GM6020 调试 | 大 yaw 参数独立在 `User_Driver/Arm/yaw_config.h`；底盘任务尚待实现 |
-| 共同维护 | DR16、模式解释、关控保护、CAN、互锁 | `User_Driver/Remote/`、`Task/robot_control.*`、`Task/task_protect.*`、`Bsp/CAN_bsp.cpp` |
+| 机械臂负责人 | 大/小 pitch 两台 DM4310、roll 和夹爪两台 M2006 | `2User_Driver` 中四轴参数；`arm_control.cpp` 的传动与闭环 |
+| 底盘/yaw 负责人 | 两台 M3508 的差速底盘与大 yaw GM6020 调试 | 大 yaw 参数独立在 `2User_Driver`；底盘任务尚待实现 |
+| 共同维护 | DR16、模式解释、关控保护、CAN、互锁 | `2User_Driver`、`3Task`、`3Task`、`1Bsp` |
 
 大 yaw 参数独立维护，运行时仍由 `ArmControl` 和 `arm_control_task` 统一闭环并发送 CAN1。一个电机只保留一个控制和发送来源；不要为 GM6020 再构造旧 `DJI_motor` 对象或再开一个发送任务。共享代码修改应说明对另一方的影响，尽量避免同时编辑同一文件。
 
@@ -36,7 +36,7 @@
 | roll / 夹爪 M2006 | CAN1 | C610 ID 1/2；反馈 `0x201/0x202`；共用 `0x200` 第一/二槽 |
 | 两台 M3508 | CAN2 | 电调 ID 待实物确认，由底盘任务统一合帧 |
 
-CAN1、CAN2 均为 1 Mbps。CAN1 同一指令 ID 不能由多个任务分别发送；两条总线可以独立使用同号 ID。底盘任务读取 `Task/robot_control.h` 的 API `0x0202`，消费转向/纵向请求、档位和停止标志，并周期提供真实互锁。整车配置中 `Robot_SetInterlocks()` 超过 100 ms 未更新会停止控制。底盘还须自行检查快照 `updated_ms`，处理 `motion_epoch` 变化和 CAN2 停机。四轴台架的 `joint_mask=0x1e`，始终发布底盘 `stop_chassis=1/emergency_stop=1`，不构成底盘驾驶模式。
+CAN1、CAN2 均为 1 Mbps。CAN1 同一指令 ID 不能由多个任务分别发送；两条总线可以独立使用同号 ID。底盘任务读取 `3Task` 的 API `0x0202`，消费转向/纵向请求、档位和停止标志，并周期提供真实互锁。整车配置中 `Robot_SetInterlocks()` 超过 100 ms 未更新会停止控制。底盘还须自行检查快照 `updated_ms`，处理 `motion_epoch` 变化和 CAN2 停机。四轴台架的 `joint_mask=0x1e`，始终发布底盘 `stop_chassis=1/emergency_stop=1`，不构成底盘驾驶模式。
 
 功率计协议已知：标准 CAN `0x31`，1 Mbps，DLC 4；前两字节为小端有符号 int16 功率，单位 0.1 W；后两字节同样为缓冲能量，单位 0.1 J。接入总线和发送周期待确认，解析和 50 W 限制尚未实现。
 

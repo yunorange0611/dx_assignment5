@@ -1,6 +1,6 @@
 # 工程车关节控制与 CAD 传动映射
 
-工程基于 [dx_assignment5_freertos](https://github.com/liqibei/dx_assignment5_freertos/tree/80450f4790afac2a29b0d66d94a6952ad3ab08e1)。机械臂负责人维护大/小 pitch、roll、夹爪四轴；另一位同学维护两台 M3508 底盘和大 yaw GM6020。yaw 参数独立在 `User_Driver/Arm/yaw_config.h`，运行时仍由统一 CAN1 五轴任务控制。协作入口见 [AGENTS.md](AGENTS.md)；原教学模板说明完整保存在 [docs/TEMPLATE_README.md](docs/TEMPLATE_README.md)。
+工程基于 [dx_assignment5_freertos](https://github.com/liqibei/dx_assignment5_freertos/tree/80450f4790afac2a29b0d66d94a6952ad3ab08e1)。机械臂负责人维护大/小 pitch、roll、夹爪四轴；另一位同学维护两台 M3508 底盘和大 yaw GM6020。yaw 参数独立在 `2User_Driver`，运行时仍由统一 CAN1 五轴任务控制。协作入口见 [AGENTS.md](AGENTS.md)；原教学模板说明完整保存在 [docs/TEMPLATE_README.md](docs/TEMPLATE_README.md)。
 
 整车已按《遥控器.docx》V2.1 接入 DR16 的行驶、夹取、待机模式，以及参考 `RM_task_Chassis/task_protect` 结构的关控保护。日常 `Debug/Release`（兼容入口 `BenchDebug`）提供仅两 pitch、roll、夹爪的固定四轴配置，不依赖 yaw 或底盘；整车显式使用 `VehicleDebug/VehicleRelease`。台架操作、调试变量、遥控接线和底盘 API `0x0202` 集中见 [README_REMOTE.md](README_REMOTE.md)；底盘实际差速控制仍待接入。
 
@@ -110,15 +110,15 @@ a2目标 = q肩目标 + q肘目标
 
 | 文件 | 用途 |
 |---|---|
-| `User_Driver/Arm/arm_config.cpp` | 四台机械臂电机的参数、共享保护参数，以及统一五轴配置的聚合 |
-| `User_Driver/Arm/yaw_config.h` | 由底盘/yaw负责人维护 GM6020 的模式、ID、方向、限位、PID 和电流上限 |
-| `User_Driver/Arm/arm_control.cpp` | 反馈解析、标定、状态机、轨迹、闭环、分组报文 |
-| `Task/arm_task.h` | 供遥控器/上位机任务调用的 C 接口 |
-| `Task/arm_task.cpp` | RTOS 队列、ISR 到任务的反馈交接、CAN 发送和状态快照 |
-| `Task/robot_control.h` | 当前遥控版的开控、底盘互锁和共享模式接口 |
-| `Task/task_protect.h/.cpp` | 默认失能、保护原因汇总及恢复后等待明确开控 |
-| `User_Driver/Remote/operator_config.cpp` | 物理遥控通道和夹爪策略参数 |
-| `Bsp/CAN_bsp.cpp` | 沿用模板 CAN 注册方式，修复发送快照、接收分发和错误处理 |
+| `2User_Driver` | 四台机械臂电机的参数、共享保护参数，以及统一五轴配置的聚合 |
+| `2User_Driver` | 由底盘/yaw负责人维护 GM6020 的模式、ID、方向、限位、PID 和电流上限 |
+| `2User_Driver` | 反馈解析、标定、状态机、轨迹、闭环、分组报文 |
+| `3Task` | 供遥控器/上位机任务调用的 C 接口 |
+| `3Task` | RTOS 队列、ISR 到任务的反馈交接、CAN 发送和状态快照 |
+| `3Task` | 当前遥控版的开控、底盘互锁和共享模式接口 |
+| `3Task` | 默认失能、保护原因汇总及恢复后等待明确开控 |
+| `2User_Driver` | 物理遥控通道和夹爪策略参数 |
+| `1Bsp` | 沿用模板 CAN 注册方式，修复发送快照、接收分发和错误处理 |
 
 初次上电只收反馈并发送 DJI 零指令、DM 失能帧。`kArmConfig.hardware_confirmed=false` 会拒绝任何使能请求；遥控层 `kOperatorConfig.mapping_confirmed=false` 要求先验证物理通道；`kArmConfig.pitch.mapping_confirmed=false` 另要求确认两台 DM 对应的驱动件、符号和传动分支。三处默认保护均保留。它不会把当前姿态自动当成机械零位。
 
