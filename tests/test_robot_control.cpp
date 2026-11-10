@@ -13,7 +13,7 @@ extern "C" int DR16_GetStatus(DR16Status *out) {
     *out=receiver; return out->valid;
 }
 int test_robot_control() {
-    static_assert(ROBOT_CONTROL_API_VERSION==0x0202u);
+    static_assert(ROBOT_CONTROL_API_VERSION==0x0203u);
     static_assert(unsigned(RobotMode::Standby)==ROBOT_STANDBY);
     static_assert(unsigned(RobotMode::Drive)==ROBOT_DRIVE);
     static_assert(unsigned(DriveGear::Fast)==ROBOT_GEAR_FAST);
@@ -38,7 +38,7 @@ int test_robot_control() {
     CHECK(!(s.protection_current_reasons & PROTECT_INTERLOCK));
     CHECK(s.longitudinal_brake && s.reset_chassis_motion && !s.yaw_follow);
     CHECK(!s.fast_requested && s.drive_gear==ROBOT_GEAR_SLOW);
-    CHECK(s.longitudinal_accel_request==0 && s.turn_rate_request==0 && arm.status().enabled_mask==0);
+    CHECK(s.longitudinal_speed_request==0 && s.turn_rate_request==0 && arm.status().enabled_mask==0);
     for(unsigned bad=0;bad<8;++bad) {
         auto invalid=locks;
         if(bad==0) invalid.chassis_stopped=2;

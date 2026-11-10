@@ -14,6 +14,7 @@ volatile uint32_t g_robot_debug_command=ROBOT_DEBUG_IDLE;
 namespace {
 engineer::Interlocks shared_interlocks;
 bool arm_requested=false,stop_requested=false;
+uint32_t stop_epoch=0;
 void publish_protection(RobotControlStatus &s) {
     const auto p=Task_Protect_GetStatus();
     s.protection_disabled=p.disabled;
@@ -47,7 +48,7 @@ extern "C" int Robot_RequestControl() {
     taskENTER_CRITICAL(); arm_requested=true; taskEXIT_CRITICAL(); return 1;
 }
 extern "C" void Robot_StopControl() {
-    taskENTER_CRITICAL(); stop_requested=true; taskEXIT_CRITICAL();
+    taskENTER_CRITICAL(); stop_requested=true; ++stop_epoch; taskEXIT_CRITICAL();
 }
 extern "C" int Robot_GetControlStatus(RobotControlStatus *v) {
     if(!v) return 0;
@@ -68,7 +69,10 @@ void Robot_Execute(engineer::ArmControl &arm,uint32_t now,bool force_stop) {
     DR16Status rx{}; DR16_GetStatus(&rx);
     now=HAL_GetTick();
     // 仍在唯一控制任务内执行；关控优先，不让校零或开控绕过现有保护。
-    if (debug_command==ROBOT_DEBUG_STOP) stop_request=true;
+    if (debug_command==ROBOT_DEBUG_STOP || force_stop) {
+        taskENTER_CRITICAL(); ++stop_epoch; taskEXIT_CRITICAL();
+        stop_request=true;
+    }
     if (!force_stop && !stop_request) {
         switch (debug_command) {
         case ROBOT_DEBUG_CAPTURE_ZERO: arm.capture_zero(kArmConfig.joint_mask,now); stop_request=true; break;
@@ -100,7 +104,7 @@ void Robot_Execute(engineer::ArmControl &arm,uint32_t now,bool force_stop) {
         result.wait_neutral=true; result.active=false; result.disable_arm=true;
         result.emergency_stop=true; result.stop_chassis=true; result.longitudinal_brake=true;
         result.reset_chassis_motion=true; result.fast_requested=false; result.drive_gear=DriveGear::Slow;
-        result.yaw_follow=false; result.longitudinal_accel_request=0; result.turn_rate_request=0;
+        result.yaw_follow=false; result.longitudinal_speed_request=0; result.turn_rate_request=0;
         result.block=OperatorBlock::ArmUnavailable; arm.disable();
     };
     if(result.request_enable) {
@@ -118,6 +122,7 @@ void Robot_Execute(engineer::ArmControl &arm,uint32_t now,bool force_stop) {
     }
     RobotControlStatus next{};
     next.updated_ms=now;
+    taskENTER_CRITICAL(); next.stop_epoch=stop_epoch; taskEXIT_CRITICAL();
     next.joint_mask=kArmConfig.joint_mask;
     next.ready=1; next.mode=uint8_t(result.mode); next.block=uint8_t(result.block);
     next.active=result.active; next.wait_neutral=result.wait_neutral;
@@ -129,7 +134,7 @@ void Robot_Execute(engineer::ArmControl &arm,uint32_t now,bool force_stop) {
     next.motion_epoch=result.motion_epoch; next.yaw_follow=0;
     next.fast_requested=result.fast_requested; next.drive_gear=uint8_t(result.drive_gear);
     next.drive_yaw_limited=result.drive_yaw_limited;
-    next.longitudinal_accel_request=result.longitudinal_accel_request;
+    next.longitudinal_speed_request=result.longitudinal_speed_request;
     next.turn_rate_request=result.turn_rate_request; next.yaw_relative_deg=result.yaw_relative_deg;
     next.gripper_effort_limit=result.gripper_effort_limit;
     for(unsigned i=0;i<kJointCount;++i) next.target_deg[i]=result.target_deg[i];
@@ -144,7 +149,7 @@ void Robot_ReportArmState(const engineer::Status &s) {
         g_robot_status.active=0; g_robot_status.emergency_stop=1; g_robot_status.stop_chassis=1;
         g_robot_status.longitudinal_brake=1; g_robot_status.reset_chassis_motion=1;
         g_robot_status.fast_requested=0; g_robot_status.drive_gear=ROBOT_GEAR_SLOW;
-        g_robot_status.yaw_follow=0; g_robot_status.longitudinal_accel_request=0; g_robot_status.turn_rate_request=0;
+        g_robot_status.yaw_follow=0; g_robot_status.longitudinal_speed_request=0; g_robot_status.turn_rate_request=0;
         g_robot_status.block=uint8_t(engineer::OperatorBlock::ArmUnavailable);
         publish_protection(g_robot_status);
     }

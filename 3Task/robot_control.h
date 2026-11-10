@@ -3,8 +3,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define ROBOT_CONTROL_API_VERSION 0x0202u
-// V2.1接口不兼容旧Climb字段；底盘需按新结构接入。
+#define ROBOT_CONTROL_API_VERSION 0x0203u
+// 0x0203: longitudinal_speed_request replaces the incompatible acceleration field.
 enum RobotModeCode { ROBOT_SAFE,ROBOT_DRIVE,ROBOT_GRAB,ROBOT_STANDBY };
 enum RobotDriveGear { ROBOT_GEAR_SLOW,ROBOT_GEAR_FAST };
 typedef struct {
@@ -20,10 +20,11 @@ typedef struct {
     uint8_t yaw_follow; // V2.1固定0，底盘不得根据yaw_relative_deg自行跟随。
     uint8_t fast_requested,drive_gear,drive_yaw_limited,protection_disabled;
     uint8_t joint_mask; // 0x1f整车 / 0x1e四轴；台架始终发布底盘停控
+    uint32_t stop_epoch; // Explicit global stop event, including an already-disabled robot.
     uint32_t updated_ms,motion_epoch,remote_age_ms,interlock_age_ms;
     uint32_t protection_current_reasons,protection_latched_reasons,protection_last_trip_ms;
-    // 均为[-1,1]请求：纵向正=前进加速，turn正=逆时针，非m/s或rad/s。
-    float longitudinal_accel_request,turn_rate_request,yaw_relative_deg;
+    // 均为[-1,1]速度请求：纵向正=前进，turn正=逆时针，非m/s或rad/s。
+    float longitudinal_speed_request,turn_rate_request,yaw_relative_deg;
     float target_deg[5],gripper_effort_limit;
 } RobotControlStatus;
 // 状态符号只读；任务间仍使用Get接口。唯一可写调试变量每轮取走并清零。

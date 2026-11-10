@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "can_frame.h"
 #include "arm_task.h"
+#include "chassis_task.h"
 #include "dm_id_config_task.h"
 /* USER CODE END Includes */
 
@@ -157,8 +158,7 @@ void MX_FREERTOS_Init(void) {
 #if !DM_ID_CONFIG_MODE
   CAN2_Sending_ServiceHandle = osThreadNew(can2_sending_service, NULL, &CAN2_Sending_Service_attributes);
 
-  /* creation of DJI_Motor_Service */
-  DJI_Motor_ServiceHandle = osThreadNew(DJI_motor_service, NULL, &DJI_Motor_Service_attributes);
+  /* Legacy DJI service intentionally not started: CAN groups have explicit owners. */
 #endif
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -166,6 +166,10 @@ void MX_FREERTOS_Init(void) {
   if (!osThreadNew(dm_id_config_task, NULL, &arm_attributes)) Error_Handler();
 #else
   if (!osThreadNew(arm_control_task, NULL, &arm_attributes)) Error_Handler();
+#if !ARM_FOUR_AXIS_BENCH || CHASSIS_SUSPENDED_BENCH
+  static const osThreadAttr_t chassis_attributes = { .name="Chassis", .stack_size=3072, .priority=osPriorityAboveNormal };
+  if (!osThreadNew(chassis_task, NULL, &chassis_attributes)) Error_Handler();
+#endif
 #endif
   /* USER CODE END RTOS_THREADS */
 

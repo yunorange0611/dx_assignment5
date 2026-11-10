@@ -112,7 +112,7 @@ int test_four_axis() {
         Rig r;
         for(unsigned n=0;n<100;++n) {
             const auto o=r.tick(); CHECK(!o.active && !o.request_enable && o.disable_arm);
-            CHECK(o.stop_chassis && o.emergency_stop && o.turn_rate_request==0 && o.longitudinal_accel_request==0);
+            CHECK(o.stop_chassis && o.emergency_stop && o.turn_rate_request==0 && o.longitudinal_speed_request==0);
         }
         const auto o=r.tick(true); CHECK(o.request_enable && o.active && !o.disable_arm);
         CHECK(o.emergency_stop && o.stop_chassis && o.target_deg[Yaw]==0);
@@ -126,7 +126,7 @@ int test_four_axis() {
         o=r.tick(); CHECK(!o.request_enable && o.active && o.stop_chassis && o.emergency_stop);
         for(unsigned j=0;j<4;++j) r.rc.frame.channel[j]=660;
         o=r.tick(); CHECK(o.target_deg[BigPitch]>0 && o.target_deg[SmallPitch]>0 && o.target_deg[Roll]>0);
-        CHECK(o.target_deg[Yaw]==0 && o.turn_rate_request==0 && o.longitudinal_accel_request==0);
+        CHECK(o.target_deg[Yaw]==0 && o.turn_rate_request==0 && o.longitudinal_speed_request==0);
         r.rc.frame.switches[0]=DR16_SWITCH_UP; o=r.tick(); CHECK(!o.active && o.disable_arm && o.stop_chassis);
     }
     { // MID non-neutral cancels the entire auto candidate, not merely the neutral timer.

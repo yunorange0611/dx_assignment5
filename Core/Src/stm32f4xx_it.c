@@ -236,3 +236,6 @@ void USART3_IRQHandler(void) { HAL_UART_IRQHandler(&huart3); }
 void DMA1_Stream1_IRQHandler(void) { HAL_DMA_IRQHandler(&hdma_usart3_rx); }
 /* USER CODE BEGIN 1 */
 /* USER CODE END 1 */
+
+void CAN1_SCE_IRQHandler(void) { HAL_CAN_IRQHandler(&hcan1); }
+void CAN2_SCE_IRQHandler(void) { HAL_CAN_IRQHandler(&hcan2); }

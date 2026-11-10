@@ -6,9 +6,10 @@
             "hidden": true,
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/${presetName}",
-		    "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
+            "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
             "cacheVariables": {
-                "DM_ID_CONFIG_MODE": "OFF"
+                "DM_ID_CONFIG_MODE": "OFF",
+                "CHASSIS_SUSPENDED_BENCH": "OFF"
             }
         },
         {
@@ -54,6 +55,13 @@
             "cacheVariables": {
                 "ARM_FOUR_AXIS_BENCH": "OFF"
             }
+        },
+        {
+            "name": "ChassisBenchDebug",
+            "inherits": "Debug",
+            "cacheVariables": {
+                "CHASSIS_SUSPENDED_BENCH": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -80,6 +88,10 @@
         {
             "name": "VehicleRelease",
             "configurePreset": "VehicleRelease"
+        },
+        {
+            "name": "ChassisBenchDebug",
+            "configurePreset": "ChassisBenchDebug"
         }
     ]
 }

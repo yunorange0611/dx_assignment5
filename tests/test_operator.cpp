@@ -70,7 +70,7 @@ int test_operator() {
         o=r.tick(); CHECK(o.mode==RobotMode::Grab && o.stop_chassis && !o.yaw_follow);
         CHECK(o.target_deg[BigPitch]>0 && o.target_deg[Roll]>0);
         CHECK(o.target_deg[SmallPitch]<0 && o.target_deg[Yaw]<0);
-        CHECK(o.turn_rate_request==0 && o.longitudinal_accel_request==0);
+        CHECK(o.turn_rate_request==0 && o.longitudinal_speed_request==0);
         const float pitch=o.target_deg[BigPitch]; r.neutral(); o=r.tick();
         CHECK(o.target_deg[BigPitch]==pitch && pitch!=0);
     }
@@ -78,29 +78,29 @@ int test_operator() {
         Rig r; r.rc.frame.switches[0]=DR16_SWITCH_UP; CHECK(r.start().active);
         r.rc.frame.channel[2]=660; auto o=r.tick();
         CHECK(near(o.target_deg[Yaw],0.008f));
-        CHECK(o.turn_rate_request==0 && o.longitudinal_accel_request==0 && !o.yaw_follow);
+        CHECK(o.turn_rate_request==0 && o.longitudinal_speed_request==0 && !o.yaw_follow);
         CHECK(o.target_deg[Roll]==0 && o.target_deg[BigPitch]==0 && o.target_deg[SmallPitch]==0);
         const float yaw=o.target_deg[Yaw]; r.rc.frame.channel[2]=0; r.rc.frame.channel[0]=660;
         o=r.tick(); CHECK(o.target_deg[Yaw]==yaw && o.turn_rate_request==-1);
         CHECK(o.longitudinal_brake && !o.stop_chassis && !o.emergency_stop);
         r.rc.frame.channel[3]=660; r.rc.frame.channel[1]=660; r.rc.frame.channel[2]=660;
-        o=r.tick(); CHECK(o.longitudinal_accel_request==1 && o.turn_rate_request==-1 && !o.longitudinal_brake);
+        o=r.tick(); CHECK(o.longitudinal_speed_request==1 && o.turn_rate_request==-1 && !o.longitudinal_brake);
         CHECK(o.target_deg[Yaw]>yaw && o.target_deg[SmallPitch]==0);
         CHECK(!o.yaw_follow && !o.reset_chassis_motion);
         r.rc.frame.channel[3]=-660; o=r.tick();
-        CHECK(o.longitudinal_accel_request==-1 && o.turn_rate_request==-1); // 倒车仍右转，不反号。
+        CHECK(o.longitudinal_speed_request==-1 && o.turn_rate_request==-1); // 倒车仍右转，不反号。
         r.rc.frame.channel[0]=-660; o=r.tick(); CHECK(o.turn_rate_request==1);
         r.neutral(); o=r.tick();
-        CHECK(o.longitudinal_brake && o.stop_chassis && o.turn_rate_request==0 && o.longitudinal_accel_request==0);
+        CHECK(o.longitudinal_brake && o.stop_chassis && o.turn_rate_request==0 && o.longitudinal_speed_request==0);
     }
     { // 上、中慢，下快；拒绝快速只降档，不能清除人工请求或缩放归一化意图。
         Rig r; r.rc.frame.switches[0]=DR16_SWITCH_UP; CHECK(r.start().active);
         r.rc.frame.channel[3]=660;
-        auto o=r.tick(); CHECK(o.drive_gear==DriveGear::Slow && !o.fast_requested && o.longitudinal_accel_request==1);
+        auto o=r.tick(); CHECK(o.drive_gear==DriveGear::Slow && !o.fast_requested && o.longitudinal_speed_request==1);
         r.rc.frame.switches[1]=DR16_SWITCH_UP; o=r.tick();
         CHECK(o.drive_gear==DriveGear::Slow && !o.fast_requested);
         r.rc.frame.switches[1]=DR16_SWITCH_DOWN; o=r.tick();
-        CHECK(o.drive_gear==DriveGear::Fast && o.fast_requested && o.longitudinal_accel_request==1);
+        CHECK(o.drive_gear==DriveGear::Fast && o.fast_requested && o.longitudinal_speed_request==1);
         r.locks.arm_allows_fast=false; o=r.tick();
         CHECK(o.drive_gear==DriveGear::Slow && o.fast_requested && o.active);
         r.rc.frame.switches[1]=DR16_SWITCH_MID; o=r.tick(); CHECK(!o.fast_requested && o.drive_gear==DriveGear::Slow);
@@ -140,7 +140,7 @@ int test_operator() {
             for(unsigned j=0;j<4;++j) r.rc.frame.channel[j]=(n+j)%2 ? -660 : 660;
             o=r.tick(true);
             CHECK(o.active && !o.disable_arm && !o.request_enable && o.stop_chassis);
-            CHECK(o.longitudinal_accel_request==0 && o.turn_rate_request==0 && o.longitudinal_brake);
+            CHECK(o.longitudinal_speed_request==0 && o.turn_rate_request==0 && o.longitudinal_brake);
             CHECK(!o.fast_requested && !o.yaw_follow && o.drive_gear==DriveGear::Slow);
             CHECK(o.motion_epoch==entered.motion_epoch);
             for(unsigned j=0;j<kJointCount;++j) CHECK(o.target_deg[j]==entered.target_deg[j]);
@@ -185,14 +185,14 @@ int test_operator() {
     { // 许可收紧不能强拉yaw进入新范围，需停车等待处理。
         Rig r; r.rc.frame.switches[0]=DR16_SWITCH_UP; r.arm.joint[Yaw].position_deg=15; CHECK(r.start().active);
         r.locks.drive_yaw_max_deg=10; r.rc.frame.channel[3]=660;
-        const auto o=r.tick(); CHECK(o.stop_chassis && o.reset_chassis_motion && o.longitudinal_accel_request==0);
+        const auto o=r.tick(); CHECK(o.stop_chassis && o.reset_chassis_motion && o.longitudinal_speed_request==0);
         CHECK(o.target_deg[Yaw]>=15); // 不能凭修改限位命令yaw自动转到10度。
     }
     { // 关控、遥控丢失、互锁丢失优先于任何模式；恢复报文不自动重新开控。
         for(auto mode:{DR16_SWITCH_UP,DR16_SWITCH_MID,DR16_SWITCH_DOWN}) {
             Rig r; CHECK(r.start().active); r.rc.frame.switches[0]=mode; r.tick();
             r.rc.valid=false; auto o=r.tick(); CHECK(o.disable_arm && !o.active && o.stop_chassis && o.emergency_stop);
-            CHECK(o.reset_chassis_motion && o.turn_rate_request==0 && o.longitudinal_accel_request==0);
+            CHECK(o.reset_chassis_motion && o.turn_rate_request==0 && o.longitudinal_speed_request==0);
             r.rc.valid=true; r.neutral(); r.tick(); r.tick(); o=r.tick(); CHECK(!o.active && o.disable_arm);
         }
         Rig r; CHECK(r.start().active); r.rc.valid=false; r.tick(); r.rc.valid=true;

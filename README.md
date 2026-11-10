@@ -1,5 +1,7 @@
 # RM Robosister 工程车
 
+> Current implementation: batch 1, API 0x0203. CAN2 wheels/power parsing and suspended pulse tests are implemented. Vehicle motion stays disabled pending batch 3 health/interlocks. See [README_CHASSIS.md](README_CHASSIS.md); older completion descriptions below are historical.
+
 单块 RoboMaster C 板（STM32F407IGH6）运行 FreeRTOS，使用 DR16 遥控协议 V2.1。两位电控同学共同维护同一份固件：机械臂负责人调试大/小 pitch、roll、夹爪；底盘/yaw 负责人调试两台 M3508 和大 yaw GM6020。
 
 开始修改前，agent 先读 [AGENTS.md](AGENTS.md)。本文是项目入口；详细控制依据见 [README_ARM.md](README_ARM.md)，四轴台架操作、调试变量、整车遥控和底盘接口统一见 [README_REMOTE.md](README_REMOTE.md)。教学模板的原始说明完整保存在 [docs/TEMPLATE_README.md](docs/TEMPLATE_README.md)。
@@ -36,7 +38,7 @@
 | roll / 夹爪 M2006 | CAN1 | C610 ID 1/2；反馈 `0x201/0x202`；共用 `0x200` 第一/二槽 |
 | 两台 M3508 | CAN2 | 电调 ID 待实物确认，由底盘任务统一合帧 |
 
-CAN1、CAN2 均为 1 Mbps。CAN1 同一指令 ID 不能由多个任务分别发送；两条总线可以独立使用同号 ID。底盘任务读取 `3Task` 的 API `0x0202`，消费转向/纵向请求、档位和停止标志，并周期提供真实互锁。整车配置中 `Robot_SetInterlocks()` 超过 100 ms 未更新会停止控制。底盘还须自行检查快照 `updated_ms`，处理 `motion_epoch` 变化和 CAN2 停机。四轴台架的 `joint_mask=0x1e`，始终发布底盘 `stop_chassis=1/emergency_stop=1`，不构成底盘驾驶模式。
+CAN1、CAN2 均为 1 Mbps。CAN1 同一指令 ID 不能由多个任务分别发送；两条总线可以独立使用同号 ID。底盘任务读取 `3Task` 的 API `0x0203`，消费转向/纵向请求、档位和停止标志，并周期提供真实互锁。整车配置中 `Robot_SetInterlocks()` 超过 100 ms 未更新会停止控制。底盘还须自行检查快照 `updated_ms`，处理 `motion_epoch` 变化和 CAN2 停机。四轴台架的 `joint_mask=0x1e`，始终发布底盘 `stop_chassis=1/emergency_stop=1`，不构成底盘驾驶模式。
 
 功率计协议已知：标准 CAN `0x31`，1 Mbps，DLC 4；前两字节为小端有符号 int16 功率，单位 0.1 W；后两字节同样为缓冲能量，单位 0.1 J。接入总线和发送周期待确认，解析和 50 W 限制尚未实现。
 

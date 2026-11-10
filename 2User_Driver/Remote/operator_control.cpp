@@ -171,7 +171,7 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         o.reset_chassis_motion=false;
         o.fast_requested=right==DR16_SWITCH_DOWN;
         o.drive_gear=o.fast_requested && in.arm_allows_fast ? DriveGear::Fast : DriveGear::Slow;
-        o.longitudinal_accel_request=ly;
+        o.longitudinal_speed_request=ly;
         o.longitudinal_brake=ly==0; // 转弯时也必须独立将纵向速度制动到0。
         o.turn_rate_request=-rx; // 右推=顺时针；CCW正，不乘纵向输入或倒车符号。
         o.stop_chassis=ly==0 && rx==0;

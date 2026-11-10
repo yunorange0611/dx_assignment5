@@ -28,6 +28,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 project(${CMAKE_PROJECT_NAME})
 option(ARM_FOUR_AXIS_BENCH "Four-axis arm bench: no yaw or chassis control" ON)
 option(DM_ID_CONFIG_MODE "Standalone CAN1 DM ID configuration; no arm control" OFF)
+option(CHASSIS_SUSPENDED_BENCH "Explicit suspended chassis pulse testing only" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 message("Build type: " ${CMAKE_BUILD_TYPE})
@@ -66,6 +67,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         2User_Driver
         2User_Driver/Motor_Driver
         2User_Driver/Arm
+        2User_Driver/Chassis
+        2User_Driver/Power
         2User_Driver/Remote
         3Task
 )
@@ -74,6 +77,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     ARM_FOUR_AXIS_BENCH=$<BOOL:${ARM_FOUR_AXIS_BENCH}>
     DM_ID_CONFIG_MODE=$<BOOL:${DM_ID_CONFIG_MODE}>
+    CHASSIS_SUSPENDED_BENCH=$<BOOL:${CHASSIS_SUSPENDED_BENCH}>
 )
 
 # Remove wrong libob.a library dependency when using cpp files
@@ -88,6 +92,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
 if(DM_ID_CONFIG_MODE)
     set(FIRMWARE_NAME dm_id_config)
+elseif(CHASSIS_SUSPENDED_BENCH)
+    set(FIRMWARE_NAME chassis_suspended)
 else()
     set(FIRMWARE_NAME engineer_arm)
 endif()

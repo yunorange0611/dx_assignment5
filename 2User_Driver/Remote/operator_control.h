@@ -41,7 +41,7 @@ struct OperatorOutput {
     bool drive_yaw_limited = false;
     DriveGear drive_gear = DriveGear::Slow;
     uint32_t motion_epoch = 0; // 底盘比较代号，不能漏掉两次读取之间发生的模式切换/关控。
-    float longitudinal_accel_request = 0; // 归一化加速度意图，底盘自行限速/积分/回中制动
+    float longitudinal_speed_request = 0; // 归一化速度请求，底盘执行速度映射/斜坡/回中制动
     float turn_rate_request = 0;    // [-1,1]角速度意图，逆时针为正；不是rad/s，不随倒车翻转。
     float yaw_relative_deg = 0;
     float target_deg[kJointCount]{};
