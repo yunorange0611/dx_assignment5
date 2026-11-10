@@ -15,6 +15,7 @@ typedef struct {
     uint8_t tune_mode, tune_blocked;
     uint32_t tune_epoch, tune_result; // Runtime mode epoch; result uses ChassisTuneResult.
     float tune_current_limit_ma;
+    uint8_t independent; // 1 = 0档底盘直驱命令正在出力。
 } ChassisStatus;
 extern ChassisStatus g_chassis_status; // Read-only snapshot.
 enum ChassisDebugMode {

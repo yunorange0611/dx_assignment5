@@ -67,9 +67,9 @@ int test_robot_tuning() {
         CHECK(out.blocked && !out.ready && !out.current_active && out.value == 0 &&
               out.reason == TuneCurrentTimeout);
         in.current_ma = 0;
-        CHECK(gate.step(in).blocked);
+        CHECK(!gate.step(in).blocked && gate.status().ready); // per-cycle failure; zero target is ready.
         in.mode = TuneLeftSpeed;
-        CHECK(gate.step(in).blocked); // Another nonzero mode is not a reset.
+        CHECK(gate.step(in).changed && !gate.status().blocked);
         in.mode = TuneNormal;
         CHECK(!gate.step(in).blocked);
         in.mode = TuneLeftSpeed;
@@ -95,21 +95,21 @@ int test_robot_tuning() {
         in.now_ms = 1500;
         CHECK(gate.step(in).reason == TuneCurrentTimeout);
     }
-    { // Failing entry is consumed; later stationary/healthy input cannot start.
-        for (unsigned cause = 0; cause < 3; ++cause) {
+    { // Failing entry is per-cycle; a fresh healthy input can start.
+        for (unsigned cause = 0; cause < 2; ++cause) {
             RobotTuning gate;
             auto in = healthy(TuneLeftSpeed);
             if (cause == 0) in.common_ready = false;
             if (cause == 1) in.selected_ready = false;
-            if (cause == 2) in.stationary = false;
             CHECK(!gate.step(in).blocked); // Selection alone is not an enable request.
             auto out = gate.step(in);
             CHECK(out.blocked && !out.ready && out.value == 0);
-            CHECK(out.reason == (cause == 2 ? TuneWaitingStill : TuneNotReady));
+            CHECK(out.reason == TuneNotReady);
             in.common_ready = in.selected_ready = in.stationary = true;
-            CHECK(gate.step(in).blocked && gate.status().value == 0);
+            CHECK(!gate.step(in).blocked && !gate.status().ready);
+            CHECK(gate.step(in).ready);
             in.mode = TuneYawSpeed;
-            CHECK(gate.step(in).blocked);
+            CHECK(gate.step(in).changed && !gate.status().blocked);
             in.mode = TuneNormal;
             CHECK(!gate.step(in).blocked && gate.status().value == 0);
             in.mode = TuneYawSpeed;
@@ -118,7 +118,7 @@ int test_robot_tuning() {
             CHECK(gate.step(in).ready);
         }
     }
-    { // STOP and remote/selected health loss cannot resume on recovery.
+    { // STOP and health loss are per-cycle; a fresh healthy step can resume.
         for (unsigned cause = 0; cause < 3; ++cause) {
             RobotTuning gate;
             auto in = healthy(TuneYawSpeed);
@@ -134,7 +134,7 @@ int test_robot_tuning() {
             CHECK(out.reason == (cause == 0 ? TuneStopped : TuneNotReady));
             in.stop = false;
             in.common_ready = in.selected_ready = true;
-            CHECK(gate.step(in).blocked);
+            CHECK(gate.step(in).ready);
             in.mode = TuneNormal;
             CHECK(!gate.step(in).blocked);
         }
@@ -142,7 +142,7 @@ int test_robot_tuning() {
     { // Finite, hard numeric limits are checked before output in every mode.
         const float bad[] = {std::numeric_limits<float>::quiet_NaN(),
                              std::numeric_limits<float>::infinity(),
-                             -std::numeric_limits<float>::infinity(), 301};
+                             -std::numeric_limits<float>::infinity(), 10001};
         for (uint32_t mode = TuneLeftCurrent; mode <= TuneYawSpeed; ++mode) {
             for (float value : bad) {
                 RobotTuning gate;
@@ -158,7 +158,7 @@ int test_robot_tuning() {
         auto in = healthy(7);
         CHECK(gate.step(in).blocked && gate.status().reason == TuneInvalid);
         in.mode = TuneYawPosition;
-        CHECK(gate.step(in).blocked);
+        CHECK(gate.step(in).changed && !gate.status().blocked);
         in.mode = TuneNormal;
         CHECK(!gate.step(in).blocked);
     }
@@ -177,7 +177,7 @@ int test_robot_tuning() {
         in.yaw_target_deg = 10.1f;
         CHECK(gate.step(in).blocked && gate.status().reason == TuneInvalid);
         in.yaw_target_deg = 0;
-        CHECK(gate.step(in).blocked);
+        CHECK(gate.step(in).ready);
         in.mode = TuneNormal;
         gate.step(in);
         in.mode = TuneYawPosition;
@@ -223,11 +223,11 @@ int test_robot_tuning() {
         CHECK(gate.step(in).blocked && gate.status().reason == TuneNotReady);
         in.enable = false;
         in.common_ready = in.selected_ready = in.stationary = true;
-        CHECK(gate.step(in).blocked); // Enable 0 cannot clear a consumed failure.
+        CHECK(!gate.step(in).blocked); // enable=0 acknowledges the failed test.
         in.mode = TuneNormal;
         CHECK(!gate.step(in).blocked);
     }
-    { // Re-enable requires stillness again; STOP remains effective while disabled.
+    { // Re-enable no longer waits for stillness; STOP remains effective while disabled.
         RobotTuning gate;
         auto in = healthy(TuneYawSpeed);
         in.enable = false;
@@ -240,7 +240,8 @@ int test_robot_tuning() {
         CHECK(!gate.step(in).ready);
         in.stationary = false;
         in.enable = true;
-        CHECK(gate.step(in).blocked && gate.status().reason == TuneWaitingStill);
+        CHECK(!gate.step(in).blocked && !gate.status().ready);
+        CHECK(gate.step(in).ready); // stationary is advisory, not a hard gate.
         in.mode = TuneNormal;
         gate.step(in);
         in.mode = TuneYawSpeed;
@@ -249,7 +250,7 @@ int test_robot_tuning() {
         in.stop = true;
         CHECK(gate.step(in).blocked && gate.status().reason == TuneStopped);
     }
-    { // Disable cancels a short pulse; expired sessions still require mode 0.
+    { // Disable cancels a short pulse; enable=0 acknowledges the timeout.
         RobotTuning gate;
         auto in = healthy(TuneLeftCurrent, 100);
         gate.step(in);
@@ -269,9 +270,10 @@ int test_robot_tuning() {
         in.now_ms = 1500;
         CHECK(gate.step(in).reason == TuneCurrentTimeout);
         in.enable = false;
-        CHECK(gate.step(in).blocked);
+        CHECK(!gate.step(in).blocked); // enable=0 acknowledges the timeout.
         in.enable = true;
-        CHECK(gate.step(in).blocked);
+        CHECK(!gate.step(in).blocked && !gate.status().ready);
+        CHECK(gate.step(in).ready);
     }
     return 0;
 }

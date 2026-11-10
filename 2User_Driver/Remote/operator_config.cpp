@@ -1,9 +1,9 @@
 #include "Remote/operator_control.h"
 namespace engineer {
 const OperatorConfig kOperatorConfig = {
-    false, // TODO: 在DR16_GetStatus中核对通道/拨杆实物后设true
-    0,
-    1, // 左/右拨杆原码索引；按DJI示例注释暂定，不代替实物确认
+    false, // TODO: 通道/方向全部实物核对后再设true；当前仅确认左右拨杆索引
+    1,
+    0, // 实物确认：左拨杆=switches[1]，右拨杆=switches[0]
     3,
     2,
     1,

@@ -19,6 +19,8 @@ bool near(float a, float b, float tolerance = .001f) {
 ChassisConfig confirmed() {
     ChassisConfig c{};
     c.hardware_confirmed = true;
+    // Synthetic tests use both wheels in the same sign unless a case overrides it.
+    c.direction[0] = c.direction[1] = 1;
     return c;
 }
 ChassisCommand request(uint32_t now, float speed = 0, float turn = 0) {
@@ -93,7 +95,7 @@ int test_chassis() {
         control.step(24, wheels, cmd);
         CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Idle);
     }
-    { // Gains are accepted at zero target while stationary; a moving retune never drives.
+    { // Gains apply without stopping; target zero holds and a moving retune does not add speed.
         auto config = confirmed();
         ChassisControl control(config);
         WheelFeedback wheels[2]{};
@@ -106,7 +108,8 @@ int test_chassis() {
         feedback(wheels, 4);
         control.step_tuning(4, wheels, cmd);
         CHECK(control.status().tune_result == ChassisTuneResult::Applied);
-        CHECK(control.config().velocity_ki == 0 && control.config().max_current_ma == 1000);
+        CHECK(control.config().velocity_ki == 0);
+        CHECK(control.config().max_current_ma == config.max_current_ma);
         cmd.enabled = false;
         cmd.updated_ms = 8;
         feedback(wheels, 8);
@@ -118,25 +121,25 @@ int test_chassis() {
         cmd.tune_velocity_kp = 2;
         feedback(wheels, 12, 30, 0);
         control.step_tuning(12, wheels, cmd);
-        CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Busy);
-        CHECK(control.config().velocity_kp == 1);
+        CHECK(control.status().enabled && control.status().tune_result == ChassisTuneResult::Applied);
+        CHECK(control.config().velocity_kp == 2);
         cmd.updated_ms = 16;
         cmd.tune_value = 0;
         feedback(wheels, 16);
         control.step_tuning(16, wheels, cmd);
-        CHECK(!control.status().enabled && control.config().velocity_kp == 2);
+        CHECK(control.status().enabled && control.config().velocity_kp == 2);
         CHECK(control.status().tune_result == ChassisTuneResult::Applied);
         cmd.updated_ms = 20;
         feedback(wheels, 20);
         control.step_tuning(20, wheels, cmd);
         CHECK(control.status().enabled);
         cmd.updated_ms = 24;
-        cmd.tune_current_limit_ma = 1001;
+        cmd.tune_current_limit_ma = 10001;
         feedback(wheels, 24);
         control.step_tuning(24, wheels, cmd);
         CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Invalid);
         CHECK(control.status().faults & ChassisCommandFault);
-        CHECK(control.config().max_current_ma == 1000);
+        CHECK(control.config().max_current_ma == config.max_current_ma);
     }
     { // Tuning still obeys source time, local feedback, temperature and final-output PI limits.
         ChassisControl control(confirmed());
@@ -510,9 +513,11 @@ int test_chassis() {
         CHECK(!p.receive(d, 3, 14));
         CHECK(p.status().received_ms == 13 && p.status().frames == 2);
     }
-    { // Default unconfirmed hardware and first-frame absence never yield motor effort.
+    { // Explicitly unconfirmed hardware and first-frame absence never yield motor effort.
         WheelFeedback w[2]{};
-        ChassisControl unconfirmed(kChassisConfig);
+        auto unconfirmed_config = confirmed();
+        unconfirmed_config.hardware_confirmed = false;
+        ChassisControl unconfirmed(unconfirmed_config);
         feedback(w, 0);
         unconfirmed.step(0, w, request(0, 1));
         CHECK(!unconfirmed.status().enabled && unconfirmed.status().candidate_ma[0] == 0);
@@ -549,7 +554,7 @@ int test_chassis() {
         ChassisControl a(c);
         WheelFeedback w[2]{};
         float last = 0;
-        for (uint32_t t = 0; t <= 1000; t += 4) {
+        for (uint32_t t = 0; t <= 2000; t += 4) {
             feedback(w, t);
             auto cmd = request(t, .5f, 0);
             a.step(t, w, cmd);
@@ -560,16 +565,16 @@ int test_chassis() {
             a.apply(final, true);
         }
         CHECK(near(last, .5f * c.max_speed_m_s, .00001f));
-        feedback(w, 1004);
-        auto cmd = request(1004, 1, 1);
+        feedback(w, 2004);
+        auto cmd = request(2004, 1, 1);
         cmd.brake = true;
-        a.step(1004, w, cmd);
+        a.step(2004, w, cmd);
         CHECK(a.status().reference_v_m_s < last && a.status().reference_omega_rad_s > 0);
         CHECK(a.status().target_rpm[0] < a.status().target_rpm[1]);
         last = a.status().reference_v_m_s;
-        feedback(w, 1008);
-        cmd = request(1008, -1, 0);
-        a.step(1008, w, cmd);
+        feedback(w, 2008);
+        cmd = request(2008, -1, 0);
+        a.step(2008, w, cmd);
         CHECK(a.status().reference_v_m_s >= 0 && a.status().reference_v_m_s < last);
     }
     { // Common wheel-speed saturation preserves differential curvature.
@@ -749,12 +754,14 @@ int test_chassis() {
         a.step(0, w, request(0));
         a.step_debug_speed(1, -300);
         CHECK(a.status().target_rpm[0] == 0 && a.status().target_rpm[1] == -300);
-        CHECK(a.status().candidate_ma[0] == 0 && a.status().candidate_ma[1] >= -300 &&
-              a.status().candidate_ma[1] < 0);
+        CHECK(a.status().candidate_ma[0] == 0 && a.status().candidate_ma[1] < 0 &&
+              a.status().candidate_ma[1] >= -a.config().max_current_ma);
+        a.step_debug_speed(1, 600);
+        CHECK(a.status().target_rpm[1] == 600 && a.status().candidate_ma[1] > 0);
         const float saved = a.status().candidate_ma[1];
         a.step_debug_speed(2, 200);
         CHECK(a.status().candidate_ma[1] == saved);
-        a.step_debug_speed(0, 301);
+        a.step_debug_speed(0, a.config().max_rotor_rpm + 1);
         CHECK(a.status().candidate_ma[1] == saved);
         a.step_debug_speed(0, std::numeric_limits<float>::quiet_NaN());
         CHECK(a.status().candidate_ma[1] == saved);

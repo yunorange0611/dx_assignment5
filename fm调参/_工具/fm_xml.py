@@ -114,6 +114,9 @@ class _Builder:
             "description": spec["description"], "comment": "",
             "type_fmt": "IEEE floating point" if spec["treat_as"] == 2 else "Fixed point number",
             "modif_mode": int(spec["writable"]),
+            "modif_edit_mode": 2,  # Match the user's known-working FreeMASTER editing configuration.
+            "show_as": 4 if spec["treat_as"] == 2 else 0,  # Floating decimal display, matching the known-working project.
+            "show_num_afp_digs": 1 if spec["treat_as"] == 2 else 0,
             "modif_set_min": "" if spec["min"] is None else spec["min"],
             "modif_set_max": "" if spec["max"] is None else spec["max"],
             "modif_set_step": "", "modif_address": "", "modif_last_addr": "0x0",

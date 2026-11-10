@@ -134,7 +134,7 @@ REMOTE_MAPPING = REMOTE + [V(f'g_robot_status.remote_axis[{i}]',label,'[-1,1]') 
     V('g_robot_status.remote_age_ms','原始帧年龄','ms')]
 CH_CURRENT = [V('tune_current_ma','单轮电流测试目标','mA',True,-10000,10000,
                 note='选档后从0小步填写；非零电流开始500ms计时，写0停止。')]
-CH_SPEED = [V('tune_speed_rpm','单轮速度目标 3508转子rpm','rpm',True,-300,300)]
+CH_SPEED = [V('tune_speed_rpm','单轮速度目标 3508转子rpm','rpm',True,-9000,9000)]
 CH_TUNE = [V('tune_wheel_kp','轮速P','mA/rpm',True,0.001,1000),
            V('tune_wheel_ki','轮速I','mA/(rpm*s)',True,0,1000),
            V('tune_wheel_current_limit_ma','本次轮组测试限流','mA',True,1,10000)] + variables('g_chassis_tune_status',
@@ -142,7 +142,7 @@ CH_TUNE = [V('tune_wheel_kp','轮速P','mA/rpm',True,0.001,1000),
             ('velocity_ki','生效轮速I','mA/(rpm*s)'),('max_current_ma','生效运行限流','mA')])
 CH_CLEAR = [V('g_chassis_debug_request.mode','本地维护 0停止1清底盘故障',write=True,low=0,high=1,
               note='仅维护请求。正常调轮不写它；清错填1后，最后递增同结构request_seq。'),
-            V('g_chassis_debug_request.request_seq','仅清底盘故障时最后加1',write=True,
+            V('g_chassis_debug_request.request_seq','仅清底盘故障时最后加1',write=True,low=0,high=2147483647,
               note='本地维护专用提交序号；不用于日常轮电流/速度目标。')] + variables('g_chassis_debug_status',
             [('consumed_seq','已消费维护序号',''),('result','维护结果 2已停3已请求清错5未就绪','')])
 
@@ -175,8 +175,8 @@ ARM_TUNE = [V('g_arm_tune_request.joint','调参轴 0Yaw1肩2肘3Roll4爪',write
             V('g_arm_tune_request.position_kp','位置P申请','1/s',True,0.001,1000),
             V('g_arm_tune_request.velocity_kp','速度P申请',write=True,low=0,high=1000000),
             V('g_arm_tune_request.velocity_ki','速度I申请',write=True,low=0,high=1000000),
-            V('g_arm_tune_request.effort_limit','运行输出上限申请 DM为Nm DJI为mA',write=True,low=0),
-            V('g_arm_tune_request.request_seq','关节参数提交序号 最后加1',write=True)] + variables('g_arm_tune_status', [('consumed_seq','已消费关节参数序号',''),('active_seq','已生效关节参数序号',''),('result','关节参数结果 engineer::Result',''),('active_joint','最近生效轴',''),('position_kp','生效位置P','1/s'),('velocity_kp','生效速度P',''),('velocity_ki','生效速度I',''),('effort_limit','生效输出上限 注意轴单位','')])
+            V('g_arm_tune_request.effort_limit','运行输出上限申请 DM为Nm DJI为mA',write=True,low=0,high=1000000),
+            V('g_arm_tune_request.request_seq','关节参数提交序号 最后加1',write=True,low=0,high=2147483647)] + variables('g_arm_tune_status', [('consumed_seq','已消费关节参数序号',''),('active_seq','已生效关节参数序号',''),('result','关节参数结果 engineer::Result',''),('active_joint','最近生效轴',''),('position_kp','生效位置P','1/s'),('velocity_kp','生效速度P',''),('velocity_ki','生效速度I',''),('effort_limit','生效输出上限 注意轴单位','')])
 YAW_LIMIT = [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',True,2.001,90,
               note='实物确认的线束半幅；直接填写，owner检查后生效。看result与active_half_range_deg，不写旧限位序号。')] + variables('g_yaw_limit_status',
               [('result','限位结果 0成功',''),('ready','在线限位就绪',''),('active_half_range_deg','生效半幅','deg'),
@@ -257,6 +257,28 @@ def groups():
     half_range = [V('tune_yaw_half_range_deg', 'Yaw软限位半幅', 'deg', True, 2.001, 90,
                     note='直接填写；看result与active_half_range_deg。')]
     tune = [
+        # 0档底盘直驱：只依赖共用遥控解析和两轮反馈，不绑机械臂/Yaw/IMU/功率。
+        G('0档底盘直驱｜左拨杆上', select + [
+            V('g_robot_status.remote_axis[0]', '左竖 前后请求'),
+            V('g_robot_status.remote_axis[3]', '右横 转向请求'),
+            V('g_robot_status.remote_switch[0]', '左拨杆 上1中3下2'),
+            V('g_dr16_status.valid', '遥控帧有效'),
+            V('g_robot_status.remote_age_ms', '遥控接收年龄', 'ms'),
+            V('g_robot_status.independent_stop_latched', '独立底盘STOP锁存 命令4清除'),
+            V('g_chassis_status.independent', '底盘直驱中'),
+            V('g_chassis_status.enabled', '底盘出力使能'),
+            V('g_chassis_status.faults', '底盘故障位图'),
+            V('g_chassis_status.wheels_stationary', '驱动轮静止确认'),
+            V('g_chassis_status.v_m_s', '纵向速度', 'm/s'),
+            V('g_chassis_status.omega_rad_s', '转向速度', 'rad/s')] +
+          wheel_fields(0, ('target_rpm', 'measured_rpm', 'current_ma')) +
+          wheel_fields(1, ('target_rpm', 'measured_rpm', 'current_ma')),
+          [('左轮目标/实际/电流', ['g_chassis_status.target_rpm[0]',
+                                  'g_chassis_status.measured_rpm[0]',
+                                  'g_chassis_status.current_ma[0]']),
+           ('右轮目标/实际/电流', ['g_chassis_status.target_rpm[1]',
+                                  'g_chassis_status.measured_rpm[1]',
+                                  'g_chassis_status.current_ma[1]'])]),
         # 第0批：只验证关控、失联和零输出。
         G('第0批 安全常驻', select + command + [
             V('uwTick', '系统毫秒计数', 'ms'),

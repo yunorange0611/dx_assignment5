@@ -33,10 +33,8 @@ const TuneState &RobotTuning::step(const TuneInput &input) {
         enabled_seen_ = false;
         return state_;
     }
-    // Acknowledge a failed test with enable=0; mode=0 is not required.
-    // Do not automatically restart an expired current pulse.
-    if (state_.blocked && input.enable)
-        return state_;
+    // blocked describes this cycle, not a latched zero-target handshake.
+    // Owner clears targets on failure/timeout; recovery needs a fresh target.
     state_.blocked = false;
     if (input.mode > TuneYawPosition) {
         block(TuneInvalid);
@@ -87,7 +85,7 @@ const TuneState &RobotTuning::step(const TuneInput &input) {
         limit = 10000;
     } else if (input.mode == TuneLeftSpeed || input.mode == TuneRightSpeed) {
         value = input.speed_rpm;
-        limit = 300;
+        limit = 9000;
     } else if (input.mode == TuneYawSpeed) {
         value = input.yaw_speed_deg_s;
         limit = 5;

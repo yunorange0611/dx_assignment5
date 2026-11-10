@@ -174,7 +174,7 @@ const ChassisState &ChassisControl::step_tuning(uint32_t now, const WheelFeedbac
     guarded.epoch = cmd.tune_epoch;
     const bool valid = cmd.tune_mode >= 1 && cmd.tune_mode <= 4 &&
                        std::isfinite(cmd.tune_value) &&
-                       std::fabs(cmd.tune_value) <= (cmd.tune_mode <= 2 ? startup_current_limit_ma_ : 300.0f) &&
+                       std::fabs(cmd.tune_value) <= (cmd.tune_mode <= 2 ? startup_current_limit_ma_ : c_.max_rotor_rpm) &&
                        std::isfinite(cmd.tune_velocity_kp) && cmd.tune_velocity_kp > 0 &&
                        cmd.tune_velocity_kp <= 1000 && std::isfinite(cmd.tune_velocity_ki) &&
                        cmd.tune_velocity_ki >= 0 && cmd.tune_velocity_ki <= 1000 &&
@@ -265,7 +265,8 @@ void ChassisControl::direct_output() {
     }
 }
 void ChassisControl::step_debug_speed(unsigned wheel, float rpm) {
-    if (!s_.enabled || wheel > 1 || !std::isfinite(rpm) || std::fabs(rpm) > 300)
+    if (!s_.enabled || wheel > 1 || !std::isfinite(rpm) ||
+        std::fabs(rpm) > c_.max_rotor_rpm)
         return;
     for (unsigned i = 0; i < 2; ++i) {
         s_.target_rpm[i] = i == wheel ? rpm : 0;

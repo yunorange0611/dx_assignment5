@@ -257,6 +257,7 @@ void control_and_limit(ChassisRuntime &runtime) {
     auto &command = runtime.command;
     const auto &energy = runtime.energy.status();
     const bool wheel_tuning = command.tune_mode >= 1 && command.tune_mode <= 4;
+    const bool independent = command.independent;
     if (command.tune_mode) {
         // Unconfirmed power is permitted only for tightly current-limited wheel
         // tuning. Once confirmed, its data/energy limits are real requirements.
@@ -268,6 +269,19 @@ void control_and_limit(ChassisRuntime &runtime) {
         }
         if (!wheel_tuning || runtime.tune_blocked)
             command.enabled = false;
+    } else if (independent) {
+        // Chassis-only drive: a missing/unconfirmed power meter must not block
+        // output. If the meter is confirmed, keep its real limits.
+        if (energy.confirmed) {
+            command.enabled &= energy.session_allowed;
+            if (energy.stop_requested) {
+                command.stop = command.brake = true;
+                command.speed_request = command.turn_request = 0;
+            } else {
+                command.speed_request *= energy.speed_scale;
+                command.turn_request *= energy.speed_scale;
+            }
+        }
     } else {
         command.enabled &= energy.session_allowed;
         if (energy.stop_requested) {
@@ -304,12 +318,12 @@ void control_and_limit(ChassisRuntime &runtime) {
     }
     runtime.final_ma[0] = runtime.control.status().candidate_ma[0];
     runtime.final_ma[1] = runtime.control.status().candidate_ma[1];
-    if (!command.tune_mode || energy.confirmed)
+    if ((!independent && !command.tune_mode) || energy.confirmed)
         runtime.energy.limit(runtime.control.status().candidate_ma,
                              runtime.control.status().measured_rpm, runtime.final_ma);
     if (!runtime.control.status().enabled)
         runtime.final_ma[0] = runtime.final_ma[1] = 0;
-    runtime.bench_active = wheel_tuning && runtime.control.status().enabled;
+    runtime.bench_active = (wheel_tuning || independent) && runtime.control.status().enabled;
     if (wheel_tuning) {
         auto &status = runtime.tune_status;
         status.result = uint32_t(runtime.control.status().tune_result);
@@ -362,6 +376,7 @@ void publish_status(const ChassisRuntime &runtime) {
     status.tune_result = uint32_t(control.tune_result);
     status.tune_blocked = runtime.tune_blocked;
     status.tune_current_limit_ma = control.tune_current_limit_ma;
+    status.independent = runtime.command.independent && control.enabled;
     status.faults = control.faults;
     status.rx_dropped = drops;
     status.tx_errors = can_tx_error_count[1];

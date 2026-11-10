@@ -63,3 +63,17 @@ robot_tune_mode仅选择对象/控制层。tune_enable为旧FM兼容符号，不
 
 
 2026-11-11：按用户要求，M3508/C620每轮输出上限改为10000mA（20A控制量程一半，非两轮总和）。单轮电流目标范围与默认调参电流上限同步10000mA，移除300mA调参钳位。速度目标仍±300转子rpm，电流脉冲500ms、功率保护/故障处理不变。上限不等于实际输出，速度PI仍按误差计算电流。
+
+
+2026-11-11：去掉FM速度和轮速PI的人工输入范围，浮点采用直接输入及6位小数显示；固件单轮速度上限由300改为现有转子上限9000rpm（ChassisConfig.max_rotor_rpm）。PI仍要求有限、P>0、I>=0，固件保留原增益合法范围及10A输出上限，不允许NaN/Inf。9000为边界而非调试起步建议。
+
+
+轮速PI实测记录：Kp=3.4、Ki=1.3，已同步正常控制默认值与FM调参初值。移除RobotTuning失败后必须零目标解锁的历史锁存；故障仍禁止输出并由owner清目标，条件恢复后直接提交新目标即可。电流500ms超时仍保留。
+
+
+### 2026-11-11 0档底盘直驱（交接用）
+- `ChassisConfig.h` 的 `kChassisIndependent=true` 时：`robot_tune_mode=0`、左拨杆上、遥控在线，底盘直接使用共用解析值 `remote_axis[0]`（左竖）和 `remote_axis[3]`（右横）驱动；不再要求机械臂 active、Yaw 半幅、IMU 或功率计。
+- 左拨杆中/下、松杆、遥控失联、命令1：停止/制动。
+- 遥控解析、通道、方向、死区仍共用；机械臂/Yaw 代码不参与底盘输出。
+- `ChassisCommand.independent` 是内部标记；`g_chassis_status.independent` 为只读状态。FreeMASTER 的“0档底盘直驱｜左拨杆上”Group 用于观察。
+- 以后整车联调时把 `kChassisIndependent` 改回 false，恢复 `Robot_GetChassisCommand()` 的整车许可路径；底盘控制算法和 CAN2 发送入口不变。

@@ -57,8 +57,8 @@ struct Rig {
             80; // Physically absent and uncalibrated; must never gate four-axis control.
         status.joint[Gripper].position_deg = 22.5f;
         rc.valid = true;
-        rc.frame.switches[0] = DR16_SWITCH_MID;
-        rc.frame.switches[1] = DR16_SWITCH_MID;
+        rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
+        rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
         locks.valid = false;
         locks.drive_yaw_allowed = true;
         locks.drive_yaw_min_deg =
@@ -84,7 +84,7 @@ struct Rig {
     void neutral() {
         for (auto &v : rc.frame.channel)
             v = 0;
-        rc.frame.switches[1] = DR16_SWITCH_MID;
+        rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
     }
 };
 } // namespace
@@ -176,10 +176,10 @@ int test_four_axis() {
     { // Healthy UP->MID requires the complete 300ms neutral interval and produces one enable
       // request.
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         auto o = r.tick(true);
         CHECK(o.disable_arm && !o.request_enable && !o.active);
-        r.rc.frame.switches[0] = DR16_SWITCH_MID;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
         for (unsigned n = 0; n < 75; ++n) {
             o = r.tick();
             CHECK(!o.request_enable && !o.active);
@@ -194,22 +194,22 @@ int test_four_axis() {
         CHECK(o.target_deg[BigPitch] > 0 && o.target_deg[SmallPitch] > 0 && o.target_deg[Roll] > 0);
         CHECK(o.target_deg[Yaw] == 0 && o.turn_rate_request == 0 &&
               o.longitudinal_speed_request == 0);
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         o = r.tick();
         CHECK(!o.active && o.disable_arm && o.stop_chassis);
     }
     { // MID non-neutral cancels the entire auto candidate, not merely the neutral timer.
         for (unsigned input = 0; input < 5; ++input) {
             Rig r;
-            r.rc.frame.switches[0] = DR16_SWITCH_UP;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
             r.tick();
-            r.rc.frame.switches[0] = DR16_SWITCH_MID;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
             for (unsigned n = 0; n < 10; ++n)
                 r.tick();
             if (input < 4)
                 r.rc.frame.channel[input] = 660;
             else
-                r.rc.frame.switches[1] = DR16_SWITCH_DOWN;
+                r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_DOWN;
             auto o = r.tick();
             CHECK(!o.active && !o.request_enable);
             r.neutral();
@@ -217,9 +217,9 @@ int test_four_axis() {
                 o = r.tick();
                 CHECK(!o.active && !o.request_enable);
             }
-            r.rc.frame.switches[0] = DR16_SWITCH_UP;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
             r.tick();
-            r.rc.frame.switches[0] = DR16_SWITCH_MID;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
             for (unsigned n = 0; n < 75; ++n)
                 r.tick();
             o = r.tick();
@@ -230,13 +230,13 @@ int test_four_axis() {
       // use.
         for (unsigned path = 0; path < 2; ++path) {
             Rig r;
-            r.rc.frame.switches[0] = DR16_SWITCH_UP;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
             r.tick();
             if (path) {
-                r.rc.frame.switches[0] = DR16_SWITCH_DOWN;
+                r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
                 r.tick();
             }
-            r.rc.frame.switches[0] = DR16_SWITCH_MID;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
             if (!path)
                 r.rc.frame.channel[3] = 660;
             r.tick();
@@ -251,9 +251,9 @@ int test_four_axis() {
       // permanently.
         for (unsigned reason = 0; reason < 5; ++reason) {
             Rig r;
-            r.rc.frame.switches[0] = DR16_SWITCH_UP;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
             r.tick();
-            r.rc.frame.switches[0] = DR16_SWITCH_MID;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
             if (reason == 0)
                 r.status.joint[Roll].online = false;
             if (reason == 1)
@@ -285,9 +285,9 @@ int test_four_axis() {
       // candidate.
         for (unsigned reason = 0; reason < 4; ++reason) {
             Rig r;
-            r.rc.frame.switches[0] = DR16_SWITCH_UP;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
             r.tick();
-            r.rc.frame.switches[0] = DR16_SWITCH_MID;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
             for (unsigned n = 0; n < 10; ++n)
                 r.tick();
             if (reason == 0)
@@ -295,11 +295,11 @@ int test_four_axis() {
             if (reason == 2)
                 r.now += 20;
             if (reason == 3)
-                r.rc.frame.switches[0] = 0;
+                r.rc.frame.switches[kOperatorConfig.left_switch_index] = 0;
             auto o = r.tick(false, reason == 1);
             CHECK(!o.active && !o.request_enable && o.disable_arm);
             r.rc.valid = true;
-            r.rc.frame.switches[0] = DR16_SWITCH_MID;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
             for (unsigned n = 0; n < 100; ++n) {
                 o = r.tick();
                 CHECK(!o.active && !o.request_enable);
@@ -312,7 +312,7 @@ int test_four_axis() {
         CHECK(r.start_explicit().active);
         r.status.joint[BigPitch].position_deg = 3;
         r.status.joint[SmallPitch].position_deg = -2;
-        r.rc.frame.switches[0] = DR16_SWITCH_DOWN;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
         auto o = r.tick();
         const auto held = o;
         CHECK(o.active && !o.disable_arm && o.stop_chassis && o.emergency_stop);
@@ -320,7 +320,7 @@ int test_four_axis() {
         for (unsigned n = 0; n < 100; ++n) {
             for (unsigned j = 0; j < 4; ++j)
                 r.rc.frame.channel[j] = 660;
-            r.rc.frame.switches[1] = 1 + n % 3;
+            r.rc.frame.switches[kOperatorConfig.right_switch_index] = 1 + n % 3;
             o = r.tick(true);
             CHECK(o.active && !o.request_enable && !o.disable_arm && o.emergency_stop &&
                   o.stop_chassis);
@@ -328,7 +328,7 @@ int test_four_axis() {
                 CHECK(o.target_deg[j] == held.target_deg[j]);
         }
         Rig disabled;
-        disabled.rc.frame.switches[0] = DR16_SWITCH_DOWN;
+        disabled.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
         for (unsigned n = 0; n < 100; ++n) {
             o = disabled.tick(true);
             CHECK(!o.active && o.disable_arm && !o.request_enable);
@@ -345,7 +345,7 @@ int test_four_axis() {
         for (uint32_t t = 0; t < 800; t += 4) {
             feed_four(arm, t);
             input.rc.received_ms = t;
-            input.rc.frame.switches[0] =
+            input.rc.frame.switches[kOperatorConfig.left_switch_index] =
                 t == 0 ? DR16_SWITCH_UP : (t < 500 ? DR16_SWITCH_MID : DR16_SWITCH_DOWN);
             const auto o = op.step(input.rc, input.locks, arm.status(), t, false, false);
             if (o.request_enable) {

@@ -82,6 +82,8 @@ extern "C" int Chassis_GetStatus(ChassisStatus *out) {
     return out->ready;
 }
 int test_robot_control() {
+    // The legacy whole-vehicle bridge tests below expect the old command gate.
+    kChassisIndependent = false;
     static_assert(sizeof(ChassisCommand) < sizeof(RobotControlStatus));
     static_assert(unsigned(RobotMode::Standby) == ROBOT_STANDBY);
     static_assert(unsigned(RobotMode::Drive) == ROBOT_DRIVE);
@@ -272,8 +274,8 @@ int test_robot_control() {
     CHECK(vehicle_reads == 0); // Teammate's four-axis bench remains independent.
 #endif
     if (kArmConfig.joint_mask == kAllJoints) {
-        // Default confirmations stay false. Runtime requests must be rejected
-        // once, never become delayed starts, and still preserve an existing hold.
+        // Default confirmations stay false. A mode change clears the target once;
+        // a zero target waits for a fresh nonzero value and preserves the hold.
         auto local = kArmConfig;
         local.hardware_confirmed = true;
         local.pitch.mapping_confirmed = true;
@@ -301,14 +303,14 @@ int test_robot_control() {
         fresh_inputs(now);
         CHECK(feed_all(held, now));
         Robot_Execute(held, now, false);
-        CHECK(!g_robot_tune_status.ready && g_robot_tune_status.blocked);
+        CHECK(!g_robot_tune_status.ready && !g_robot_tune_status.blocked);
         const auto entry_epoch = g_robot_tune_status.epoch;
         for (unsigned n = 0; n < 80; ++n) {
             now += 4;
             fresh_inputs(now);
             CHECK(feed_all(held, now));
             Robot_Execute(held, now, false);
-            CHECK(!g_robot_tune_status.ready && g_robot_tune_status.blocked &&
+            CHECK(!g_robot_tune_status.ready && !g_robot_tune_status.blocked &&
                   g_robot_tune_status.epoch == entry_epoch);
             CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.tune_value == 0);
         }
@@ -387,5 +389,73 @@ int test_robot_control() {
         robot_tune_mode = 0;
         test_hal_tick = 1234;
     }
+    if (kArmConfig.joint_mask == kAllJoints) {
+        // Independent chassis path: 0档 + left switch up must drive without the
+        // arm being active; STOP latches; an arm fault must not clear the command.
+        kChassisIndependent = true;
+        robot_tune_mode = 0;
+        uint32_t now = 1240;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
+        ArmControl independent_arm(kArmConfig);
+        CHECK(feed_all(independent_arm, now));
+        Robot_RequestControl(); // Clear any STOP latch left by earlier blocks.
+        Robot_Execute(independent_arm, now, false);
+        CHECK(Robot_GetControlStatus(&s));
+        CHECK(Robot_GetChassisCommand(&command));
+        CHECK(command.independent && command.enabled);
+        CHECK(command.speed_request > .9f && command.turn_request == 0);
+        CHECK(!s.emergency_stop && !s.stop_chassis);
+        CHECK(s.longitudinal_speed_request > .9f);
+        ChassisControl direct(kChassisConfig);
+        WheelFeedback direct_wheels[2]{};
+        for (auto &wheel : direct_wheels) {
+            wheel.received_ms = now;
+            wheel.frames = 1;
+            wheel.temperature_c = 25;
+        }
+        direct.step(now, direct_wheels, command);
+        CHECK(direct.status().enabled && direct.status().target_rpm[0] > 0);
+        CHECK(direct.status().candidate_ma[0] > 0);
+
+        // An arm fault is arm-side only; the independent chassis command stays.
+        engineer::Status fault{};
+        fault.faults = engineer::FeedbackTimeout;
+        Robot_ReportArmState(fault);
+        CHECK(Robot_GetChassisCommand(&command) && command.independent && command.enabled);
+        CHECK(Robot_GetControlStatus(&s));
+        CHECK(!s.emergency_stop && !s.stop_chassis);
+
+        // Explicit STOP latches and must not auto-resume from the held stick.
+        Robot_StopControl();
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
+        Robot_Execute(independent_arm, now, false);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.stop);
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
+        Robot_Execute(independent_arm, now, false);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.stop);
+
+        // Explicit command 4 clears the latch.
+        Robot_RequestControl();
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
+        Robot_Execute(independent_arm, now, false);
+        CHECK(Robot_GetChassisCommand(&command) && command.enabled && command.independent);
+        // Consume the request and leave a clean latch state for later tests.
+        Robot_RequestControl();
+        now += 4;
+        fresh_inputs(now);
+        Robot_Execute(independent_arm, now, false);
+    }
+    kChassisIndependent = true;
     return 0;
 }

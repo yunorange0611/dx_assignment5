@@ -44,8 +44,8 @@ struct Rig {
         }
         arm.joint[Gripper].position_deg = 22.5f;
         rc.valid = true;
-        rc.frame.switches[0] = DR16_SWITCH_MID;
-        rc.frame.switches[1] = DR16_SWITCH_MID;
+        rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
+        rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
         locks.valid = true;
         locks.chassis_stopped = true;
         locks.arm_allows_drive = true;
@@ -79,7 +79,7 @@ struct Rig {
     void neutral() {
         for (auto &v : rc.frame.channel)
             v = 0;
-        rc.frame.switches[1] = DR16_SWITCH_MID;
+        rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
     }
 };
 Config bench() {
@@ -169,7 +169,7 @@ int test_operator() {
     }
     { // 行驶左横只动yaw；右横只动底盘。纵向和独立yaw可同时操作。
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         CHECK(r.start().active);
         r.rc.frame.channel[2] = 660;
         auto o = r.tick();
@@ -205,36 +205,36 @@ int test_operator() {
     }
     { // 上、中慢，下快；拒绝快速只降档，不能清除人工请求或缩放归一化意图。
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         CHECK(r.start().active);
         r.rc.frame.channel[3] = 660;
         auto o = r.tick();
         CHECK(o.drive_gear == DriveGear::Slow && !o.fast_requested &&
               o.longitudinal_speed_request == 1);
-        r.rc.frame.switches[1] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_UP;
         o = r.tick();
         CHECK(o.drive_gear == DriveGear::Slow && !o.fast_requested);
-        r.rc.frame.switches[1] = DR16_SWITCH_DOWN;
+        r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_DOWN;
         o = r.tick();
         CHECK(o.drive_gear == DriveGear::Fast && o.fast_requested &&
               o.longitudinal_speed_request == 1);
         r.locks.arm_allows_fast = false;
         o = r.tick();
         CHECK(o.drive_gear == DriveGear::Slow && o.fast_requested && o.active);
-        r.rc.frame.switches[1] = DR16_SWITCH_MID;
+        r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
         o = r.tick();
         CHECK(!o.fast_requested && o.drive_gear == DriveGear::Slow);
     }
     { // 行驶->夹取：未停稳或未回中均不能放行。
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         CHECK(r.start().active);
         r.rc.frame.channel[3] = 660;
         r.locks.chassis_stopped = false;
         auto o = r.tick();
         CHECK(o.active && !o.stop_chassis); // 正常行驶不永久要求stopped。
         const auto epoch = o.motion_epoch;
-        r.rc.frame.switches[0] = DR16_SWITCH_MID;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_MID;
         o = r.tick();
         CHECK(o.block == OperatorBlock::WaitChassisStop && o.stop_chassis &&
               o.reset_chassis_motion);
@@ -256,9 +256,9 @@ int test_operator() {
     { // 夹取->行驶：旧夹紧下档不能成为快速；双向切换都确认实际停车。
         Rig r;
         CHECK(r.start().active);
-        r.rc.frame.switches[1] = DR16_SWITCH_DOWN;
+        r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_DOWN;
         r.tick();
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         r.locks.chassis_stopped = false;
         auto o = r.tick();
         CHECK(o.stop_chassis && o.reset_chassis_motion && !o.fast_requested);
@@ -285,7 +285,7 @@ int test_operator() {
         r.arm.joint[BigPitch].position_deg = 3;
         r.arm.joint[SmallPitch].position_deg = -2;
         r.arm.joint[Roll].position_deg = 4;
-        r.rc.frame.switches[0] = DR16_SWITCH_DOWN;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
         for (auto &v : r.rc.frame.channel)
             v = 660;
         auto o = r.tick();
@@ -295,7 +295,7 @@ int test_operator() {
         r.arm.joint[Yaw].position_deg = 8;
         r.arm.joint[Gripper].position_deg = 23;
         for (unsigned n = 0; n < 300; ++n) {
-            r.rc.frame.switches[1] = 1 + n % 3;
+            r.rc.frame.switches[kOperatorConfig.right_switch_index] = 1 + n % 3;
             for (unsigned j = 0; j < 4; ++j)
                 r.rc.frame.channel[j] = (n + j) % 2 ? -660 : 660;
             o = r.tick(true);
@@ -308,7 +308,7 @@ int test_operator() {
                 CHECK(o.target_deg[j] == entered.target_deg[j]);
             CHECK(o.gripper_effort_limit == r.config.gripper_hold_current);
         }
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         o = r.tick();
         CHECK(o.wait_neutral && o.stop_chassis);
         r.neutral();
@@ -319,14 +319,14 @@ int test_operator() {
     }
     { // 初始失能或关控后进入待机，包含显式开控请求，也不能自动使能。
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_DOWN;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
         for (unsigned n = 0; n < 10; ++n) {
             const auto o = r.tick(true);
             CHECK(!o.active && o.disable_arm && !o.request_enable && o.stop_chassis);
         }
         Rig a;
         CHECK(a.start().active);
-        a.rc.frame.switches[0] = DR16_SWITCH_DOWN;
+        a.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
         a.tick();
         auto o = a.tick(false, true);
         CHECK(!o.active && o.disable_arm && o.emergency_stop);
@@ -348,7 +348,7 @@ int test_operator() {
             input.rc.received_ms = t;
             input.locks.received_ms = t;
             if (t >= 20)
-                input.rc.frame.switches[0] = DR16_SWITCH_DOWN;
+                input.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
             const auto o = op.step(input.rc, input.locks, arm.status(), t, t == 12, false);
             if (o.request_enable) {
                 const bool ok = arm.enable(kAllJoints, t) == Result::Ok;
@@ -369,7 +369,7 @@ int test_operator() {
     }
     { // 行驶yaw只按经许可范围/速度调整，禁用后不追着反馈重设保持目标。
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         r.arm.joint[Yaw].position_deg = 19.999f;
         CHECK(r.start().active);
         r.rc.frame.channel[2] = 660;
@@ -392,7 +392,7 @@ int test_operator() {
     }
     { // 许可收紧不能强拉yaw进入新范围，需停车等待处理。
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         r.arm.joint[Yaw].position_deg = 15;
         CHECK(r.start().active);
         r.locks.drive_yaw_max_deg = 10;
@@ -405,7 +405,7 @@ int test_operator() {
         for (auto mode : {DR16_SWITCH_UP, DR16_SWITCH_MID, DR16_SWITCH_DOWN}) {
             Rig r;
             CHECK(r.start().active);
-            r.rc.frame.switches[0] = mode;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = mode;
             r.tick();
             r.rc.valid = false;
             auto o = r.tick();
@@ -443,7 +443,7 @@ int test_operator() {
     }
     { // 姿态许可丢失后停车，需停稳并回中；已经使能的关节仍保持。
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         CHECK(r.start().active);
         r.rc.frame.channel[3] = 660;
         r.locks.chassis_stopped = false;
@@ -499,7 +499,7 @@ int test_operator() {
     { // 未经核定或畸形yaw包络不能作为允许运动的依据。
         for (unsigned bad = 0; bad < 6; ++bad) {
             Rig r;
-            r.rc.frame.switches[0] = DR16_SWITCH_UP;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
             CHECK(r.start().active);
             if (bad == 0)
                 r.locks.drive_yaw_min_deg = std::numeric_limits<float>::quiet_NaN();
@@ -518,7 +518,7 @@ int test_operator() {
             CHECK(o.block == OperatorBlock::InvalidInterlock && o.turn_rate_request == 0);
         }
         Rig r;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         r.locks.drive_yaw_allowed = false;
         r.locks.drive_yaw_min_deg = 0;
         r.locks.drive_yaw_max_deg = 0;
@@ -532,7 +532,7 @@ int test_operator() {
     { // Tick回绕不会跳过回中检查，也不能把新报文判为失联。
         Rig r;
         r.now = 0xfffffff8u;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         CHECK(r.start().active);
         CHECK(r.now < 32);
         r.rc.frame.channel[0] = 660;
@@ -542,13 +542,13 @@ int test_operator() {
     { // 夹爪上/中/下及原有闭合超时、电流限制保持。
         Rig r;
         CHECK(r.start().active);
-        r.rc.frame.switches[1] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_UP;
         auto o = r.tick();
         CHECK(o.target_deg[Gripper] < 22.5f);
-        r.rc.frame.switches[1] = DR16_SWITCH_MID;
+        r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_MID;
         o = r.tick();
         CHECK(o.target_deg[Gripper] == 22.5f);
-        r.rc.frame.switches[1] = DR16_SWITCH_DOWN;
+        r.rc.frame.switches[kOperatorConfig.right_switch_index] = DR16_SWITCH_DOWN;
         o = r.tick();
         CHECK(o.target_deg[Gripper] > 22.5f && o.gripper_effort_limit == 500);
         r.tick();
@@ -636,7 +636,7 @@ int test_operator() {
         auto o = a.step(r.rc, r.locks, r.arm, 0, true, false);
         CHECK(o.disable_arm && o.block == OperatorBlock::InvalidConfig);
         r.start();
-        r.rc.frame.switches[0] = 0;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = 0;
         o = r.tick();
         CHECK(o.disable_arm);
         Rig t;
@@ -652,7 +652,7 @@ int test_operator() {
             r.rc.frame.channel[3] = 660;
             r.tick(); // Leave an old normal-operation target that must not be reused.
             r.neutral();
-            r.rc.frame.switches[0] = left;
+            r.rc.frame.switches[kOperatorConfig.left_switch_index] = left;
             r.arm.joint[Yaw].position_deg = 2;
             r.arm.joint[BigPitch].position_deg = 6;
             r.arm.joint[SmallPitch].position_deg = -2;
@@ -714,7 +714,7 @@ int test_operator() {
         Rig r;
         CHECK(r.start().active);
         r.now += 100000;
-        r.rc.frame.switches[0] = DR16_SWITCH_UP;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
         r.locks.arm_allows_drive = false;
         r.op.resume_from_tuning(r.arm, r.rc, r.now);
         const auto o = r.tick(true);

@@ -23,7 +23,7 @@ volatile uint32_t robot_tune_mode = 0;
 volatile float tune_current_ma = 0, tune_speed_rpm = 0, tune_yaw_speed_deg_s = 0,
     tune_yaw_target_deg = 0;
 volatile float tune_wheel_kp = engineer::kChassisConfig.velocity_kp,
-    tune_wheel_ki = 0, tune_wheel_current_limit_ma = 10000;
+    tune_wheel_ki = engineer::kChassisConfig.velocity_ki, tune_wheel_current_limit_ma = 10000;
 volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
     tune_yaw_velocity_ki = 0, tune_yaw_current_limit_ma = 100, tune_yaw_half_range_deg = 0;
@@ -33,6 +33,7 @@ namespace {
 engineer::Interlocks shared_interlocks;
 engineer::ChassisCommand chassis_command;
 bool arm_requested = false, stop_requested = false;
+bool chassis_stop_latched = false; // Independent chassis STOP; cleared only by explicit command 4.
 uint32_t stop_epoch = 0;
 engineer::RobotTuning tuning;
 bool tune_exit_wait = false;
@@ -93,6 +94,25 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     yaw_tune = {tune_yaw_position_kp, tune_yaw_velocity_kp, tune_yaw_velocity_ki,
                 tune_yaw_current_limit_ma};
     taskEXIT_CRITICAL();
+    // 0档底盘直驱：调参退出不等整车 resume/命令4。清掉调参目标后立即回到
+    // 正常路径，由独立底盘命令接管；机械臂恢复仍走它自己的命令4流程。
+    if (!requested && kChassisIndependent) {
+        if (tuning.status().mode || tune_exit_wait) {
+            TuneInput normal{};
+            normal.mode = TuneNormal;
+            normal.now_ms = now;
+            tuning.step(normal);
+            zero_tune_targets(arm.status().joint[Yaw].position_deg);
+            arm.clear_yaw_test();
+            if (tune_added_mask) {
+                arm.disable_joints(tune_added_mask);
+                tune_added_mask = 0;
+            }
+            controller.enable_result(false);
+            tune_exit_wait = false;
+        }
+        return false;
+    }
     if (!requested && !tuning.status().mode && !tune_exit_wait) {
         return false;
     }
@@ -466,6 +486,16 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
             break;
         }
     }
+    // Independent chassis STOP is latched. A one-cycle stop_request would
+    // otherwise allow the next cycle to restart from the still-held stick.
+    if (kChassisIndependent) {
+        if (force_stop || stop_request)
+            chassis_stop_latched = true;
+        else if (arm_request)
+            chassis_stop_latched = false;
+    } else {
+        chassis_stop_latched = false;
+    }
     RemoteInput input{rx.frame, rx.received_ms, rx.valid && rx.consecutive_frames >= 3};
     const uint32_t elapsed =
         initialized ? uint32_t(now - previous_ms) : kArmConfig.control_period_ms;
@@ -560,6 +590,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     next.block = uint8_t(result.block);
     next.active = result.active;
     next.wait_neutral = result.wait_neutral;
+    next.independent_stop_latched = chassis_stop_latched;
     next.remote_online = remote_ok;
     next.remote_age_ms = now - input.received_ms;
     next.interlock_age_ms = bench ? 0 : now - locks.received_ms; // 台架不使用此输入，非伪造停车反馈
@@ -582,17 +613,46 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     // the diagnostic snapshot. Four-axis and all tuning builds deny driving.
     ChassisCommand command{};
     command.valid = true;
+    // 0档底盘直驱：解析值仍来自同一次 observe_remote()，只是不再要求
+    // result.active（机械臂开控）和整车/云台/IMU/功率许可。
+    const bool independent = kChassisIndependent && !bench && robot_tune_mode == 0;
+    if (independent) {
+        const bool switches_valid = kOperatorConfig.left_switch_index < 2;
+        const bool drive_switch = switches_valid &&
+            input.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP;
+        command.independent = true;
+        command.enabled = drive_switch && remote_ok && !force_stop && !stop_request &&
+                          !chassis_stop_latched;
+        command.speed_request = next.remote_axis[0];
+        command.turn_request = -next.remote_axis[3];
+        command.stop = !command.enabled ||
+                       (command.speed_request == 0 && command.turn_request == 0);
+        command.brake = !command.enabled || command.speed_request == 0;
+        command.reset = !command.enabled;
+        command.epoch = result.motion_epoch;
+        // 诊断快照跟随底盘实际请求；active/enabled_mask 仍是机械臂真实状态。
+        next.emergency_stop = 0;
+        next.stop_chassis = command.stop;
+        next.longitudinal_brake = command.brake;
+        next.reset_chassis_motion = command.reset;
+        next.longitudinal_speed_request = command.speed_request;
+        next.turn_rate_request = command.turn_request;
+        next.fast_requested = false;
+        next.drive_gear = ROBOT_GEAR_SLOW;
+        next.drive_yaw_limited = 1;
+    } else {
 #if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
-    command.enabled =
-        kArmConfig.joint_mask == kAllJoints && result.active && !result.emergency_stop;
+        command.enabled =
+            kArmConfig.joint_mask == kAllJoints && result.active && !result.emergency_stop;
 #endif
-    command.stop = result.stop_chassis;
-    command.brake = result.longitudinal_brake;
-    command.reset = result.reset_chassis_motion;
-    command.speed_request = result.longitudinal_speed_request;
-    command.turn_request = result.turn_rate_request;
+        command.stop = result.stop_chassis;
+        command.brake = result.longitudinal_brake;
+        command.reset = result.reset_chassis_motion;
+        command.speed_request = result.longitudinal_speed_request;
+        command.turn_request = result.turn_rate_request;
+        command.epoch = result.motion_epoch;
+    }
     command.updated_ms = now;
-    command.epoch = result.motion_epoch;
     command.stop_epoch = next.stop_epoch;
     taskENTER_CRITICAL();
     g_robot_status = next;
@@ -608,23 +668,25 @@ void Robot_ReportArmState(const engineer::Status &s) {
     if (s.faults || (g_robot_status.active && s.enabled_mask != expected)) {
         Task_Protect_Trip(PROTECT_ARM_FAULT, HAL_GetTick());
         g_robot_status.active = 0;
-        g_robot_status.emergency_stop = 1;
-        g_robot_status.stop_chassis = 1;
-        g_robot_status.longitudinal_brake = 1;
-        g_robot_status.reset_chassis_motion = 1;
-        g_robot_status.fast_requested = 0;
-        g_robot_status.drive_gear = ROBOT_GEAR_SLOW;
-        g_robot_status.longitudinal_speed_request = 0;
-        g_robot_status.turn_rate_request = 0;
         g_robot_status.block = uint8_t(engineer::OperatorBlock::ArmUnavailable);
+        if (!chassis_command.independent) {
+            g_robot_status.emergency_stop = 1;
+            g_robot_status.stop_chassis = 1;
+            g_robot_status.longitudinal_brake = 1;
+            g_robot_status.reset_chassis_motion = 1;
+            g_robot_status.fast_requested = 0;
+            g_robot_status.drive_gear = ROBOT_GEAR_SLOW;
+            g_robot_status.longitudinal_speed_request = 0;
+            g_robot_status.turn_rate_request = 0;
+            chassis_command.enabled = false;
+            chassis_command.stop = true;
+            chassis_command.brake = true;
+            chassis_command.reset = true;
+            chassis_command.speed_request = 0;
+            chassis_command.turn_request = 0;
+            chassis_command.tune_value = 0;
+        }
         publish_protection(g_robot_status);
-        chassis_command.enabled = false;
-        chassis_command.stop = true;
-        chassis_command.brake = true;
-        chassis_command.reset = true;
-        chassis_command.speed_request = 0;
-        chassis_command.turn_request = 0;
-        chassis_command.tune_value = 0;
         if (tuning_owns) {
             engineer::TuneInput failed{};
             failed.mode = tuning.status().mode;
