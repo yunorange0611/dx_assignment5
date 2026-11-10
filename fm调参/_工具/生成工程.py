@@ -138,6 +138,12 @@ def joint(i):
         ('effort','控制输出','mA' if i in (0,3,4) else 'Nm')]]
 
 
+ARM_OTHER_HEALTH = [V(f'g_arm_status.joint[{i}].{name}', label, unit)
+                    for i in (3, 4) for name, label, unit in [
+                        ('online', '辅助轴在线', ''), ('calibrated', '辅助轴已校零', ''),
+                        ('faults', '辅助轴故障', ''), ('drive_velocity_deg_s', '辅助轴驱动速度', 'deg/s')]]
+
+
 ARM_TUNE = [V('g_arm_tune_request.joint','调参轴 0Yaw1肩2肘3Roll4爪',write=True,low=0,high=4),
             V('g_arm_tune_request.position_kp','位置P申请','1/s',True,0.001,1000),
             V('g_arm_tune_request.velocity_kp','速度P申请',write=True,low=0,high=1000000),
@@ -182,7 +188,7 @@ def groups(profile):
                 G('第2批 左轮ID1方向｜mode=2',COMMON+CH_COMMON+CH_REQUEST+wheel(0),[wheel_scope(0)]),
                 G('第3批 右轮ID2方向｜mode=2',COMMON+CH_COMMON+CH_REQUEST+wheel(1),[wheel_scope(1)]),
                 G('第4批 两轮速度PI｜mode=3',COMMON+CH_COMMON+CH_TUNE+CH_REQUEST+wheel(0)+wheel(1),[wheel_scope(0),wheel_scope(1)]),
-                G('第5批 抬臂后待机保持｜左下才允许轮脉冲',COMMON+CH_COMMON+CH_REQUEST+joint(1)+joint(2),[arm_scope(1),arm_scope(2)]),
+                G('第5批 抬臂后待机保持｜左下才允许轮脉冲',COMMON+CH_COMMON+CH_REQUEST+joint(1)+joint(2)+ARM_OTHER_HEALTH,[arm_scope(1),arm_scope(2)]),
                 G('第6批 下一阶段Yaw｜先切换分组工具选择Yaw',COMMON)]
     elif profile == 'YawBenchDebug':
         tune = [base,G('第6批 Yaw线束中位与软限位｜先关控',COMMON+YAW_LIMIT+joint(0)),
@@ -213,10 +219,10 @@ def groups(profile):
 
 def arm_groups():
     return [G('第0步 关控与连接｜ChassisBenchDebug',COMMON+[V('g_arm_status.updated_ms','机械臂发布时间','ms'),V('g_arm_status.ready','机械臂任务就绪')]),
-            G('第1步 双Pitch人工联合零位｜命令2',COMMON+[V('g_arm_status.last_result','Arm最近操作结果'),V('g_arm_status.configuration_valid','Arm配置合法')]+joint(1)+joint(2)),
+            G('第1步 双Pitch人工联合零位｜命令2',COMMON+[V('g_arm_status.last_result','Arm最近操作结果'),V('g_arm_status.configuration_valid','Arm配置合法')]+joint(1)+joint(2)+ARM_OTHER_HEALTH),
             G('第2步 简易抬肩抬肘｜左中 遥控操作',COMMON+joint(1)+joint(2),[arm_scope(1),arm_scope(2)]),
             G('第3步 少量改PI与限流｜先左上关控',COMMON+ARM_TUNE+joint(1)+joint(2)),
-            G('第4步 左下待机保持｜配合底盘短脉冲',COMMON+CH_COMMON+joint(1)+joint(2),[arm_scope(1),arm_scope(2)]),
+            G('第4步 左下待机保持｜配合底盘短脉冲',COMMON+CH_COMMON+joint(1)+joint(2)+ARM_OTHER_HEALTH,[arm_scope(1),arm_scope(2)]),
             G('排查1 不使能不抬起或下垂',COMMON+ARM_TUNE+[V('g_arm_status.last_result','Arm最近操作结果'),V('g_arm_status.faults','Arm总体故障'),V('can_tx_error_count[0]','CAN1发送错误累计')]+joint(1)+joint(2))]
 
 
