@@ -5,7 +5,7 @@
 	</main>
 	<objects>
 		<object name="ObjId0000" type="CVariable">
-			<member name="name" type="string">系统毫秒计数</member>
+			<member name="name" type="string">uwTick</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">uwTick</member>
@@ -54,7 +54,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0001" type="CVariable">
-			<member name="name" type="string">遥控最近接收时刻</member>
+			<member name="name" type="string">g_dr16_status.received_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.received_ms</member>
@@ -103,7 +103,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0002" type="CVariable">
-			<member name="name" type="string">遥控在线</member>
+			<member name="name" type="string">g_robot_status.remote_online</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_robot_status.remote_online</member>
@@ -152,7 +152,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0003" type="CVariable">
-			<member name="name" type="string">模式 0安全1行驶2夹取3待机</member>
+			<member name="name" type="string">g_robot_status.mode</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_robot_status.mode</member>
@@ -201,7 +201,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0004" type="CVariable">
-			<member name="name" type="string">机械臂协调开控</member>
+			<member name="name" type="string">g_robot_status.active</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_robot_status.active</member>
@@ -250,7 +250,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0005" type="CVariable">
-			<member name="name" type="string">机械臂使能掩码</member>
+			<member name="name" type="string">g_arm_status.enabled_mask</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.enabled_mask</member>
@@ -299,7 +299,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0006" type="CVariable">
-			<member name="name" type="string">当前保护原因位图</member>
+			<member name="name" type="string">g_robot_status.protection_current_reasons</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_robot_status.protection_current_reasons</member>
@@ -348,7 +348,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0007" type="CVariable">
-			<member name="name" type="string">历史锁存原因位图</member>
+			<member name="name" type="string">g_robot_status.protection_latched_reasons</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_robot_status.protection_latched_reasons</member>
@@ -397,7 +397,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0008" type="CVariable">
-			<member name="name" type="string">★ 整车命令 1停2校零3清错4请求开控</member>
+			<member name="name" type="string">g_robot_debug_command</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_robot_debug_command</member>
@@ -446,7 +446,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0009" type="CVariable">
-			<member name="name" type="string">底盘发布时间</member>
+			<member name="name" type="string">g_chassis_status.updated_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.updated_ms</member>
@@ -495,7 +495,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0010" type="CVariable">
-			<member name="name" type="string">底盘任务就绪</member>
+			<member name="name" type="string">g_chassis_status.ready</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.ready</member>
@@ -544,7 +544,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0011" type="CVariable">
-			<member name="name" type="string">底盘配置合法</member>
+			<member name="name" type="string">g_chassis_status.configuration_valid</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.configuration_valid</member>
@@ -593,7 +593,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0012" type="CVariable">
-			<member name="name" type="string">底盘实测确认</member>
+			<member name="name" type="string">g_chassis_status.hardware_confirmed</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.hardware_confirmed</member>
@@ -642,7 +642,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0013" type="CVariable">
-			<member name="name" type="string">底盘故障位图</member>
+			<member name="name" type="string">g_chassis_status.faults</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.faults</member>
@@ -691,7 +691,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0014" type="CVariable">
-			<member name="name" type="string">底盘出力使能</member>
+			<member name="name" type="string">g_chassis_status.enabled</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.enabled</member>
@@ -740,7 +740,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0015" type="CVariable">
-			<member name="name" type="string">轮组脉冲运行</member>
+			<member name="name" type="string">g_chassis_status.bench_active</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.bench_active</member>
@@ -789,7 +789,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0016" type="CVariable">
-			<member name="name" type="string">驱动轮静止确认</member>
+			<member name="name" type="string">g_chassis_status.wheels_stationary</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.wheels_stationary</member>
@@ -838,7 +838,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0017" type="CVariable">
-			<member name="name" type="string">接收帧有效</member>
+			<member name="name" type="string">g_dr16_status.valid</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.valid</member>
@@ -887,7 +887,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0018" type="CVariable">
-			<member name="name" type="string">连续有效帧数</member>
+			<member name="name" type="string">g_dr16_status.consecutive_frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.consecutive_frames</member>
@@ -936,7 +936,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0019" type="CVariable">
-			<member name="name" type="string">有效帧累计</member>
+			<member name="name" type="string">g_dr16_status.good_frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.good_frames</member>
@@ -985,7 +985,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0020" type="CVariable">
-			<member name="name" type="string">拒收累计</member>
+			<member name="name" type="string">g_dr16_status.rejected_frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.rejected_frames</member>
@@ -1034,7 +1034,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0021" type="CVariable">
-			<member name="name" type="string">串口错误累计</member>
+			<member name="name" type="string">g_dr16_status.uart_errors</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.uart_errors</member>
@@ -1083,7 +1083,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0022" type="CVariable">
-			<member name="name" type="string">DMA重启错误累计</member>
+			<member name="name" type="string">g_dr16_status.restart_errors</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.restart_errors</member>
@@ -1132,7 +1132,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0023" type="CVariable">
-			<member name="name" type="string">遥控通道0 中位约0</member>
+			<member name="name" type="string">g_dr16_status.frame.channel[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.frame.channel[0]</member>
@@ -1181,7 +1181,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0024" type="CVariable">
-			<member name="name" type="string">遥控通道1 中位约0</member>
+			<member name="name" type="string">g_dr16_status.frame.channel[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.frame.channel[1]</member>
@@ -1230,7 +1230,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0025" type="CVariable">
-			<member name="name" type="string">遥控通道2 中位约0</member>
+			<member name="name" type="string">g_dr16_status.frame.channel[2]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.frame.channel[2]</member>
@@ -1279,7 +1279,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0026" type="CVariable">
-			<member name="name" type="string">遥控通道3 中位约0</member>
+			<member name="name" type="string">g_dr16_status.frame.channel[3]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.frame.channel[3]</member>
@@ -1328,7 +1328,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0027" type="CVariable">
-			<member name="name" type="string">遥控通道4 中位约0</member>
+			<member name="name" type="string">g_dr16_status.frame.channel[4]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.frame.channel[4]</member>
@@ -1377,7 +1377,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0028" type="CVariable">
-			<member name="name" type="string">拨杆原码0 上1中3下2</member>
+			<member name="name" type="string">g_dr16_status.frame.switches[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.frame.switches[0]</member>
@@ -1426,7 +1426,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0029" type="CVariable">
-			<member name="name" type="string">拨杆原码1 上1中3下2</member>
+			<member name="name" type="string">g_dr16_status.frame.switches[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_dr16_status.frame.switches[1]</member>
@@ -1475,7 +1475,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0030" type="CVariable">
-			<member name="name" type="string">左ID1反馈累计</member>
+			<member name="name" type="string">g_chassis_status.feedback_frames[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.feedback_frames[0]</member>
@@ -1524,7 +1524,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0031" type="CVariable">
-			<member name="name" type="string">左ID1最近反馈时刻</member>
+			<member name="name" type="string">g_chassis_status.feedback_ms[0]</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.feedback_ms[0]</member>
@@ -1573,7 +1573,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0032" type="CVariable">
-			<member name="name" type="string">左ID1实测转子速度</member>
+			<member name="name" type="string">g_chassis_status.measured_rpm[0]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.measured_rpm[0]</member>
@@ -1622,7 +1622,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0033" type="CVariable">
-			<member name="name" type="string">左ID1目标转子速度</member>
+			<member name="name" type="string">g_chassis_status.target_rpm[0]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.target_rpm[0]</member>
@@ -1671,7 +1671,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0034" type="CVariable">
-			<member name="name" type="string">左ID1最终提交电流</member>
+			<member name="name" type="string">g_chassis_status.current_ma[0]</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.current_ma[0]</member>
@@ -1720,7 +1720,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0035" type="CVariable">
-			<member name="name" type="string">左ID1电机温度</member>
+			<member name="name" type="string">g_chassis_status.temperature_c[0]</member>
 			<member name="unit" type="string">℃</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.temperature_c[0]</member>
@@ -1769,7 +1769,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0036" type="CVariable">
-			<member name="name" type="string">右ID2反馈累计</member>
+			<member name="name" type="string">g_chassis_status.feedback_frames[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.feedback_frames[1]</member>
@@ -1818,7 +1818,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0037" type="CVariable">
-			<member name="name" type="string">右ID2最近反馈时刻</member>
+			<member name="name" type="string">g_chassis_status.feedback_ms[1]</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.feedback_ms[1]</member>
@@ -1867,7 +1867,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0038" type="CVariable">
-			<member name="name" type="string">右ID2实测转子速度</member>
+			<member name="name" type="string">g_chassis_status.measured_rpm[1]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.measured_rpm[1]</member>
@@ -1916,7 +1916,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0039" type="CVariable">
-			<member name="name" type="string">右ID2目标转子速度</member>
+			<member name="name" type="string">g_chassis_status.target_rpm[1]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.target_rpm[1]</member>
@@ -1965,7 +1965,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0040" type="CVariable">
-			<member name="name" type="string">右ID2最终提交电流</member>
+			<member name="name" type="string">g_chassis_status.current_ma[1]</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.current_ma[1]</member>
@@ -2014,7 +2014,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0041" type="CVariable">
-			<member name="name" type="string">右ID2电机温度</member>
+			<member name="name" type="string">g_chassis_status.temperature_c[1]</member>
 			<member name="unit" type="string">℃</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_status.temperature_c[1]</member>
@@ -2063,7 +2063,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0042" type="CVariable">
-			<member name="name" type="string">★ 轮测试模式 0停1清错2电流3速度</member>
+			<member name="name" type="string">g_chassis_debug_request.mode</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_request.mode</member>
@@ -2112,7 +2112,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0043" type="CVariable">
-			<member name="name" type="string">★ 测试轮 0左ID1 1右ID2</member>
+			<member name="name" type="string">g_chassis_debug_request.wheel</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_request.wheel</member>
@@ -2161,7 +2161,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0044" type="CVariable">
-			<member name="name" type="string">★ 轮测试值 电流mA或转子rpm</member>
+			<member name="name" type="string">g_chassis_debug_request.value</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_request.value</member>
@@ -2210,7 +2210,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0045" type="CVariable">
-			<member name="name" type="string">★ 脉冲持续时间</member>
+			<member name="name" type="string">g_chassis_debug_request.duration_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_request.duration_ms</member>
@@ -2259,7 +2259,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0046" type="CVariable">
-			<member name="name" type="string">★ 悬空确认 填0x53555350</member>
+			<member name="name" type="string">g_chassis_debug_request.suspended_confirm</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_request.suspended_confirm</member>
@@ -2308,7 +2308,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0047" type="CVariable">
-			<member name="name" type="string">★ 轮测试提交序号 最后加1</member>
+			<member name="name" type="string">g_chassis_debug_request.request_seq</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_request.request_seq</member>
@@ -2357,7 +2357,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0048" type="CVariable">
-			<member name="name" type="string">已消费轮测试序号</member>
+			<member name="name" type="string">g_chassis_debug_status.consumed_seq</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_status.consumed_seq</member>
@@ -2406,7 +2406,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0049" type="CVariable">
-			<member name="name" type="string">轮测试结果 见排障PDF</member>
+			<member name="name" type="string">g_chassis_debug_status.result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_status.result</member>
@@ -2455,7 +2455,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0050" type="CVariable">
-			<member name="name" type="string">轮脉冲截止时刻</member>
+			<member name="name" type="string">g_chassis_debug_status.until_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_debug_status.until_ms</member>
@@ -2504,7 +2504,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0051" type="CVariable">
-			<member name="name" type="string">★ 轮速P申请</member>
+			<member name="name" type="string">g_chassis_tune_request.velocity_kp</member>
 			<member name="unit" type="string">mA/rpm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_request.velocity_kp</member>
@@ -2553,7 +2553,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0052" type="CVariable">
-			<member name="name" type="string">★ 轮速I申请</member>
+			<member name="name" type="string">g_chassis_tune_request.velocity_ki</member>
 			<member name="unit" type="string">mA/(rpm*s)</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_request.velocity_ki</member>
@@ -2602,7 +2602,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0053" type="CVariable">
-			<member name="name" type="string">★ 轮组运行限流申请</member>
+			<member name="name" type="string">g_chassis_tune_request.max_current_ma</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_request.max_current_ma</member>
@@ -2651,7 +2651,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0054" type="CVariable">
-			<member name="name" type="string">★ 轮参数提交序号 最后加1</member>
+			<member name="name" type="string">g_chassis_tune_request.request_seq</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_request.request_seq</member>
@@ -2700,7 +2700,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0055" type="CVariable">
-			<member name="name" type="string">已消费轮参数序号</member>
+			<member name="name" type="string">g_chassis_tune_status.consumed_seq</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_status.consumed_seq</member>
@@ -2749,7 +2749,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0056" type="CVariable">
-			<member name="name" type="string">已生效轮参数序号</member>
+			<member name="name" type="string">g_chassis_tune_status.active_seq</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_status.active_seq</member>
@@ -2798,7 +2798,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0057" type="CVariable">
-			<member name="name" type="string">轮参数结果 0待机1成功2非法3忙4未就绪</member>
+			<member name="name" type="string">g_chassis_tune_status.result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_status.result</member>
@@ -2847,7 +2847,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0058" type="CVariable">
-			<member name="name" type="string">生效轮速P</member>
+			<member name="name" type="string">g_chassis_tune_status.velocity_kp</member>
 			<member name="unit" type="string">mA/rpm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_status.velocity_kp</member>
@@ -2896,7 +2896,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0059" type="CVariable">
-			<member name="name" type="string">生效轮速I</member>
+			<member name="name" type="string">g_chassis_tune_status.velocity_ki</member>
 			<member name="unit" type="string">mA/(rpm*s)</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_status.velocity_ki</member>
@@ -2945,7 +2945,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0060" type="CVariable">
-			<member name="name" type="string">生效运行限流</member>
+			<member name="name" type="string">g_chassis_tune_status.max_current_ma</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_chassis_tune_status.max_current_ma</member>
@@ -2994,7 +2994,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0061" type="CVariable">
-			<member name="name" type="string">肩关节在线</member>
+			<member name="name" type="string">g_arm_status.joint[1].online</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].online</member>
@@ -3043,7 +3043,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0062" type="CVariable">
-			<member name="name" type="string">肩关节已人工校零</member>
+			<member name="name" type="string">g_arm_status.joint[1].calibrated</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].calibrated</member>
@@ -3092,7 +3092,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0063" type="CVariable">
-			<member name="name" type="string">肩关节已使能</member>
+			<member name="name" type="string">g_arm_status.joint[1].enabled</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].enabled</member>
@@ -3141,7 +3141,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0064" type="CVariable">
-			<member name="name" type="string">肩关节电机状态</member>
+			<member name="name" type="string">g_arm_status.joint[1].motor_state</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].motor_state</member>
@@ -3190,7 +3190,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0065" type="CVariable">
-			<member name="name" type="string">肩关节故障位图</member>
+			<member name="name" type="string">g_arm_status.joint[1].faults</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].faults</member>
@@ -3239,7 +3239,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0066" type="CVariable">
-			<member name="name" type="string">肩关节反馈年龄</member>
+			<member name="name" type="string">g_arm_status.joint[1].feedback_age_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].feedback_age_ms</member>
@@ -3288,7 +3288,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0067" type="CVariable">
-			<member name="name" type="string">肩关节关节角</member>
+			<member name="name" type="string">g_arm_status.joint[1].position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].position_deg</member>
@@ -3337,7 +3337,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0068" type="CVariable">
-			<member name="name" type="string">肩关节关节目标</member>
+			<member name="name" type="string">g_arm_status.joint[1].target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].target_deg</member>
@@ -3386,7 +3386,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0069" type="CVariable">
-			<member name="name" type="string">肩关节参考角</member>
+			<member name="name" type="string">g_arm_status.joint[1].reference_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].reference_deg</member>
@@ -3435,7 +3435,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0070" type="CVariable">
-			<member name="name" type="string">肩关节关节速度</member>
+			<member name="name" type="string">g_arm_status.joint[1].velocity_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].velocity_deg_s</member>
@@ -3484,7 +3484,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0071" type="CVariable">
-			<member name="name" type="string">肩关节电机驱动角</member>
+			<member name="name" type="string">g_arm_status.joint[1].drive_position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].drive_position_deg</member>
@@ -3533,7 +3533,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0072" type="CVariable">
-			<member name="name" type="string">肩关节电机驱动目标</member>
+			<member name="name" type="string">g_arm_status.joint[1].drive_target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].drive_target_deg</member>
@@ -3582,7 +3582,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0073" type="CVariable">
-			<member name="name" type="string">肩关节电机驱动速度</member>
+			<member name="name" type="string">g_arm_status.joint[1].drive_velocity_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].drive_velocity_deg_s</member>
@@ -3631,7 +3631,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0074" type="CVariable">
-			<member name="name" type="string">肩关节闭环目标速度</member>
+			<member name="name" type="string">g_arm_status.joint[1].velocity_target_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].velocity_target_deg_s</member>
@@ -3680,7 +3680,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0075" type="CVariable">
-			<member name="name" type="string">肩关节控制输出</member>
+			<member name="name" type="string">g_arm_status.joint[1].effort</member>
 			<member name="unit" type="string">Nm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[1].effort</member>
@@ -3729,7 +3729,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0076" type="CVariable">
-			<member name="name" type="string">肘关节在线</member>
+			<member name="name" type="string">g_arm_status.joint[2].online</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].online</member>
@@ -3778,7 +3778,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0077" type="CVariable">
-			<member name="name" type="string">肘关节已人工校零</member>
+			<member name="name" type="string">g_arm_status.joint[2].calibrated</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].calibrated</member>
@@ -3827,7 +3827,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0078" type="CVariable">
-			<member name="name" type="string">肘关节已使能</member>
+			<member name="name" type="string">g_arm_status.joint[2].enabled</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].enabled</member>
@@ -3876,7 +3876,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0079" type="CVariable">
-			<member name="name" type="string">肘关节电机状态</member>
+			<member name="name" type="string">g_arm_status.joint[2].motor_state</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].motor_state</member>
@@ -3925,7 +3925,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0080" type="CVariable">
-			<member name="name" type="string">肘关节故障位图</member>
+			<member name="name" type="string">g_arm_status.joint[2].faults</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].faults</member>
@@ -3974,7 +3974,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0081" type="CVariable">
-			<member name="name" type="string">肘关节反馈年龄</member>
+			<member name="name" type="string">g_arm_status.joint[2].feedback_age_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].feedback_age_ms</member>
@@ -4023,7 +4023,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0082" type="CVariable">
-			<member name="name" type="string">肘关节关节角</member>
+			<member name="name" type="string">g_arm_status.joint[2].position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].position_deg</member>
@@ -4072,7 +4072,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0083" type="CVariable">
-			<member name="name" type="string">肘关节关节目标</member>
+			<member name="name" type="string">g_arm_status.joint[2].target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].target_deg</member>
@@ -4121,7 +4121,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0084" type="CVariable">
-			<member name="name" type="string">肘关节参考角</member>
+			<member name="name" type="string">g_arm_status.joint[2].reference_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].reference_deg</member>
@@ -4170,7 +4170,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0085" type="CVariable">
-			<member name="name" type="string">肘关节关节速度</member>
+			<member name="name" type="string">g_arm_status.joint[2].velocity_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].velocity_deg_s</member>
@@ -4219,7 +4219,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0086" type="CVariable">
-			<member name="name" type="string">肘关节电机驱动角</member>
+			<member name="name" type="string">g_arm_status.joint[2].drive_position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].drive_position_deg</member>
@@ -4268,7 +4268,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0087" type="CVariable">
-			<member name="name" type="string">肘关节电机驱动目标</member>
+			<member name="name" type="string">g_arm_status.joint[2].drive_target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].drive_target_deg</member>
@@ -4317,7 +4317,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0088" type="CVariable">
-			<member name="name" type="string">肘关节电机驱动速度</member>
+			<member name="name" type="string">g_arm_status.joint[2].drive_velocity_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].drive_velocity_deg_s</member>
@@ -4366,7 +4366,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0089" type="CVariable">
-			<member name="name" type="string">肘关节闭环目标速度</member>
+			<member name="name" type="string">g_arm_status.joint[2].velocity_target_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].velocity_target_deg_s</member>
@@ -4415,7 +4415,7 @@
 			<member name="modif_last_addr" type="uint32">0x0</member>
 		</object>
 		<object name="ObjId0090" type="CVariable">
-			<member name="name" type="string">肘关节控制输出</member>
+			<member name="name" type="string">g_arm_status.joint[2].effort</member>
 			<member name="unit" type="string">Nm</member>
 			<member name="period" type="sint32">100</member>
 			<member name="address" type="string">g_arm_status.joint[2].effort</member>

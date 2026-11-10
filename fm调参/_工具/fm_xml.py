@@ -107,7 +107,7 @@ class _Builder:
         old = self.sample("CVariable")
         obj = self.new("CVariable", old)
         replacements = {
-            "name": spec["label"], "address": expr, "last_addr": _addr(spec["last_addr"]),
+            "name": expr, "address": expr, "last_addr": _addr(spec["last_addr"]),
             "byte_size": spec["byte_size"], "treat_as": spec["treat_as"],
             "unit": spec["unit"], "period": spec["period"],
             "description": spec["description"], "comment": "",
