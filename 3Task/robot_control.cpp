@@ -532,6 +532,11 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         uint8_t(arm.status().faults != 0),
         vehicle_protection(now)};
     Task_Protect_Tick(&protection_input, now);
+    const bool tipover = (Task_Protect_GetStatus().current_reasons & PROTECT_TIPPED) != 0;
+    // The independent chassis does not wait for arm/IMU commissioning, but a
+    // real tip-over must stop it and latch until the operator clears/restarts.
+    if (kChassisIndependent && tipover)
+        chassis_stop_latched = true;
     auto result = controller.step(input, locks, arm.status(), now, arm_request,
                                   Task_Protect_GetStatus().current_reasons != 0);
     if (bench && result.mode == RobotMode::Safe && result.block == OperatorBlock::NeedArm &&
@@ -622,7 +627,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
             input.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP;
         command.independent = true;
         command.enabled = drive_switch && remote_ok && !force_stop && !stop_request &&
-                          !chassis_stop_latched;
+                          !chassis_stop_latched && !tipover;
         command.speed_request = next.remote_axis[0];
         command.turn_request = -next.remote_axis[3];
         command.stop = !command.enabled ||

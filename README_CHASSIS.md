@@ -90,3 +90,11 @@ FreeMASTER「行驶加减速与转向」组的五项 `tune_chassis_*` 在正常�
 - `braking_current_ma` 默认8000，避免下坡/功率停车制动太弱。
 - FM「功率限制（当前未启用）」组的 `tune_chassis_power_budget_w`、`tune_chassis_power_filter_ms` 只改RAM参数；`confirmed` 必须改源码重编。
 - `g_chassis_status.power_speed_scale` 是功率/能量限速比例，`power_filtered_w` 是滤波后功率，用于现场判断是否在降速。
+- 完整参数表、调参步骤和现场记录表见 [功率限制调参说明.md](fm调参/功率限制调参说明.md)。
+
+### 独立底盘翻车保护（2026-11-12）
+- 独立底盘仍不要求 IMU 安装/阈值确认，也不要求机械臂/Yaw/功率确认；但 `PROTECT_TIPPED` 会撤销独立底盘命令并置 `independent_stop_latched`。
+- 翻车判定来自 IMU `tipped`；只有 IMU `valid`（已校准、无故障）时才更新。IMU 未校准时 `tipped` 不更新，独立底盘仍可调；先做静态标定。
+- FM「翻车保护｜独立底盘」组可在线调 `tune_attitude_trip_deg`、`tune_attitude_release_deg`、`tune_attitude_trip_ms`、`tune_attitude_release_ms`；只存 RAM，断电恢复源码默认 55°/40°/150ms/500ms。
+- 触发后 `independent_stop_latched=1`，用命令4或 `Robot_RequestControl()` 清除；命令1只是关控，不会清这个锁存。清除前即使倾角恢复、拨杆仍在上也不会自动恢复。
+- IMU 的 `installation_confirmed` / `thresholds_confirmed` 仍是 false；比赛前必须实测方向、阈值和解除角，不能只靠默认 55°/40°。

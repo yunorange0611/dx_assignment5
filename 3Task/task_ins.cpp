@@ -27,6 +27,10 @@ bool calibration_revoked = false;
 extern "C" {
 InsStatus g_ins_status{};
 volatile uint32_t g_ins_debug_command = 0;
+volatile float tune_attitude_trip_deg = engineer::kAttitudeConfig.trip_tilt_deg;
+volatile float tune_attitude_release_deg = engineer::kAttitudeConfig.release_tilt_deg;
+volatile float tune_attitude_trip_ms = float(engineer::kAttitudeConfig.trip_ms);
+volatile float tune_attitude_release_ms = float(engineer::kAttitudeConfig.release_ms);
 }
 extern "C" void INS_SetCalibrationPermission(const InsCalibrationPermission *permission) {
     taskENTER_CRITICAL();
@@ -94,6 +98,8 @@ extern "C" void ins_task(void *) {
             have_cycles = true;
             // Re-read after SPI: an enable may revoke while polling was preempted.
             const bool was_calibrated = attitude.status().calibrated;
+            attitude.set_tilt_tuning(tune_attitude_trip_deg, tune_attitude_release_deg,
+                                     tune_attitude_trip_ms, tune_attitude_release_ms);
             attitude.step(input, dt, calibration_allowed(HAL_GetTick()));
             // A higher-priority owner may also revoke during the pure estimate.
             // Discard a calibration completed across that edge before publishing.

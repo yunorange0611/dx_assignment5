@@ -52,6 +52,24 @@ AttitudeEstimator::AttitudeEstimator(const AttitudeConfig &c) : c_(c) {
                 (!s_.confirmed ? AttitudeUnconfirmed : AttitudeNoFault) | AttitudeNoCalibration;
     s_.calibrating = true;
 }
+void AttitudeEstimator::set_tilt_tuning(float trip_deg, float release_deg, float trip_ms,
+                                        float release_ms) {
+    if (!std::isfinite(trip_deg) || !std::isfinite(release_deg) || !std::isfinite(trip_ms) ||
+        !std::isfinite(release_ms) || release_deg <= 0 || trip_deg >= 90 ||
+        release_deg >= trip_deg || trip_ms <= 0 || release_ms <= 0 || trip_ms > 5000 ||
+        release_ms > 5000)
+        return;
+    const uint32_t trip = uint32_t(trip_ms + .5f);
+    const uint32_t release = uint32_t(release_ms + .5f);
+    if (trip_deg == c_.trip_tilt_deg && release_deg == c_.release_tilt_deg &&
+        trip == c_.trip_ms && release == c_.release_ms)
+        return;
+    c_.trip_tilt_deg = trip_deg;
+    c_.release_tilt_deg = release_deg;
+    c_.trip_ms = trip;
+    c_.release_ms = release;
+    trip_tracking_ = release_tracking_ = false;
+}
 void AttitudeEstimator::reset_calibration_window() {
     s_.calibration_count = 0;
     for (float &x : gyro_sum_)

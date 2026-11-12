@@ -450,6 +450,31 @@ int test_robot_control() {
         g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
         Robot_Execute(independent_arm, now, false);
         CHECK(Robot_GetChassisCommand(&command) && command.enabled && command.independent);
+
+        // Tip-over stops and latches the independent chassis; command 4 clears after upright.
+        vehicle_reasons = PROTECT_TIPPED;
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
+        Robot_Execute(independent_arm, now, false);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.stop);
+        CHECK(Robot_GetControlStatus(&s) && s.independent_stop_latched);
+        vehicle_reasons = 0;
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
+        Robot_Execute(independent_arm, now, false);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled); // Latch needs command 4.
+        Robot_RequestControl();
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
+        Robot_Execute(independent_arm, now, false);
+        CHECK(Robot_GetChassisCommand(&command) && command.enabled && command.independent);
+
         // Consume the request and leave a clean latch state for later tests.
         Robot_RequestControl();
         now += 4;

@@ -427,6 +427,26 @@ int test_vehicle() {
         a.step(sample(n * 4 + 100, n + 1), .1f, false);
         CHECK(!a.status().valid && (a.status().faults & AttitudeTiming));
     }
+    { // Tilt thresholds are tunable; invalid pairs are ignored.
+        auto cfg = attitude_config();
+        AttitudeEstimator a(cfg);
+        for (unsigned n = 0; n < 10; ++n)
+            a.step(sample(n * 4, n + 1), .004f, true);
+        CHECK(a.status().calibrated && a.status().valid);
+        a.set_tilt_tuning(20, 10, 8, 8);
+        CHECK(near(a.config().trip_tilt_deg, 20) && near(a.config().release_tilt_deg, 10));
+        const float ax = 9.80665f * .5f, az = 9.80665f * .8660254f;
+        unsigned n = 10;
+        for (; n < 20; ++n)
+            a.step(sample(n * 4, n + 1, ax, 0, az), .004f, false);
+        CHECK(a.status().tipped);
+        a.set_tilt_tuning(50, 35, 8, 8);
+        for (; n < 30; ++n)
+            a.step(sample(n * 4, n + 1, ax, 0, az), .004f, false);
+        CHECK(!a.status().tipped);
+        a.set_tilt_tuning(10, 40, 8, 8); // release must stay below trip
+        CHECK(near(a.config().trip_tilt_deg, 50) && near(a.config().release_tilt_deg, 35));
+    }
     { // Any invalid sample interrupts a continuous static-calibration window.
         auto cfg = attitude_config();
         AttitudeEstimator a(cfg);

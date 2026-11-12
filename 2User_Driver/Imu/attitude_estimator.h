@@ -47,10 +47,15 @@ class AttitudeEstimator {
   public:
     explicit AttitudeEstimator(const AttitudeConfig &config = kAttitudeConfig);
     void restart_calibration();
+    // FM 在线写入；非法值保留上一组生效阈值。只改翻车角度/持续时间。
+    void set_tilt_tuning(float trip_deg, float release_deg, float trip_ms, float release_ms);
     const AttitudeStatus &step(const AttitudeSample &sample, float dt_s, bool calibration_allowed);
     void invalidate(uint32_t now_ms, uint32_t reason = AttitudeSampleInvalid);
     const AttitudeStatus &status() const {
         return s_;
+    }
+    const AttitudeConfig &config() const {
+        return c_;
     }
 
   private:

@@ -204,7 +204,13 @@ POWER_TUNE = [
       note='confirmed=false 时不生效；当前代码默认未启用。'),
     V('tune_chassis_power_filter_ms','功率滤波时间','ms',True,1,2000),
 ]
-IMU = variables('g_ins_status', [('updated_ms','IMU发布时间','ms'),('received_ms','IMU采样时刻','ms'),('frames','IMU采样累计',''),('ready','IMU任务就绪',''),('confirmed','安装与阈值已确认',''),('calibrated','偏置校准完成',''),('valid','IMU有效',''),('faults','IMU故障位图',''),('tilt_deg','倾斜角','deg'),('tipped','翻车判定',''),('calibrating','正在静态标定',''),('driver_errors','驱动错误累计','')]) + [V('g_ins_debug_command','请求IMU静态标定 写1',write=True,low=0,high=1), V('g_vehicle_health.healthy','整车健康'), V('g_vehicle_health.reasons','整车不放行原因位图')]
+TILT_TUNE = [
+    V('tune_attitude_trip_deg','翻车触发角','deg',True,1,89),
+    V('tune_attitude_release_deg','翻车解除角','deg',True,0.1,88),
+    V('tune_attitude_trip_ms','翻车触发时间','ms',True,1,5000),
+    V('tune_attitude_release_ms','翻车解除时间','ms',True,1,5000),
+]
+IMU = variables('g_ins_status', [('updated_ms','IMU发布时间','ms'),('received_ms','IMU采样时刻','ms'),('frames','IMU采样累计',''),('ready','IMU任务就绪',''),('confirmed','安装与阈值已确认',''),('calibrated','偏置校准完成',''),('valid','IMU有效',''),('faults','IMU故障位图',''),('tilt_deg','倾斜角','deg'),('tipped','翻车判定',''),('calibrating','正在静态标定',''),('driver_errors','驱动错误累计','')]) + TILT_TUNE + [V('g_ins_debug_command','请求IMU静态标定 写1',write=True,low=0,high=1), V('g_vehicle_health.healthy','整车健康'), V('g_vehicle_health.reasons','整车不放行原因位图')]
 
 
 def G(title, data, curves=()):
@@ -330,6 +336,16 @@ def groups():
           [('右轮电流指令/实际/转速', ['tune_current_ma', 'g_chassis_status.current_ma[1]',
                                       'g_chassis_status.measured_rpm[1]'])]),
         G('行驶加减速与转向', CH_MOTION),
+        G('翻车保护｜独立底盘', select + TILT_TUNE + [
+            V('g_ins_status.tilt_deg','当前倾斜角','deg'),
+            V('g_ins_status.tipped','翻车判定'),
+            V('g_ins_status.valid','IMU有效'),
+            V('g_ins_status.calibrated','校准完成'),
+            V('g_ins_debug_command','请求IMU静态标定 写1',write=True,low=0,high=1),
+            V('g_chassis_status.independent','独立底盘直驱中'),
+            V('g_chassis_status.enabled','底盘出力使能'),
+            V('g_robot_status.independent_stop_latched','独立底盘STOP锁存 命令4清除'),
+            V('g_robot_status.protection_current_reasons','当前保护原因位图')]),
         G('功率限制（当前未启用）', POWER_TUNE + [
             V('g_chassis_status.power_w','功率计瞬时功率','W'),
             V('g_chassis_status.energy_j','缓冲能量','J'),
