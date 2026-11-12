@@ -91,12 +91,36 @@ int test_vehicle() {
         CHECK(out[0] > 0 && out[1] < 0);
         p.step(12, meter(12, 400, 80), true, false);
         p.limit(candidate, rpm, out);
-        CHECK(near(out[0], cfg.drive_current_ma * .5f) && near(out[1], -cfg.braking_current_ma));
+        CHECK(near(out[0], 2000) && near(out[1], -2000)); // Power does not clamp drive current.
         p.step(16, meter(16, 150), true, false);
-        CHECK(near(p.status().speed_scale, .5f));
+        CHECK(near(p.status().speed_scale, 70.f / 220.f)); // Energy scale only; power filter is slow.
         const float nan[2] = {100, std::numeric_limits<float>::quiet_NaN()};
         p.limit(nan, rpm, out);
         CHECK(out[0] == 0 && out[1] == 0);
+    }
+    { // Power governor lowers the speed target, not the drive-current ceiling.
+        auto cfg = kChassisPowerConfig;
+        cfg.confirmed = true;
+        cfg.power_filter_ms = 4;
+        ChassisPower p(cfg);
+        p.step(0, meter(0, 400, 10), false, true);
+        p.step(4, meter(4, 400, 10), true, false);
+        for (uint32_t t = 8; t <= 40; t += 4)
+            p.step(t, meter(t, 400, 80), true, false);
+        CHECK(p.status().filtered_power_w > 75);
+        CHECK(p.status().speed_scale > .5f && p.status().speed_scale < .6f);
+        const float candidate[2] = {5000, -5000}, rpm[2] = {100, 100};
+        float out[2];
+        p.limit(candidate, rpm, out);
+        CHECK(out[0] == 5000 && out[1] == -5000);
+    }
+    { // Runtime power tuning is validated, but confirmed=false keeps it inactive.
+        auto cfg = kChassisPowerConfig;
+        ChassisPower p(cfg);
+        p.set_power_tuning(42, 200);
+        CHECK(near(p.config().budget_w, 42) && near(p.config().power_filter_ms, 200));
+        p.set_power_tuning(50, 0);
+        CHECK(near(p.config().budget_w, 42) && near(p.config().power_filter_ms, 200));
     }
     { // Low energy starts bounded controlled braking, and recovery never cancels the stop.
         auto cfg = kChassisPowerConfig;
@@ -104,15 +128,15 @@ int test_vehicle() {
         ChassisPower p(cfg);
         p.step(0, meter(0), false, true);
         p.step(4, meter(4), true, false);
-        CHECK(p.step(8, meter(8, 90), true, false).phase == PowerPhase::StopLowEnergy);
+        CHECK(p.step(8, meter(8, 70), true, false).phase == PowerPhase::StopLowEnergy);
         CHECK(p.status().stop_requested && p.status().session_allowed);
         const float candidate[2] = {1000, -1000}, rpm[2] = {100, 100};
         float out[2];
         p.limit(candidate, rpm, out);
-        CHECK(out[0] == 0 && out[1] == -cfg.braking_current_ma);
+        CHECK(out[0] == 0 && out[1] == -1000);
         const float reverse[2] = {-100, -100};
         p.limit(candidate, reverse, out);
-        CHECK(out[0] == cfg.braking_current_ma && out[1] == 0);
+        CHECK(out[0] == 1000 && out[1] == 0);
         CHECK(p.step(12, meter(12), true, false).phase == PowerPhase::StopLowEnergy);
         CHECK(p.step(16, meter(16), true, true).phase == PowerPhase::Inhibited);
         CHECK(p.status().inhibited && !p.status().session_allowed);

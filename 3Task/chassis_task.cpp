@@ -20,6 +20,8 @@ volatile float tune_chassis_deceleration_m_s2 = engineer::kChassisConfig.deceler
 volatile float tune_chassis_angular_accel_rad_s2 = engineer::kChassisConfig.angular_accel_rad_s2;
 volatile float tune_chassis_angular_decel_rad_s2 = engineer::kChassisConfig.angular_decel_rad_s2;
 volatile float tune_chassis_max_turn_rad_s = engineer::kChassisConfig.max_turn_rad_s;
+volatile float tune_chassis_power_budget_w = engineer::kChassisPowerConfig.budget_w;
+volatile float tune_chassis_power_filter_ms = engineer::kChassisPowerConfig.power_filter_ms;
 volatile ChassisDebugRequest g_chassis_debug_request{};
 ChassisDebugStatus g_chassis_debug_status{};
 volatile ChassisTuneRequest g_chassis_tune_request{engineer::kChassisConfig.velocity_kp,
@@ -257,6 +259,8 @@ void read_command(ChassisRuntime &runtime) {
 
 // 原差速/斜坡/轮速 PI 核心不变；输出为所有功率/安全约束之后的轮电流 mA。
 void control_and_limit(ChassisRuntime &runtime) {
+    runtime.energy.set_power_tuning(tune_chassis_power_budget_w,
+                                    tune_chassis_power_filter_ms);
     runtime.energy.step(runtime.now_ms, runtime.power.status(), runtime.control.status().enabled,
                         runtime.control.status().wheels_stationary);
     auto &command = runtime.command;
@@ -398,6 +402,8 @@ void publish_status(const ChassisRuntime &runtime) {
     status.omega_rad_s = control.omega_rad_s;
     status.power_w = power.power_w;
     status.energy_j = power.energy_j;
+    status.power_speed_scale = energy.speed_scale;
+    status.power_filtered_w = energy.filtered_power_w;
     status.power_received_ms = power.received_ms;
     status.power_frames = power.frames;
     for (unsigned i = 0; i < 2; ++i) {

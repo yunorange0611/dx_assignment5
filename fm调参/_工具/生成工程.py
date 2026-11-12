@@ -198,7 +198,12 @@ YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
             [('yaw_parameter_result','Yaw参数结果 0成功',''),('yaw_position_kp','Yaw生效位置P','1/s'),
              ('yaw_velocity_kp','Yaw生效速度P',''),('yaw_velocity_ki','Yaw生效速度I',''),
              ('yaw_current_limit_ma','Yaw生效电流上限','mA')])
-POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启','')])
+POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('power_filtered_w','滤波后功率','W'),('power_speed_scale','功率/能量限速比例',''),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启','')])
+POWER_TUNE = [
+    V('tune_chassis_power_budget_w','功率预算 50W以下','W',True,1,49,
+      note='confirmed=false 时不生效；当前代码默认未启用。'),
+    V('tune_chassis_power_filter_ms','功率滤波时间','ms',True,1,2000),
+]
 IMU = variables('g_ins_status', [('updated_ms','IMU发布时间','ms'),('received_ms','IMU采样时刻','ms'),('frames','IMU采样累计',''),('ready','IMU任务就绪',''),('confirmed','安装与阈值已确认',''),('calibrated','偏置校准完成',''),('valid','IMU有效',''),('faults','IMU故障位图',''),('tilt_deg','倾斜角','deg'),('tipped','翻车判定',''),('calibrating','正在静态标定',''),('driver_errors','驱动错误累计','')]) + [V('g_ins_debug_command','请求IMU静态标定 写1',write=True,low=0,high=1), V('g_vehicle_health.healthy','整车健康'), V('g_vehicle_health.reasons','整车不放行原因位图')]
 
 
@@ -325,6 +330,16 @@ def groups():
           [('右轮电流指令/实际/转速', ['tune_current_ma', 'g_chassis_status.current_ma[1]',
                                       'g_chassis_status.measured_rpm[1]'])]),
         G('行驶加减速与转向', CH_MOTION),
+        G('功率限制（当前未启用）', POWER_TUNE + [
+            V('g_chassis_status.power_w','功率计瞬时功率','W'),
+            V('g_chassis_status.energy_j','缓冲能量','J'),
+            V('g_chassis_status.power_filtered_w','滤波后功率','W'),
+            V('g_chassis_status.power_speed_scale','功率/能量限速比例 0..1'),
+            V('g_chassis_status.power_confirmed','功率限制已确认'),
+            V('g_chassis_status.power_phase','功率阶段'),
+            V('g_chassis_status.power_reason','功率原因'),
+            V('g_chassis_status.power_stop_requested','功率请求停车'),
+            V('g_chassis_status.power_inhibited','功率锁存禁行')]),
         # 第4批：两轮速度PI；目标只上曲线，不占变量行。
         G('第4批 两轮速度PI', select + wheel_params + CH_SPEED +
           wheel_fields(0, ('measured_rpm', 'current_ma')) +

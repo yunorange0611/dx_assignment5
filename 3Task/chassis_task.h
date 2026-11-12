@@ -8,6 +8,7 @@ typedef struct {
     uint32_t feedback_ms[2], feedback_frames[2], power_received_ms, power_frames;
     float measured_rpm[2], target_rpm[2], current_ma[2], temperature_c[2];
     float v_m_s, omega_rad_s, power_w, energy_j;
+    float power_speed_scale, power_filtered_w;
     uint8_t ready, configuration_valid, hardware_confirmed, enabled, wheels_stationary,
         bench_active;
     uint8_t power_configuration_valid, power_confirmed;

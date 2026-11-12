@@ -82,3 +82,11 @@ robot_tune_mode仅选择对象/控制层。tune_enable为旧FM兼容符号，不
 FreeMASTER「行驶加减速与转向」组的五项 `tune_chassis_*` 在正常底盘控制周期生效：行驶加速/减速、转向角加速度/角减速度、最大转向角速度。只接受有限正数，非法输入保留上一生效值。默认值来自 `chassis_config.h`，在线修改不保存到 Flash，不影响单轮测试、限流或停止保护。
 
 转向松杆和回中时按 `angular_decel_rad_s2` 收参考角速度；同时 `ChassisControl::step` 在无行驶/转向请求（`stop`，或 `brake` 且转向请求为0）时每个周期清零两轮速度环积分，避免积分在静摩擦下冻结、松杆后仍持续驱动一侧轮子。该清理不作用于纯转向中的 `brake`（转向请求非0时保留积分）。
+
+### 功率限制（代码已接入，默认未启用）
+`ChassisPowerConfig.confirmed` 默认 false，只有改源码重编为 true 后才参与控制。启用后：
+- 滤波后的 `power_w`（`power_filter_ms`，默认300ms）超过 `budget_w`（默认45W）时，按比例降低**速度目标**，不砍驱动电流；`max_current_ma`/`drive_current_ma` 只做电机/C620安全底。
+- 缓冲能量低于 `warning_energy_j`（默认300J）开始降速，低于 `stop_energy_j`（默认80J）受控停车，恢复需 `restart_energy_j`（默认350J）。
+- `braking_current_ma` 默认8000，避免下坡/功率停车制动太弱。
+- FM「功率限制（当前未启用）」组的 `tune_chassis_power_budget_w`、`tune_chassis_power_filter_ms` 只改RAM参数；`confirmed` 必须改源码重编。
+- `g_chassis_status.power_speed_scale` 是功率/能量限速比例，`power_filtered_w` 是滤波后功率，用于现场判断是否在降速。

@@ -134,7 +134,7 @@ int test_chassis() {
         control.step_tuning(20, wheels, cmd);
         CHECK(control.status().enabled);
         cmd.updated_ms = 24;
-        cmd.tune_current_limit_ma = 10001;
+        cmd.tune_current_limit_ma = config.max_current_ma + 1;
         feedback(wheels, 24);
         control.step_tuning(24, wheels, cmd);
         CHECK(!control.status().enabled && control.status().tune_result == ChassisTuneResult::Invalid);
