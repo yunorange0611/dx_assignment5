@@ -1,3 +1,4 @@
+#include "Arm/yaw_config.h"
 #include "Arm/arm_control.h"
 #include <cmath>
 #include <cstring>
@@ -59,7 +60,8 @@ ArmControl::ArmControl(const Config &c)
     }
     const auto &y = c.joint[Yaw];
     yaw_limits_ = {
-        y.min_deg, y.max_deg, y.max_speed_deg_s, y.max_accel_deg_s2, 0, y.max_deg - y.min_deg, 0};
+        y.min_deg, y.max_deg, y.max_speed_deg_s, y.max_accel_deg_s2, 0,
+        std::fmin(kYawMaxTargetLeadDeg, y.max_deg - y.min_deg), 0};
     yaw_motion_min_ = y.min_deg;
     yaw_motion_max_ = y.max_deg;
     yaw_motion_speed_ = y.max_speed_deg_s;
@@ -819,15 +821,25 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
         return status_.last_result = Result::OutOfRange;
     for (unsigned i = 0; i < kJointCount; ++i)
         if (mask & (1u << i)) {
+            auto &joint = status_.joint[i];
+            auto &runtime = runtime_[i];
+            if (i == Yaw && !yaw_test_active_ && next[i] != joint.target_deg) {
+                const float actual_error = next[i] - joint.position_deg;
+                const float reference_error = next[i] - joint.reference_deg;
+                // Re-plan only when the old trajectory points away from the new
+                // physical destination. Repeated identical commands must not reset it.
+                if (actual_error * reference_error < 0 ||
+                    actual_error * runtime.reference_velocity < 0) {
+                    joint.reference_deg = joint.position_deg;
+                    runtime.reference_velocity = 0;
+                    runtime.integral = 0;
+                }
+            }
             status_.joint[i].target_deg =
                 i == Yaw
                     ? (yaw_tuning_unlimited_
                            ? clamp(next[i], -180.0f, 180.0f)
-                           : clamp(next[i],
-                                   std::fmax(yaw_motion_min_, status_.joint[i].position_deg -
-                                                                  yaw_limits_.max_target_lead_deg),
-                                   std::fmin(yaw_motion_max_, status_.joint[i].position_deg +
-                                                                  yaw_limits_.max_target_lead_deg)))
+                           : clamp(next[i], yaw_motion_min_, yaw_motion_max_))
                     : q[i];
             runtime_[i].last_command_ms = now;
         }
@@ -882,6 +894,17 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
         if (i == BigPitch || i == SmallPitch)
             continue;
         if (s.enabled && (c.motor != Motor::Dm4310Mit || s.motor_state == 1)) {
+            if (i == Yaw && !yaw_test_active_) {
+                const float actual_error = s.target_deg - s.position_deg;
+                if (actual_error * (s.target_deg - s.reference_deg) < 0 ||
+                    actual_error * r.reference_velocity < 0) {
+                    // Feedback crossed the reference/target: discard the stale
+                    // planner direction, not the final position destination.
+                    s.reference_deg = s.position_deg;
+                    r.reference_velocity = 0;
+                    r.integral = 0;
+                }
+            }
             const float error = s.target_deg - s.reference_deg;
             // 到目标前按制动距离减速；每周期约束参考速度和加速度。
             const float braking = std::sqrt(2 * c.max_accel_deg_s2 * std::fabs(error));
@@ -896,13 +919,17 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                 r.reference_velocity = limit_yaw_speed(r.reference_velocity, dt);
             s.reference_deg =
                 clamp(s.reference_deg + r.reference_velocity * dt, drive_min(i), drive_max(i));
-            // Modes 5/6 own the full single-turn range; the normal 5-degree
-            // reference lead would otherwise stop a far position target short.
-            if (i == Yaw && !yaw_tuning_unlimited_)
+            // Bound only reference position. reference_velocity is the planned
+            // motion request, not a derivative of the clamped reference: keep it
+            // toward the destination so friction assist survives tracking lag.
+            if (i == Yaw && !yaw_test_active_) {
+                const float planned = s.reference_deg;
                 s.reference_deg = clamp(
-                    s.reference_deg,
+                    planned,
                     std::fmax(drive_min(i), s.position_deg - yaw_limits_.max_target_lead_deg),
                     std::fmin(drive_max(i), s.position_deg + yaw_limits_.max_target_lead_deg));
+
+            }
         }
     }
     update_drive_references();

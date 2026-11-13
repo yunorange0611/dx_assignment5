@@ -70,6 +70,66 @@ bool yaw_zero(const Frame *f, unsigned n) {
 }
 } // namespace
 int test_yaw() {
+    { // Default (no online limits): lag must neither run ahead nor lose assist.
+        for (int sign : {-1, 1}) {
+            Config c = config();
+            c.joint[Yaw].position_kp = .01f;
+            ArmControl a(c);
+            CHECK(a.yaw_limits().max_target_lead_deg == 5);
+            CHECK(feed(a, 0));
+            CHECK(a.capture_zero(1, 0) == Result::Ok);
+            CHECK(a.enable(1, 0) == Result::Ok);
+            a.set_yaw_tuning_limits(false);
+            a.set_yaw_friction_feedforward(5200);
+            float q[kJointCount]{};
+            q[Yaw] = sign * 40;
+            Frame frames[kJointCount]{};
+            for (unsigned t = 4; t <= 800; t += 4) {
+                CHECK(feed(a, t));
+                CHECK(a.set_targets(1, q, t) == Result::Ok);
+                a.step(t, frames);
+            }
+            const auto &j = a.status().joint[Yaw];
+            CHECK(j.target_deg == sign * 40);
+            CHECK(std::fabs(j.reference_deg) <= 5.001f);
+            CHECK(sign * j.drive_reference_velocity_deg_s > .5f);
+            CHECK(sign * a.yaw_friction_feedforward_applied() > 0);
+            CHECK(sign * j.velocity_target_deg_s > 0);
+        }
+    }
+
+    { // Stalled plant: changing 20 to 18 must still move toward +18, not backward.
+        Config c = config();
+        c.joint[Yaw].position_kp = .01f;
+        ArmControl a(c);
+        CHECK(feed(a, 0));
+        CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.set_yaw_limits({-90, 90, 10, 15, 2, 5, 1}, 0) == Result::Ok);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        a.set_yaw_tuning_limits(false);
+        Frame frames[kJointCount]{};
+        float q[kJointCount]{};
+        q[Yaw] = 20;
+        for (unsigned t = 4; t <= 800; t += 4) {
+            CHECK(feed(a, t));
+            CHECK(a.set_targets(1, q, t) == Result::Ok);
+            a.step(t, frames);
+            CHECK(a.status().joint[Yaw].reference_deg <= 5.001f);
+        }
+        q[Yaw] = 18;
+        CHECK(feed(a, 804));
+        CHECK(a.set_targets(1, q, 804) == Result::Ok);
+        a.step(804, frames);
+        CHECK(a.status().joint[Yaw].target_deg == 18);
+        CHECK(a.status().joint[Yaw].velocity_target_deg_s >= 0);
+        // Destination crossing the actual position must re-plan from feedback.
+        q[Yaw] = -2;
+        CHECK(feed(a, 808));
+        CHECK(a.set_targets(1, q, 808) == Result::Ok);
+        a.step(808, frames);
+        CHECK(a.status().joint[Yaw].velocity_target_deg_s < 0);
+    }
+
     { // Fixed absolute zero: wrap at startup, direction, recapture and return target.
         Config c = config();
         c.joint[Yaw].fixed_zero_encoder = 8100;
@@ -196,6 +256,7 @@ int test_yaw() {
         CHECK(a.capture_zero(1, 0) == Result::Ok);
         CHECK(a.enable(1, 0) == Result::Ok);
         a.set_yaw_friction_feedforward(500);
+        a.set_yaw_tuning_limits(false); // Test full position destination, not normal target-lead clipping.
         a.step(0, frames);
         CHECK(feed(a, 4, 800)); // Hand disturbance: -8.8 deg, target still 0.
         a.step(4, frames);
@@ -386,7 +447,9 @@ int test_yaw() {
         CHECK(a.enable(1, 0) == Result::Ok);
         float q[kJointCount] = {80, 0, 0, 0, 0};
         CHECK(a.set_targets(1, q, 0) == Result::Ok);
-        CHECK(std::fabs(a.status().joint[Yaw].target_deg - 3) < .001f);
+        CHECK(std::fabs(a.status().joint[Yaw].target_deg - 10) < .001f);
+        q[Yaw] = 3;
+        CHECK(a.set_targets(1, q, 0) == Result::Ok);
         CHECK(a.set_yaw_envelope(-4, 4, 1) == Result::Ok);
         for (uint32_t t = 0; t < 120; t += 4) {
             CHECK(feed(a, t));
