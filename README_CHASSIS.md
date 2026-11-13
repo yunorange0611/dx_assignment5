@@ -2,7 +2,7 @@
 
 CAN2左轮ID1、右轮ID2，反馈0x201/0x202，输出0x200第一/二槽；CAN1由原机械臂任务管理。日常构建 `Debug/Release`，同一整车固件通过 `robot_tune_mode` 选对象，直接写目标；代码没有 `tune_enable`。
 
-**当前 `kChassisIndependent=true`**：0档是底盘独立直驱，左拨杆上 + 回中解锁后直接用左竖/右横；底盘本身不依赖机械臂/Yaw/IMU/功率。左横直控Yaw另需Yaw在线/校零/使能，见下文“Yaw直控”。上电、关控、翻车、遥控失联、离开上档、功率锁存都会撤销解锁；恢复需左拨杆上、右拨杆中、五通道回中300ms，`g_robot_status.independent_armed=1` 后才接受摇杆。改回 `false` 才恢复整车许可路径。
+**当前 `kChassisIndependent=true`**：0档是底盘独立直驱，左拨杆上 + 回中解锁后直接用左竖/右横；底盘本身不依赖机械臂/Yaw/IMU/功率。左横直控Yaw另需Yaw在线/校零/使能，见下文“Yaw直控”。上电、关控、翻车、遥控失联、离开上档、功率锁存都会撤销解锁；恢复需左拨杆上、五通道回中300ms，`g_robot_status.independent_armed=1` 后才接受摇杆；右拨杆位置不参与解锁。改回 `false` 才恢复整车许可路径。
 
 正常控制链为 `Robot_GetChassisCommand → ChassisControl → ChassisPower → ChassisMotor组帧 → CAN2`。摇杆直接映射目标速度再限加减速，`speed_request/turn_request`为[-1,1]；前进和逆时针为正，倒车不反转转向，不做Yaw跟随。
 
@@ -80,7 +80,7 @@ robot_tune_mode仅选择对象/控制层。当时tune_enable为旧FM兼容符号
 ### 0档底盘直驱（比赛/交接）
 - `ChassisConfig.h` 的 `kChassisIndependent=true` 时：`robot_tune_mode=0`、左拨杆上、遥控在线，底盘直接使用共用解析值 `remote_axis[0]`（左竖）和 `remote_axis[3]`（右横）驱动；底盘本身不再要求机械臂 active、Yaw 半幅、IMU 或功率计，左横Yaw直控另需Yaw在线/校零/使能。
 - 左拨杆中/下、松杆、遥控失联、命令1、功率锁存（`power_confirmed` 且 `power_stop_requested`/`power_inhibited`）：停止/制动。
-- 上电、关控、翻车、遥控失联、左拨杆中/下、功率锁存都会使 `drive_armed=0`；重新运动必须先左拨杆上、遥控在线、五通道回中、右拨杆中位并保持 `neutral_ms=300ms`，`g_robot_status.independent_armed=1` 后才接受摇杆运动。
+- 上电、关控、翻车、遥控失联、左拨杆中/下、功率锁存都会使 `drive_armed=0`；重新运动必须先左拨杆上、遥控在线、五通道回中并保持 `neutral_ms=300ms`，`g_robot_status.independent_armed=1` 后才接受摇杆运动；右拨杆位置不参与解锁。
 - `independent_stop_latched` 可由关控释放 + 回中清除，也可由命令4清除；清除本身不会立即出力，仍要经过上面的回中解锁。功率锁存清除还要满足 `restart_energy_j` 且功率数据新鲜。
 - 遥控解析、通道、方向、死区仍共用；机械臂/Yaw 代码不参与底盘输出。物理通道/方向仍须实测核对，独立模式本身不检查 `mapping_confirmed`。
 - `ChassisCommand.independent` 是内部标记；`g_chassis_status.independent` 为只读状态。FreeMASTER 的“0档底盘直驱｜左拨杆上”Group 用于观察，`independent_armed` 表示已回中解锁。
@@ -102,7 +102,7 @@ FreeMASTER「行驶加减速与转向」组的五项 `tune_chassis_*` 在正常�
 ### 功率限制（代码已接入，默认未启用）
 `ChassisPowerConfig.confirmed` 默认 false，只有改源码重编为 true 后才参与控制。启用后：
 - 滤波后的 `power_w`（`power_filter_ms`，默认300ms）超过 `budget_w`（默认45W）时，按比例降低**速度目标**，不砍驱动电流；`max_current_ma`/`drive_current_ma` 只做电机/C620安全底。
-- 缓冲能量低于 `warning_energy_j`（默认300J）开始降速，低于 `stop_energy_j`（默认80J）受控停车，恢复需 `restart_energy_j`（默认350J）。
+- 缓冲能量低于 `warning_energy_j`（默认300J）开始降速，低于 `stop_energy_j`（默认80J）受控停车，恢复需 `restart_energy_j`（默认350J）。低能量需持续100ms确认；停车请求期间保持底盘使能并用 `braking_current_ma` 制动，锁存 `Inhibited` 后才撤销输出。
 - `braking_current_ma` 默认8000，避免下坡/功率停车制动太弱。
 - FM「功率限制（当前未启用）」组的 `tune_chassis_power_budget_w`、`tune_chassis_power_filter_ms` 只改RAM参数；`confirmed` 必须改源码重编。
 - `g_chassis_status.power_speed_scale` 是功率/能量限速比例，`power_filtered_w` 是滤波后功率，用于现场判断是否在降速。

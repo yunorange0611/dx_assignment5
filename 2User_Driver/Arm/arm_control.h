@@ -135,6 +135,8 @@ class ArmControl {
     Result set_yaw_envelope(float min_deg, float max_deg, float speed_deg_s);
     Result set_yaw_test_speed(float speed_deg_s, uint32_t now_ms);
     void clear_yaw_test();
+    // Called only after the tuning owner has enabled and validated Yaw.
+    void bypass_yaw_homing_for_tuning() { status_.joint[Yaw].homing = false; }
     const YawRuntimeLimits &yaw_limits() const {
         return yaw_limits_;
     }

@@ -35,7 +35,8 @@ bool feed(ArmControl &arm, unsigned joint, uint32_t now, unsigned encoder = 1000
     return arm.receive(1, arm.feedback_id(joint), d, 8, now);
 }
 struct Rig {
-    ArmControl arm{kArmConfig};
+    Config cfg = [] { auto c = kArmConfig; c.joint[Yaw].fixed_zero_encoder = -1; return c; }();
+    ArmControl arm{cfg};
     ChassisCommand command{};
     Frame frames[kJointCount]{};
     uint32_t now = 1000;
@@ -197,12 +198,12 @@ int run() {
 
     // Invalid online gains are rejected atomically while the existing arm holds.
     const float accepted_yaw_kp = g_robot_tune_status.yaw_velocity_kp;
-    const float accepted_yaw_limit = g_robot_tune_status.yaw_current_limit_ma;
+    const float accepted_yaw_limit = g_robot_tune_status.yaw_voltage_limit_raw;
     tune_yaw_velocity_kp = std::numeric_limits<float>::quiet_NaN();
     r.tick();
     CHECK(g_robot_tune_status.yaw_parameter_result == uint32_t(Result::InvalidArgument));
     CHECK(g_robot_tune_status.yaw_velocity_kp == accepted_yaw_kp &&
-          g_robot_tune_status.yaw_current_limit_ma == accepted_yaw_limit);
+          g_robot_tune_status.yaw_voltage_limit_raw == accepted_yaw_limit);
     CHECK(r.arm.status().enabled_mask == kAllJoints);
     tune_yaw_velocity_kp = accepted_yaw_kp;
     r.tick();

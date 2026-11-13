@@ -10,6 +10,15 @@
 #include "can.h"
 #include "can_frame.h"
 
+// SWD/FreeMASTER read-only diagnostic; counters mean HAL mailbox submission,
+// not acknowledgement by a particular motor. seq is odd while being updated.
+struct CanYawTxDebug {
+    uint32_t seq, attempts, submitted, failed, cancelled, expired;
+    uint32_t updated_ms, id, dlc, mailbox, hal_result, can_esr;
+    uint8_t data[8];
+};
+extern volatile CanYawTxDebug g_can1_yaw_tx_debug;
+
 class can_device_receive;
 
 typedef void(can_rx_callback)(can_device_receive *can_receive, uint8_t *data);

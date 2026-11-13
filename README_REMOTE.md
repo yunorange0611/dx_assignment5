@@ -41,7 +41,7 @@
 | `g_arm_status.faults/enabled_mask/last_result` | 故障、实际使能轴、最近核心操作结果 |
 | `g_arm_status.joint[i].online/calibrated` | 仅排查未就绪时展开 |
 | `g_arm_status.joint[i].position_deg/target_deg` | 只展开正在调试的轴，看关节反馈和目标 |
-| `g_arm_status.joint[i].drive_position_deg/drive_target_deg/effort` | pitch 驱动角换算、跟踪与输出；DM 为 Nm，M2006 为 mA |
+| `g_arm_status.joint[i].drive_position_deg/drive_target_deg/effort` | pitch 驱动角换算、跟踪与输出；DM 为 Nm，M2006 为 mA，Yaw 为电压原码 |
 
 通用命令 `g_robot_debug_command` 每轮读取后清0。日常轮/Yaw目标和增益直接用 `tune_*` 输入，由原owner检查，不填旧出力脉冲的wheel/duration/confirm/seq。轮组参数结果看 `g_chassis_tune_status`，Yaw参数结果看 `g_robot_tune_status`。机械臂其他轴仍可使用 `g_arm_tune_request` 受限参数申请，要求全部轴失能、反馈静止健康，最后递增request_seq；这不是运动出力入口。所有在线值只存RAM。
 

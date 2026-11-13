@@ -26,7 +26,7 @@ volatile float tune_wheel_kp = engineer::kChassisConfig.velocity_kp,
     tune_wheel_ki = engineer::kChassisConfig.velocity_ki, tune_wheel_current_limit_ma = 10000;
 volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
-    tune_yaw_velocity_ki = 0, tune_yaw_current_limit_ma = 100, tune_yaw_half_range_deg = 0;
+    tune_yaw_velocity_ki = 10, tune_yaw_voltage_limit_raw = 25000, tune_yaw_half_range_deg = 0;
 RobotTuneStatus g_robot_tune_status{};
 }
 namespace {
@@ -97,7 +97,7 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     wheel_ki = tune_wheel_ki;
     wheel_limit = tune_wheel_current_limit_ma;
     yaw_tune = {tune_yaw_position_kp, tune_yaw_velocity_kp, tune_yaw_velocity_ki,
-                tune_yaw_current_limit_ma};
+                tune_yaw_voltage_limit_raw};
     taskEXIT_CRITICAL();
     // 0档底盘直驱：调参退出不等整车 resume/命令4。清掉调参目标后立即回到
     // 正常路径，由独立底盘命令接管；机械臂恢复仍走它自己的命令4流程。
@@ -167,20 +167,28 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
          uint32_t(now - imu.received_ms) <= kAttitudeConfig.max_sample_gap_ms);
     const bool wheel_mode = requested >= ROBOT_TUNE_LEFT_CURRENT &&
                             requested <= ROBOT_TUNE_RIGHT_SPEED;
+    const bool yaw_mode = requested == ROBOT_TUNE_YAW_SPEED ||
+                          requested == ROBOT_TUNE_YAW_POSITION;
     // Wheel tuning is independent of arm calibration and IMU commissioning.
+    // Yaw tuning is independent of the rest of the arm; only Yaw CAN state and
+    // CAN1 transport/timing faults participate. Other arm joints are not owners.
     bool fatal = stop || enable > 1 || !online || !timing_ok ||
-                 (!wheel_mode && (arm.status().faults || !imu_ok));
+                 (!wheel_mode && ((arm.status().faults &
+                                   (yaw_mode ? (TransportError | TimingError) : 0xffffffffu)) ||
+                                  !imu_ok));
     bool holders_still = true;
     const uint8_t enabled = arm.status().enabled_mask;
-    for (unsigned i = 0; i < kJointCount; ++i) {
-        if (!(enabled & (1u << i)))
-            continue;
-        const auto &j = arm.status().joint[i];
-        if (!wheel_mode)
-            fatal |= !j.online || !j.calibrated || j.faults ||
-                uint32_t(now - j.last_feedback_ms) > kArmConfig.feedback_timeout_ms;
-        holders_still &= std::fabs(j.drive_velocity_deg_s) <=
-                              kArmConfig.joint[i].stationary_speed_deg_s;
+    if (!yaw_mode) {
+        for (unsigned i = 0; i < kJointCount; ++i) {
+            if (!(enabled & (1u << i)))
+                continue;
+            const auto &j = arm.status().joint[i];
+            if (!wheel_mode)
+                fatal |= !j.online || !j.calibrated || j.faults ||
+                    uint32_t(now - j.last_feedback_ms) > kArmConfig.feedback_timeout_ms;
+            holders_still &= std::fabs(j.drive_velocity_deg_s) <=
+                                  kArmConfig.joint[i].stationary_speed_deg_s;
+        }
     }
     if (fatal) {
         arm.disable();
@@ -197,17 +205,16 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
         wheel_ready &= wheels.feedback_frames[i] && uint32_t(now - wheels.feedback_ms[i]) <=
                                                          kChassisConfig.feedback_timeout_ms;
     const auto &yaw = arm.status().joint[Yaw];
-    const bool yaw_mode = requested == ROBOT_TUNE_YAW_SPEED ||
-                          requested == ROBOT_TUNE_YAW_POSITION;
-    const bool yaw_ready = arm.status().configuration_valid && kArmConfig.hardware_confirmed &&
-        Yaw_ConfigurationReady(arm) && yaw.online && yaw.calibrated && !yaw.faults &&
+    // Yaw tuning only requires Yaw's own CAN/feedback/calibration/temperature.
+    // Whole-arm confirmation, Yaw wire-range confirmation and other joints are
+    // deliberately not part of this readiness check.
+    const bool yaw_ready = arm.status().configuration_valid && yaw.online && yaw.calibrated &&
+        !yaw.faults && !(arm.status().faults & (TransportError | TimingError)) &&
         uint32_t(now - yaw.last_feedback_ms) <= kArmConfig.dji_unwrap_gap_ms &&
         yaw.temperature_c < kArmConfig.joint[Yaw].max_temperature_c;
-    const bool stopped_wheels = wheels_fresh && !wheels.enabled &&
-        ((!wheels.feedback_frames[0] && !wheels.feedback_frames[1]) || wheels.wheels_stationary);
-    const bool still = holders_still && (yaw_mode ? stopped_wheels &&
-        std::fabs(yaw.velocity_deg_s) <= kArmConfig.joint[Yaw].stationary_speed_deg_s
-        : wheels_fresh && wheels.wheels_stationary);
+    const bool still = yaw_mode
+        ? std::fabs(yaw.velocity_deg_s) <= kArmConfig.joint[Yaw].stationary_speed_deg_s
+        : holders_still && wheels_fresh && wheels.wheels_stationary;
     JointTuning accepted_yaw{};
     arm.get_tuning(Yaw, accepted_yaw);
     const bool yaw_parameters_applied =
@@ -217,7 +224,7 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
         accepted_yaw.effort_limit == yaw_tune.effort_limit;
     const bool selected_ok = yaw_mode ? yaw_ready && yaw_parameters_applied : wheel_ready;
     auto state = tuning.step({requested, now,
-        (wheel_mode || kOperatorConfig.mapping_confirmed) && !fatal,
+        (wheel_mode || yaw_mode || kOperatorConfig.mapping_confirmed) && !fatal,
         selected_ok, still, fatal, current, speed, yaw_speed, yaw_target,
         yaw.position_deg, arm.yaw_limits().min_deg, arm.yaw_limits().max_deg, enable == 1});
 
@@ -257,7 +264,7 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     if (state.ready && yaw_mode && !fatal) {
         INS_RevokeCalibrationPermission(now);
         if (!arm.status().joint[Yaw].enabled) {
-            if (arm.enable(1u << Yaw, now) == Result::Ok)
+            if (arm.enable(1u << Yaw, now, true) == Result::Ok)
                 tune_added_mask |= 1u << Yaw;
             else
                 fatal = true;
@@ -268,8 +275,10 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
             fatal = true;
         JointTuning accepted{};
         arm.get_tuning(Yaw, accepted);
-        if (!fatal && arm.set_effort_limit(Yaw, std::fmin(150.0f, accepted.effort_limit)) != Result::Ok)
+        if (!fatal && arm.set_effort_limit(Yaw, std::fmin(25000.0f, accepted.effort_limit)) != Result::Ok)
             fatal = true;
+        if (!fatal)
+            arm.bypass_yaw_homing_for_tuning(); // Modes 5/6 do not wait for startup zero.
         if (!fatal && requested == ROBOT_TUNE_YAW_SPEED) {
             fatal = arm.set_yaw_test_speed(state.value, now) != Result::Ok;
         } else if (!fatal) {
@@ -485,7 +494,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
             arm_request = true;
             break;
         case ROBOT_DEBUG_ENABLE_YAW:
-            arm.enable(1u << Yaw, now);
+            arm.enable(1u << Yaw, now, true);
             break;
         case ROBOT_DEBUG_DISABLE_YAW:
             arm.disable_joints(1u << Yaw);
@@ -542,13 +551,21 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         drive_neutral &= std::abs(channel) <= 30;
     const bool switches_valid = kOperatorConfig.left_switch_index < 2 &&
                                 kOperatorConfig.right_switch_index < 2;
-    drive_neutral &= switches_valid &&
-        input.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
+    // Independent chassis arming does not require the right switch position.
+    drive_neutral &= switches_valid;
     const bool drive_switch = switches_valid &&
         input.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP;
     ChassisStatus chassis_status{};
-    const bool power_stop = Chassis_GetStatus(&chassis_status) && chassis_status.power_confirmed &&
-        (chassis_status.power_stop_requested || chassis_status.power_inhibited);
+    const bool chassis_status_valid = Chassis_GetStatus(&chassis_status);
+    const bool power_inhibited = chassis_status_valid && chassis_status.power_confirmed &&
+                                 chassis_status.power_inhibited;
+    // A requested stop must still brake. Keep the chassis command enabled with
+    // zero speed so ChassisPower::limit() can apply braking_current_ma; only the
+    // latched inhibit removes the output completely.
+    const bool power_braking = chassis_status_valid && chassis_status.power_confirmed &&
+                               chassis_status.power_stop_requested &&
+                               !chassis_status.power_inhibited;
+    const bool power_stop = power_inhibited || power_braking;
     if (kChassisIndependent) {
         if (global_stop || tipover) {
             chassis_stop_latched = true;
@@ -731,12 +748,13 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     if (independent) {
         command.independent = true;
         command.enabled = drive_switch && remote_ok && !force_stop && !stop_request &&
-                          !chassis_stop_latched && !tipover && drive_armed;
-        command.speed_request = next.remote_axis[0];
-        command.turn_request = -next.remote_axis[3];
-        command.stop = !command.enabled ||
+                          !chassis_stop_latched && !tipover && (drive_armed || power_braking);
+        command.speed_request = power_braking ? 0 : next.remote_axis[0];
+        command.turn_request = power_braking ? 0 : -next.remote_axis[3];
+        command.stop = !command.enabled || power_braking ||
                        (command.speed_request == 0 && command.turn_request == 0);
-        command.brake = !command.enabled || command.speed_request == 0;
+        command.brake =
+            !command.enabled || power_braking || command.speed_request == 0;
         command.reset = !command.enabled;
         command.epoch = result.motion_epoch;
         // 诊断快照跟随底盘实际请求；active/enabled_mask 仍是机械臂真实状态。

@@ -82,6 +82,9 @@ extern "C" int Chassis_GetStatus(ChassisStatus *out) {
     return out->ready;
 }
 int test_robot_control() {
+    // Legacy manual-zero cases use -1; the fixed-zero case overrides it explicitly.
+    auto cfg = kArmConfig;
+    cfg.joint[Yaw].fixed_zero_encoder = -1;
     // The legacy whole-vehicle bridge tests below expect the old command gate.
     kChassisIndependent = false;
     static_assert(sizeof(ChassisCommand) < sizeof(RobotControlStatus));
@@ -111,7 +114,7 @@ int test_robot_control() {
     g_dr16_status.frame.switches[0] = DR16_SWITCH_UP;
     g_dr16_status.frame.switches[1] = DR16_SWITCH_MID;
     CHECK(Robot_RequestControl());
-    ArmControl arm(kArmConfig);
+    ArmControl arm(cfg);
     Robot_Execute(arm, 1234, false);
     CHECK(Robot_GetControlStatus(&s));
     CHECK(s.updated_ms == 1234 && s.ready && s.remote_online);
@@ -351,7 +354,7 @@ int test_robot_control() {
         CHECK(!held.status().enabled_mask && !g_robot_tune_status.ready);
 
         // In a Yaw tuning selection, the zero command calibrates Yaw only.
-        ArmControl yaw_only(kArmConfig);
+        ArmControl yaw_only(cfg);
         const uint8_t feedback[8] = {3, 232, 0, 0, 0, 0, 25, 0};
         now += 4;
         fresh_inputs(now);
@@ -492,11 +495,68 @@ int test_robot_control() {
         Robot_Execute(independent_arm, now, false);
     }
     if (kArmConfig.joint_mask == kAllJoints) {
+        // Independent chassis arming does not require the right switch at MID.
+        kChassisIndependent = true;
+        robot_tune_mode = 0;
+        uint32_t now = 1500;
+        auto local = cfg;
+        ArmControl chassis_arm(local);
+        auto step = [&](int right_switch) {
+            now += 4;
+            fresh_inputs(now);
+            g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+            g_dr16_status.frame.switches[kOperatorConfig.right_switch_index] = right_switch;
+            Robot_Execute(chassis_arm, now, false);
+            Robot_GetControlStatus(&s);
+        };
+        for (unsigned i = 0; i <= 76; ++i)
+            step(DR16_SWITCH_UP);
+        CHECK(s.independent_armed);
+        CHECK(Robot_GetChassisCommand(&command) && command.enabled && command.independent);
+        // Leave the independent chassis disarmed for the following Yaw test.
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
+        Robot_Execute(chassis_arm, now, false);
+    }
+    if (kArmConfig.joint_mask == kAllJoints) {
+        // Power stop requests braking with the chassis command enabled, but the
+        // independent drive stays disarmed and requires neutral re-arm.
+        kChassisIndependent = true;
+        robot_tune_mode = 0;
+        uint32_t now = 1700;
+        auto local = cfg;
+        ArmControl chassis_arm(local);
+        auto step = [&](bool power_stop) {
+            now += 4;
+            fresh_inputs(now);
+            test_wheels.power_confirmed = 1;
+            test_wheels.power_session_allowed = 1;
+            test_wheels.power_stop_requested = power_stop;
+            g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+            Robot_Execute(chassis_arm, now, false);
+            Robot_GetControlStatus(&s);
+            Robot_GetChassisCommand(&command);
+        };
+        for (unsigned i = 0; i <= 76; ++i)
+            step(false);
+        CHECK(s.independent_armed);
+        step(true);
+        CHECK(!s.independent_armed);
+        CHECK(command.enabled && command.independent);
+        CHECK(command.stop && command.brake);
+        CHECK(command.speed_request == 0 && command.turn_request == 0);
+        now += 4;
+        fresh_inputs(now);
+        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_DOWN;
+        Robot_Execute(chassis_arm, now, false);
+    }
+    if (kArmConfig.joint_mask == kAllJoints) {
         // Yaw direct: left horizontal moves Yaw even when only Yaw is enabled.
         kChassisIndependent = true;
         robot_tune_mode = 0;
         uint32_t now = 1600;
-        auto local = kArmConfig;
+        auto local = cfg;
         local.hardware_confirmed = true;
         local.pitch.mapping_confirmed = true;
         ArmControl yaw_direct(local);
@@ -556,6 +616,61 @@ int test_robot_control() {
         CHECK(automatic.status().joint[Yaw].target_deg > 0);
         auto_run(DR16_SWITCH_DOWN);
         CHECK(!automatic.status().joint[Yaw].enabled && !s.yaw_direct_active);
+    }
+    if (kArmConfig.joint_mask == kAllJoints) {
+    uint32_t now = 2000;
+    { // Command 5 enables Yaw only; whole-arm hardware confirmation is not required.
+        auto local = cfg;
+        local.hardware_confirmed = false;
+        ArmControl yaw_cmd(local);
+        const uint8_t yaw_feedback[8] = {3, 232, 0, 0, 0, 0, 25, 0};
+        now += 4;
+        fresh_inputs(now);
+        CHECK(yaw_cmd.receive(1, yaw_cmd.feedback_id(Yaw), yaw_feedback, 8, now));
+        robot_tune_mode = ROBOT_TUNE_YAW_POSITION;
+        g_robot_debug_command = ROBOT_DEBUG_CAPTURE_ZERO;
+        Robot_Execute(yaw_cmd, now, false);
+        CHECK(yaw_cmd.status().joint[Yaw].calibrated);
+        robot_tune_mode = ROBOT_TUNE_NORMAL;
+        g_robot_debug_command = ROBOT_DEBUG_ENABLE_YAW;
+        Robot_Execute(yaw_cmd, now, false);
+        CHECK(yaw_cmd.status().joint[Yaw].enabled);
+        CHECK(yaw_cmd.status().enabled_mask == (1u << Yaw));
+        g_robot_debug_command = ROBOT_DEBUG_DISABLE_YAW;
+        Robot_Execute(yaw_cmd, now, false);
+        CHECK(!yaw_cmd.status().joint[Yaw].enabled);
+    }
+    { // Mode 6 becomes ready with only Yaw CAN healthy; chassis/other axes ignored.
+        auto local = cfg;
+        local.hardware_confirmed = false;
+        ArmControl yaw_tune(local);
+        const uint8_t yaw_feedback[8] = {3, 232, 0, 0, 0, 0, 25, 0};
+        now += 4;
+        fresh_inputs(now);
+        CHECK(yaw_tune.receive(1, yaw_tune.feedback_id(Yaw), yaw_feedback, 8, now));
+        robot_tune_mode = ROBOT_TUNE_YAW_POSITION;
+        g_robot_debug_command = ROBOT_DEBUG_CAPTURE_ZERO;
+        Robot_Execute(yaw_tune, now, false);
+        CHECK(yaw_tune.status().joint[Yaw].calibrated);
+        robot_tune_mode = ROBOT_TUNE_NORMAL;
+        Robot_Execute(yaw_tune, now, false);
+        robot_tune_mode = ROBOT_TUNE_YAW_POSITION;
+        tune_yaw_target_deg = 3;
+        for (unsigned i = 0; i < 80; ++i) {
+            now += 4;
+            fresh_inputs(now);
+            test_wheels = {}; // Deliberately unavailable; Yaw mode must ignore it.
+            CHECK(yaw_tune.receive(1, yaw_tune.feedback_id(Yaw), yaw_feedback, 8, now));
+            Robot_Execute(yaw_tune, now, false);
+        }
+        CHECK(g_robot_tune_status.ready);
+        CHECK(yaw_tune.status().joint[Yaw].enabled);
+        CHECK(yaw_tune.status().enabled_mask == (1u << Yaw));
+        robot_tune_mode = ROBOT_TUNE_NORMAL;
+        g_robot_debug_command = ROBOT_DEBUG_DISABLE_YAW;
+        Robot_Execute(yaw_tune, now, false);
+        CHECK(!yaw_tune.status().joint[Yaw].enabled);
+    }
     }
     kChassisIndependent = true;
     return 0;

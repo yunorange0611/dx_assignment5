@@ -11,7 +11,7 @@
 | 文件 | 必须实测后填写的内容 |
 |---|---|
 | Chassis/chassis_config.h | 左右C620 ID、方向、内部齿比、有效轮径轮距、低速PI与电流限幅；hardware_confirmed默认false |
-| Arm/yaw_config.h | 电流模式、线束自然中位/安全绝对区间、提前制动余量与可靠减速度；Yaw安全确认默认false |
+| Arm/yaw_config.h | 电压模式、线束自然中位/安全绝对区间、提前制动余量与可靠减速度；Yaw安全确认默认false |
 | Remote/operator_config.cpp | DR16通道/拨杆/方向，mapping_confirmed默认false |
 | Arm/arm_config.cpp | 队友四轴硬件和pitch映射，保留默认确认门槛 |
 | Imu/attitude_estimator.h | 板到车体安装变换、校准和翻车进入/退出阈值，两个确认默认false |

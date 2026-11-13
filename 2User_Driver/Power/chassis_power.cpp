@@ -4,6 +4,9 @@ namespace engineer {
 namespace {
 constexpr float kPowerOverW = 50;
 constexpr uint32_t kDiagnosticMaxGapMs = 100;
+// A single bad energy frame must not start a stop. Hold the low reading for
+// several meter frames before treating it as a real low-buffer condition.
+constexpr uint32_t kLowEnergyDebounceMs = 100;
 float clamp(float x, float l, float h) {
     return std::fmax(l, std::fmin(h, x));
 }
@@ -101,7 +104,18 @@ const ChassisPowerState &ChassisPower::step(uint32_t now, const PowerMeterStatus
         }
         return s_;
     }
-    if (!s_.meter_online || m.energy_j <= c_.stop_energy_j) {
+    const bool low_energy = s_.meter_online && m.energy_j <= c_.stop_energy_j;
+    if (low_energy) {
+        if (!low_energy_tracking_) {
+            low_energy_tracking_ = true;
+            low_energy_since_ms_ = now;
+        }
+    } else {
+        low_energy_tracking_ = false;
+    }
+    const bool low_energy_confirmed =
+        low_energy && uint32_t(now - low_energy_since_ms_) >= kLowEnergyDebounceMs;
+    if (!s_.meter_online || low_energy_confirmed) {
         // enabled is the actual wheel-controller state from the previous cycle.
         // A meter loss directly after its first enabled cycle still needs the
         // bounded braking phase if a healthy Ready state granted that cycle.
@@ -159,6 +173,8 @@ bool ChassisPower::clear(uint32_t now, const PowerMeterStatus &m, bool disabled)
     filtered_power_w_ = 0;
     previous_ms_ = 0;
     have_step_ = false;
+    low_energy_since_ms_ = 0;
+    low_energy_tracking_ = false;
     reset_diagnostics();
     return true;
 }

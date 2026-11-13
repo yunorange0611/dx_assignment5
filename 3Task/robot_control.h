@@ -57,12 +57,12 @@ extern volatile uint32_t robot_tune_mode;
 extern volatile float tune_current_ma, tune_speed_rpm, tune_yaw_speed_deg_s, tune_yaw_target_deg;
 extern volatile float tune_wheel_kp, tune_wheel_ki, tune_wheel_current_limit_ma;
 extern volatile float tune_yaw_position_kp, tune_yaw_velocity_kp, tune_yaw_velocity_ki,
-    tune_yaw_current_limit_ma, tune_yaw_half_range_deg;
+    tune_yaw_voltage_limit_raw, tune_yaw_half_range_deg;
 typedef struct {
     uint32_t updated_ms, mode, epoch, reason;
     uint8_t ready, blocked, held_mask;
     uint32_t yaw_parameter_result;
-    float yaw_position_kp, yaw_velocity_kp, yaw_velocity_ki, yaw_current_limit_ma;
+    float yaw_position_kp, yaw_velocity_kp, yaw_velocity_ki, yaw_voltage_limit_raw;
 } RobotTuneStatus;
 extern RobotTuneStatus g_robot_tune_status; // Read-only accepted mode / limits.
 // ZERO/CLEAR同时请求关控，已使能时核心返回Busy；绝不自动校零/自动开控。

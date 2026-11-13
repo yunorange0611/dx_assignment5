@@ -14,7 +14,7 @@ enum ChassisFault : uint32_t {
 };
 struct ChassisCommand {
     bool valid = false, enabled = false, stop = true, brake = true, reset = true;
-    bool independent = false; // 0档底盘直驱：不参与整车互锁/功率强制门控。
+    bool independent = true; // 0档底盘直驱：不参与整车互锁/功率强制门控。
     float speed_request = 0, turn_request = 0;
     uint32_t updated_ms = 0, epoch = 0;
     uint32_t stop_epoch = 0; // Explicit stop cancels pulses even when already disabled.

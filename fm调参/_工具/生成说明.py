@@ -120,7 +120,7 @@ STEPS = [
         '<b>异常先停：</b>目标写0或切回0档；全局关控用 <code>g_robot_debug_command=1</code>。',
         '<b>在线值只在RAM：</b>FreeMASTER 改的参数重启就丢，确认后写回源码。') + '''
 <p class="stop"><b>左上是行驶，不是关控；左下是待机保持，不是撤力。</b>机械臂没有承托时不要做关控、校零或大电流测试。</p>
-<p class="note"><b>当前0档是独立底盘直驱：</b>左拨杆上、遥控在线、五通道回中且右拨杆中保持300ms后，左竖/右横直接驱动底盘；左横在解锁后还可直控Yaw（需Yaw已在线/校零/使能；命令5只使能Yaw、6只失能Yaw），使用线束软限位，不用正常行驶姿态包络；不要求机械臂 active、IMU 或功率。上电、关控、翻车、失联、离开上档、功率锁存都会撤销解锁，重新运动要重做回中。改回 <code>kChassisIndependent=false</code> 才恢复整车互锁路径。</p>
+<p class="note"><b>当前0档是独立底盘直驱：</b>左拨杆上、遥控在线、五通道回中保持300ms后，左竖/右横直接驱动底盘；右拨杆位置不参与解锁。左横在解锁后还可直控Yaw（需Yaw已在线/校零/使能；命令5只使能Yaw、6只失能Yaw），使用线束软限位，不用正常行驶姿态包络；不要求机械臂 active、IMU 或功率。上电、关控、翻车、失联、离开上档、功率锁存都会撤销解锁，重新运动要重做回中。改回 <code>kChassisIndependent=false</code> 才恢复整车互锁路径。</p>
 '''),
     page('路线表：按第0～12批走', '''
 ''' + table(['批次 / Group', '档位', '本批目标', '做完得到什么'], [
@@ -141,9 +141,9 @@ STEPS = [
 <p class="note">当前 <code>kChassisIndependent=true</code>：0档底盘直驱不要求第8批的整车条件；第8批只影响正常整车/机械臂路径。底盘方向、回中解锁、松杆停车和功率锁存仍要逐项验证。Yaw直控另见“独立底盘Yaw直控”页；命令5/6只使能/失能Yaw。</p>
 ''' + table(['总线 / 对象', '配置'], [
         ('CAN2 左/右 M3508', 'ID1/ID2，反馈0x201/0x202，指令0x200第一/二槽。'),
-        ('CAN1 Yaw GM6020', '电流模式，ID1，反馈0x205，指令0x1FE第一槽。'),
+        ('CAN1 Yaw GM6020', '电压模式，ID1，反馈0x205，指令0x1FF第一槽。'),
         ('CAN1 机械臂', '两台DM、roll、夹爪；CAN1只有一个发送owner。')]) + '''
-<p class="small">不要新增第二个Yaw驱动或第二个0x1FE发送者。</p>
+<p class="small">不要新增第二个Yaw驱动或第二个0x1FF发送者。</p>
 '''),
     page('连接一次，之后只选批次', '''
 <h2>连接</h2>
@@ -302,7 +302,7 @@ STEPS = [
 ''' + table(['变量', '本次示例'], [
         (v('tune_yaw_velocity_kp'), '20；源码占位，不是最终答案。'),
         (v('tune_yaw_velocity_ki'), '0，先关积分。'),
-        (v('tune_yaw_current_limit_ma'), '100mA；Yaw调参硬上限150mA。'),
+        (v('tune_yaw_voltage_limit_raw'), '25000 raw；Yaw调参电压原码上限25000。'),
         (v('robot_tune_mode'), '5。'),
         (v('tune_yaw_speed_deg_s'), '+1°/s，<b>最后写</b>；非零即开始。')]) + '''
 <h2>步骤</h2>
@@ -316,13 +316,13 @@ STEPS = [
 <p class="stop">5档速度是持续命令，没有500ms自动结束。写了非零就必须自己写0；不要关掉FreeMASTER等它停。</p>
 ''' + table(['现象', '本次只改什么'], [
         ('方向对、未顶限、跟得慢', 'P小步加，例如20→24。'),
-        ('电流快跳/啸叫', '先减P，查反馈连续性和机构松动。'),
-        ('顶限还跟不上', '查摩擦、负载和电流上限，不能硬加P。'),
+        ('输出快跳/啸叫', '先减P，查反馈连续性和机构松动。'),
+        ('顶限还跟不上', '查摩擦、负载和电压输出上限，不能硬加P。'),
         ('有重复静差', 'I少量加，例如0.2；不同时改P。'),
         ('回零反摆', '先减I。')]) + '''
 '''),
     page('独立底盘Yaw直控（比赛）', setting('0档底盘直驱｜左横Yaw', '解锁后左横直接控制Yaw；不经过正常行驶姿态包络。') + '''
-<p class="note">前提：<code>kChassisIndependent=true</code>、<code>robot_tune_mode=0</code>、左拨杆上、遥控在线、五通道回中且右拨杆中保持300ms，<code>independent_armed=1</code>。Yaw 必须在线、已校零、无故障。</p>
+<p class="note">前提：<code>kChassisIndependent=true</code>、<code>robot_tune_mode=0</code>、左拨杆上、遥控在线、五通道回中保持300ms，<code>independent_armed=1</code>；右拨杆位置不参与解锁。Yaw 必须在线、已校零、无故障。</p>
 <h2>使能</h2>
 ''' + ol(
         '支撑机械臂，确认Yaw线束中位和已生效半幅；<code>g_yaw_limit_status.ready=1</code>。',
@@ -331,7 +331,7 @@ STEPS = [
         '需要停Yaw：写命令6只失能Yaw；命令1会全局关控。') + '''
 <h2>直控</h2>
 ''' + ol(
-        '左拨杆上、右拨杆中、五通道回中，等 <code>independent_armed=1</code>、<code>yaw_direct_active=1</code>、<code>homing=0</code>。',
+        '左拨杆上、五通道回中，等 <code>independent_armed=1</code>、<code>yaw_direct_active=1</code>、<code>homing=0</code>；右拨杆位置不参与解锁。',
         '左横轻推，<code>yaw_direct_target_deg</code> 从当前角按限位速度积分；看 <code>joint[0].position_deg</code>、<code>velocity_deg_s</code>、<code>effort</code>。',
         '松开左横保持当前目标，不回中；目标只能在 <code>g_yaw_limit_status.min_deg/max_deg</code> 内。',
         '离开上档、关控、翻车、失联、功率停车都会撤销直控，Yaw按统一策略失能（通常不主动回中）；恢复要重新回中解锁并使能Yaw。') + check(
@@ -364,7 +364,7 @@ STEPS = [
 <h2>起步参数</h2>
 ''' + table(['变量', '本次示例'], [
         (v('tune_yaw_position_kp'), '2；先用第7批已稳定的速度环。'),
-        (v('tune_yaw_current_limit_ma'), '100mA。'),
+        (v('tune_yaw_voltage_limit_raw'), '25000 raw。'),
         (v('robot_tune_mode'), '6。'),
         (v('tune_yaw_target_deg'), '+1°，<b>最后写</b>。')]) + '''
 <h2>步骤</h2>
@@ -379,7 +379,7 @@ STEPS = [
 '''),
     page('第10批 正常遥控慢速落地', setting('第10批 正常遥控慢速落地', '先悬空确认正常链，再小步落地；不测快速档。') + '''
 <h2>恢复正常控制</h2>
-<p class="note">当前 <code>kChassisIndependent=true</code>：0档底盘直驱不需要命令4或机械臂 active；左拨杆上、遥控在线、五通道回中且右拨杆中保持300ms后，左竖/右横直接驱动；左横在解锁后还可直控Yaw（命令5/6只使能/失能Yaw），使用线束软限位。下面第1～2步仅在改回正常整车路径后执行；仍先悬空确认方向和松杆停车，再落地。</p>
+<p class="note">当前 <code>kChassisIndependent=true</code>：0档底盘直驱不需要命令4或机械臂 active；左拨杆上、遥控在线、五通道回中保持300ms后，左竖/右横直接驱动；右拨杆位置不参与解锁。左横在解锁后还可直控Yaw（命令5/6只使能/失能Yaw），使用线束软限位。下面第1～2步仅在改回正常整车路径后执行；仍先悬空确认方向和松杆停车，再落地。</p>
 ''' + ol(
         '所有调参目标0、<code>robot_tune_mode=0</code>；机械臂保持，两轮停稳。',
         '第8批真实条件就绪；左中夹取、右中，摇杆回中，<code>wait_neutral=0</code>，写命令4；确认 <code>active=1</code>、<code>enabled_mask=31</code>。',
@@ -541,7 +541,7 @@ FAULTS = [
     page('排查6/7：Yaw 不动、限位被拒', '''
 <h2>四个硬条件</h2>
 ''' + ol(
-        'CAN1 GM6020电流模式反馈持续。',
+        'CAN1 GM6020电压模式反馈持续。',
         '真实线束中位已人工校零。',
         '<code>g_yaw_limit_status.ready=1</code> 且半幅真实生效。',
         '选5/6、核对参数；写非零目标前先看 ready/blocked。') + '''

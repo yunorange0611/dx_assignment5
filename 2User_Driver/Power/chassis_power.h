@@ -71,9 +71,11 @@ class ChassisPower {
     float filtered_power_w_ = 0;
     uint32_t previous_ms_ = 0;
     uint32_t diagnostic_previous_ms_ = 0;
+    uint32_t low_energy_since_ms_ = 0;
     bool have_step_ = false;
     bool diagnostic_have_step_ = false;
     bool diagnostic_energy_valid_ = false;
+    bool low_energy_tracking_ = false;
     bool fresh(uint32_t now, const PowerMeterStatus &m) const;
     void update_diagnostics(uint32_t now, const PowerMeterStatus &m);
 };

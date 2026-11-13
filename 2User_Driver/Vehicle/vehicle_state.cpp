@@ -58,7 +58,9 @@ VehicleState evaluate_vehicle(uint32_t now, const VehicleConfig &cfg, const Vehi
     if (imu.tipped) {
         state.reasons |= VehicleTipped;
     }
-    if (!ch.power_session_allowed) {
+    // An unconfirmed power loop reports session_allowed=0 by design; that is not
+    // an energy inhibit. Only an active power session may block on energy/feedback.
+    if (ch.power_confirmed && !ch.power_session_allowed) {
         state.reasons |= VehicleEnergyInhibited;
     }
 

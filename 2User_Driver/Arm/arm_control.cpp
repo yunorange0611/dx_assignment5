@@ -566,7 +566,9 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
     if (!status_.configuration_valid)
         return status_.last_result = Result::ConfigUnconfirmed;
     refresh(now);
-    if (status_.faults)
+    // Yaw parameter updates use the Yaw-only fault scope; other arm joints do
+    // not participate in Yaw tuning. CAN1 transport/timing faults still block.
+    if (status_.faults & (i == Yaw ? (TransportError | TimingError) : 0xffffffffu))
         return status_.last_result = Result::FaultLatched;
     const uint8_t affected = (i == BigPitch || i == SmallPitch) ? kPitchPair : uint8_t(1u << i);
     for (unsigned j = 0; j < kJointCount; ++j) {
@@ -710,12 +712,16 @@ Result ArmControl::enable(uint8_t mask, uint32_t now, bool independent_yaw) {
         ((mask & kPitchPair) && !config_.pitch.mapping_confirmed))
         return status_.last_result = Result::ConfigUnconfirmed;
     refresh(now);
-    if (status_.faults)
+    // Yaw-only enable is separate from the rest of the arm: other joint faults
+    // must not block it, but CAN1 transport/timing faults and Yaw's own fault do.
+    if (status_.faults & (yaw_only ? (TransportError | TimingError) : 0xffffffffu))
         return status_.last_result = Result::FaultLatched;
     for (unsigned i = 0; i < kJointCount; ++i)
         if (added & (1u << i)) {
             const auto &s = status_.joint[i];
             const auto &c = config_.joint[i];
+            if (s.faults)
+                return status_.last_result = Result::FaultLatched;
             if (!s.online)
                 return status_.last_result = Result::NotOnline;
             if (!s.calibrated)
@@ -763,7 +769,7 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
             if (q[i] < c.min_deg || q[i] > c.max_deg)
                 return status_.last_result = Result::OutOfRange;
             auto &s = status_.joint[i];
-            if (s.homing && std::fabs(s.position_deg) <= 0.5f &&
+            if (s.homing && std::fabs(s.position_deg) <= 5.0f &&
                 std::fabs(s.velocity_deg_s) <= c.stationary_speed_deg_s)
                 s.homing = false;
             next[i] = s.homing ? 0.0f : q[i];

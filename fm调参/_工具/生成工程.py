@@ -169,7 +169,7 @@ def joint(i):
         ('target_deg','关节目标','deg'),('reference_deg','参考角','deg'),('velocity_deg_s','关节速度','deg/s'),
         ('drive_position_deg','电机驱动角','deg'),('drive_target_deg','电机驱动目标','deg'),
         ('drive_velocity_deg_s','电机驱动速度','deg/s'),('velocity_target_deg_s','闭环目标速度','deg/s'),
-        ('effort','控制输出','mA' if i in (0,3,4) else 'Nm')]]
+        ('effort','控制输出','raw' if i == 0 else ('mA' if i in (3,4) else 'Nm'))]]
 
 
 ARM_OTHER_HEALTH = [V(f'g_arm_status.joint[{i}].{name}', label, unit)
@@ -182,27 +182,27 @@ ARM_TUNE = [V('g_arm_tune_request.joint','调参轴 0Yaw1肩2肘3Roll4爪',write
             V('g_arm_tune_request.position_kp','位置P申请','1/s',True,0.001,1000),
             V('g_arm_tune_request.velocity_kp','速度P申请',write=True,low=0,high=1000000),
             V('g_arm_tune_request.velocity_ki','速度I申请',write=True,low=0,high=1000000),
-            V('g_arm_tune_request.effort_limit','运行输出上限申请 DM为Nm DJI为mA',write=True,low=0,high=1000000),
+            V('g_arm_tune_request.effort_limit','运行输出上限申请 DM为Nm Yaw为电压原码 M2006为mA',write=True,low=0,high=1000000),
             V('g_arm_tune_request.request_seq','关节参数提交序号 最后加1',write=True,low=0,high=2147483647)] + variables('g_arm_tune_status', [('consumed_seq','已消费关节参数序号',''),('active_seq','已生效关节参数序号',''),('result','关节参数结果 engineer::Result',''),('active_joint','最近生效轴',''),('position_kp','生效位置P','1/s'),('velocity_kp','生效速度P',''),('velocity_ki','生效速度I',''),('effort_limit','生效输出上限 注意轴单位','')])
 YAW_ZERO = [
     V('g_arm_status.joint[0].raw_encoder', 'Yaw原始编码器 对正车头时抄到kYawZeroEncoder', note='只读0..8191；零点在Arm/yaw_config.h填写，重新编译烧录。'),
     V('g_arm_status.joint[0].fixed_zero_encoder', 'Yaw已配置固定零点 -1未填写'),
     V('g_arm_status.joint[0].homing', 'Yaw开控回零中'),
 ]
-YAW_LIMIT = YAW_ZERO + [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',True,2.001,90,
+YAW_LIMIT = YAW_ZERO + [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',True,2.001,85,
               note='实物确认的线束半幅；直接填写，owner检查后生效。看result与active_half_range_deg，不写旧限位序号。')] + variables('g_yaw_limit_status',
               [('result','限位结果 0成功',''),('ready','在线限位就绪',''),('active_half_range_deg','生效半幅','deg'),
                ('min_deg','生效最小角','deg'),('max_deg','生效最大角','deg'),('max_speed_deg_s','限位基础速度上限','deg/s')])
 YAW_SPEED = [V('tune_yaw_speed_deg_s','Yaw速度内环目标','deg/s',True,-5,5)]
-YAW_POSITION = [V('tune_yaw_target_deg','Yaw位置双环目标','deg',True,-90,90,
+YAW_POSITION = [V('tune_yaw_target_deg','Yaw位置双环目标','deg',True,-85,85,
                  note='切6档时自动对齐当前角。目标必须在已生效线束软限位内，先测1到2度小动作。')]
 YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
-            V('tune_yaw_velocity_kp','Yaw速度P','mA/(deg/s)',True,0,1000000),
-            V('tune_yaw_velocity_ki','Yaw速度I','mA/deg',True,0,1000000),
-            V('tune_yaw_current_limit_ma','Yaw测试电流上限','mA',True,0,150)] + variables('g_robot_tune_status',
+            V('tune_yaw_velocity_kp','Yaw速度P','raw/(deg/s)',True,0,1000000),
+            V('tune_yaw_velocity_ki','Yaw速度I','raw/deg',True,0,1000000),
+            V('tune_yaw_voltage_limit_raw','Yaw测试输出上限 电压原码','raw',True,0,25000)] + variables('g_robot_tune_status',
             [('yaw_parameter_result','Yaw参数结果 0成功',''),('yaw_position_kp','Yaw生效位置P','1/s'),
              ('yaw_velocity_kp','Yaw生效速度P',''),('yaw_velocity_ki','Yaw生效速度I',''),
-             ('yaw_current_limit_ma','Yaw生效电流上限','mA')])
+             ('yaw_voltage_limit_raw','Yaw生效输出上限 电压原码','raw')])
 POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('min_energy_j','本次最低缓冲能量','J'),('power_over_50_ms','原始功率超50W累计时间','ms'),('power_over_latched','曾超50W锁存',''),('power_filtered_w','滤波后功率','W'),('power_speed_scale','功率/能量限速比例',''),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启','')])
 POWER_TUNE = [
     V('tune_chassis_power_budget_w','功率预算 50W以下','W',True,1,49,
@@ -361,7 +361,7 @@ def groups():
             V('g_arm_status.joint[0].position_deg','Yaw反馈','deg'),
             V('g_arm_status.joint[0].target_deg','Yaw目标','deg'),
             V('g_arm_status.joint[0].velocity_deg_s','Yaw速度','deg/s'),
-            V('g_arm_status.joint[0].effort','Yaw输出','mA'),
+            V('g_arm_status.joint[0].effort','Yaw输出 电压原码','raw'),
             V('g_arm_status.joint[0].enabled','Yaw使能'),
             V('g_arm_status.joint[0].calibrated','Yaw校零'),
             V('g_arm_status.joint[0].faults','Yaw故障位图'),
@@ -414,13 +414,13 @@ def groups():
             V('g_arm_status.last_result', 'Arm最近操作结果')] +
           joint_fields(0, ('position_deg', 'calibrated')) + [
               V('g_arm_status.enabled_mask', '机械臂使能掩码')] + tune_gate),
-        # 第7批：Yaw速度内环，目标/实际/电流同图。
+        # 第7批：Yaw速度内环，目标/实际/电压输出同图。
         G('第7批 Yaw速度内环PI', select + yaw_params[1:] + YAW_SPEED +
           joint_fields(0, ('velocity_deg_s', 'velocity_target_deg_s', 'effort')) + [
               yaw_status[0],
               V('g_yaw_limit_status.active_half_range_deg', '生效半幅', 'deg')] +
           currents + tune_gate,
-          [('Yaw目标速度/反馈/电流', ['tune_yaw_speed_deg_s',
+          [('Yaw目标速度/反馈/电压输出', ['tune_yaw_speed_deg_s',
                                      'g_arm_status.joint[0].velocity_target_deg_s',
                                      'g_arm_status.joint[0].velocity_deg_s',
                                      'g_arm_status.joint[0].effort'])]),

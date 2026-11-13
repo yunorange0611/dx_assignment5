@@ -6,7 +6,7 @@
 
 当前没有 tune_enable：选 robot_tune_mode 后直接写目标，非零即执行、写0停止；切档清一次原目标/历史。电流档非零最多500ms；速度档和 Yaw 档不会自动结束。
 
-当前 kChassisIndependent=true：0档为独立底盘直驱。左拨杆上、遥控在线、右拨杆中、五通道回中并保持300ms 后，g_robot_status.independent_armed=1 才接受摇杆。上电、关控、翻车、遥控失联、离开上档、功率锁存都会撤销解锁。
+当前 kChassisIndependent=true：0档为独立底盘直驱。左拨杆上、遥控在线、五通道回中并保持300ms 后，g_robot_status.independent_armed=1 才接受摇杆；右拨杆位置不参与解锁。上电、关控、翻车、遥控失联、离开上档、功率锁存都会撤销解锁。
 
 解锁后左横直控Yaw，需要Yaw在线/已校零/已使能；命令5只使能Yaw，命令6只失能Yaw。该路径使用线束软限位，不使用正常行驶姿态包络；Yaw未使能时底盘照常、Yaw不动。
 
@@ -63,7 +63,7 @@ g_arm_status.joint[0].target_deg | 只读 | Yaw目标角，deg。
 g_arm_status.joint[0].reference_deg | 只读 | Yaw参考角，deg；参考轨迹可以比目标慢。
 g_arm_status.joint[0].velocity_deg_s | 只读 | Yaw实测角速度，deg/s。
 g_arm_status.joint[0].velocity_target_deg_s | 只读 | Yaw速度环目标，deg/s。
-g_arm_status.joint[0].effort | 只读 | Yaw控制输出，mA。
+g_arm_status.joint[0].effort | 只读 | Yaw控制输出，电压原码（0x1FF，满量程约±25000）。
 g_arm_status.joint[1].online | 只读 | 大pitch DM反馈在线。
 g_arm_status.joint[1].calibrated | 只读 | 大pitch已参与联合校零。
 g_arm_status.joint[1].position_deg | 只读 | 肩关节角 q肩，deg；相对联合零位。
@@ -105,9 +105,9 @@ tune_yaw_half_range_deg | 可写 | Yaw线束软限位半幅，deg；直接填写
 tune_yaw_speed_deg_s | 可写 | mode5速度内环目标，deg/s，范围±5；非零即执行，写0停止。
 tune_yaw_target_deg | 可写 | mode6位置目标，deg；切6档时自动对齐当前角，目标须在生效软限位内。
 tune_yaw_position_kp | 可写 | Yaw位置P，1/s；mode6中合法值直接生效。
-tune_yaw_velocity_kp | 可写 | Yaw速度P，mA/(deg/s)。
-tune_yaw_velocity_ki | 可写 | Yaw速度I，mA/deg。
-tune_yaw_current_limit_ma | 可写 | Yaw测试电流上限，mA；最终受150mA及已生效上限约束。
+tune_yaw_velocity_kp | 可写 | Yaw速度P，电压原码/(deg/s)。
+tune_yaw_velocity_ki | 可写 | Yaw速度I，电压原码/deg。
+tune_yaw_voltage_limit_raw | 可写 | Yaw测试输出上限，电压原码；默认25000，最终受编译/已生效上限约束。
 g_yaw_limit_status.result | 只读 | 半幅申请结果；0成功。
 g_yaw_limit_status.ready | 只读 | 1在线限位就绪。
 g_yaw_limit_status.active_half_range_deg | 只读 | 当前生效半幅，deg。
@@ -118,12 +118,14 @@ g_robot_tune_status.yaw_parameter_result | 只读 | Yaw参数结果；0成功。
 g_robot_tune_status.yaw_position_kp | 只读 | 当前生效Yaw位置P。
 g_robot_tune_status.yaw_velocity_kp | 只读 | 当前生效Yaw速度P。
 g_robot_tune_status.yaw_velocity_ki | 只读 | 当前生效Yaw速度I。
-g_robot_tune_status.yaw_current_limit_ma | 只读 | 当前生效Yaw电流上限，mA。
+g_robot_tune_status.yaw_voltage_limit_raw | 只读 | 当前生效Yaw输出上限，电压原码。
 g_arm_status.joint[0].enabled | 只读 | Yaw已使能；独立底盘直控需要它为1。
 g_arm_status.joint[0].faults | 只读 | Yaw故障位图；非0时直控不生效。
 g_arm_status.joint[0].raw_encoder | 只读 | Yaw原始单圈编码器0..8191；对正车头且失能时抄到kYawZeroEncoder。
 g_arm_status.joint[0].fixed_zero_encoder | 只读 | 已配置的固定零点；-1表示未填写，仍用人工校零。
 g_arm_status.joint[0].homing | 只读 | 1固定零点轴开控回零中；回零完成前不接受位置/遥控目标。
+
+mode5/6只要求Yaw自身在线、已校零、无故障、反馈新鲜、温度正常，以及CAN1无传输/时序故障；不再要求整臂hardware_confirmed、其他关节在线/校零/故障或底盘状态。kYawSafetyConfirmed仍只影响FM在线半幅；mode5/6使用yaw_config静态±85°。
 
 [05 底盘行驶与功率]
 变量名 | 权限 | 含义、数值与使用方法

@@ -73,7 +73,9 @@ VehicleState evaluate(uint32_t now, const VehicleConfig &cfg, const VehicleChass
 } // namespace
 int test_vehicle() {
     { // No first meter frame and unconfirmed parameters cannot permit a session.
-        ChassisPower defaults;
+        auto unconfirmed = kChassisPowerConfig;
+        unconfirmed.confirmed = false;
+        ChassisPower defaults(unconfirmed);
         CHECK(!defaults.step(0, meter(0), false, true).session_allowed);
         auto cfg = kChassisPowerConfig;
         cfg.confirmed = true;
@@ -117,7 +119,8 @@ int test_vehicle() {
         CHECK(out[0] == 5000 && out[1] == -5000);
     }
     { // Diagnostic only: raw over-50 time, latch and minimum energy; no power cut.
-        auto cfg = kChassisPowerConfig; // confirmed=false must still observe the meter.
+        auto cfg = kChassisPowerConfig;
+        cfg.confirmed = false; // Diagnostics must still observe the meter when unconfirmed.
         ChassisPower p(cfg);
         p.step(0, meter(0, 400, 60), false, true);
         CHECK(p.status().power_over_latched && p.status().power_over_50_ms == 0);
@@ -140,6 +143,7 @@ int test_vehicle() {
     }
     { // Runtime power tuning is validated, but confirmed=false keeps it inactive.
         auto cfg = kChassisPowerConfig;
+        cfg.confirmed = false;
         ChassisPower p(cfg);
         p.set_power_tuning(42, 200);
         CHECK(near(p.config().budget_w, 42) && near(p.config().power_filter_ms, 200));
@@ -152,7 +156,9 @@ int test_vehicle() {
         ChassisPower p(cfg);
         p.step(0, meter(0), false, true);
         p.step(4, meter(4), true, false);
-        CHECK(p.step(8, meter(8, 70), true, false).phase == PowerPhase::StopLowEnergy);
+        for (uint32_t t = 8; t < 108; t += 4)
+            CHECK(p.step(t, meter(t, 70), true, false).phase == PowerPhase::Driving);
+        CHECK(p.step(108, meter(108, 70), true, false).phase == PowerPhase::StopLowEnergy);
         CHECK(p.status().stop_requested && p.status().session_allowed);
         const float candidate[2] = {1000, -1000}, rpm[2] = {100, 100};
         float out[2];
@@ -161,19 +167,30 @@ int test_vehicle() {
         const float reverse[2] = {-100, -100};
         p.limit(candidate, reverse, out);
         CHECK(out[0] == 1000 && out[1] == 0);
-        CHECK(p.step(12, meter(12), true, false).phase == PowerPhase::StopLowEnergy);
-        CHECK(p.step(16, meter(16), true, true).phase == PowerPhase::Inhibited);
+        CHECK(p.step(112, meter(112), true, false).phase == PowerPhase::StopLowEnergy);
+        CHECK(p.step(116, meter(116), true, true).phase == PowerPhase::Inhibited);
         CHECK(p.status().inhibited && !p.status().session_allowed);
-        CHECK(!p.clear(20, meter(20), false));
-        CHECK(!p.clear(20, meter(20, 200), true));
-        CHECK(!p.clear(221, meter(0), true));
-        CHECK(p.clear(224, meter(224), true));
+        CHECK(!p.clear(120, meter(120), false));
+        CHECK(!p.clear(120, meter(120, 200), true));
+        CHECK(!p.clear(321, meter(0), true));
+        CHECK(p.clear(324, meter(324), true));
         CHECK(p.status().power_over_50_ms == 0 && p.status().power_over_latched == 0 &&
               p.status().min_energy_j == 0);
         CHECK(!p.status().session_allowed && !p.status().inhibited);
         CHECK(!p.status().stop_requested && p.status().speed_scale == 0 &&
               p.status().drive_scale == 0);
-        CHECK(p.step(228, meter(228), false, true).phase == PowerPhase::Ready);
+        CHECK(p.step(328, meter(328), false, true).phase == PowerPhase::Ready);
+    }
+    { // A short low-energy glitch must not start a stop.
+        auto cfg = kChassisPowerConfig;
+        cfg.confirmed = true;
+        ChassisPower p(cfg);
+        p.step(0, meter(0), false, true);
+        p.step(4, meter(4), true, false);
+        for (uint32_t t = 8; t < 100; t += 4)
+            CHECK(p.step(t, meter(t, 70), true, false).phase == PowerPhase::Driving);
+        CHECK(p.step(100, meter(100, 400), true, false).phase == PowerPhase::Driving);
+        CHECK(!p.status().stop_requested && p.status().session_allowed);
     }
     { // Meter loss has a finite stopping window, with no infinite brake exception.
         auto cfg = kChassisPowerConfig;
@@ -234,6 +251,12 @@ int test_vehicle() {
         CHECK(s.locks.drive_yaw_max_speed_deg_s == cfg.drive_yaw_speed_deg_s);
         s = evaluate(104, cfg, ch, arm, imu, 50);
         CHECK(s.locks.drive_yaw_max_deg == cfg.drive_yaw_deg);
+        sources(100, ch, arm, imu);
+        ch.power_confirmed = 0;
+        ch.power_session_allowed = 0;
+        s = evaluate(100, cfg, ch, arm, imu, 10);
+        CHECK(!(s.reasons & VehicleEnergyInhibited)); // Unconfirmed power is not an energy stop.
+        CHECK(s.reasons & VehicleConfiguration);
         for (unsigned bad = 0; bad < 13; ++bad) {
             sources(100, ch, arm, imu);
             auto conf = cfg;

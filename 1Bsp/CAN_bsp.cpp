@@ -84,6 +84,7 @@ osStatus_t can_device_transmit::can_send_msg() { // 实际上是发送进队列�
 }
 
 volatile uint32_t can_tx_error_count[2] = {0, 0};
+volatile CanYawTxDebug g_can1_yaw_tx_debug = {};
 static void sending_service(CAN_HandleTypeDef *handle, osMessageQueueId_t queue,
                             osSemaphoreId_t sem, unsigned bus) {
     for (;;) {
@@ -99,7 +100,7 @@ static void sending_service(CAN_HandleTypeDef *handle, osMessageQueueId_t queue,
         header.IDE = CAN_ID_STD;
         header.StdId = msg.id;
         header.DLC = msg.len;
-        uint32_t mailbox;
+        uint32_t mailbox = 0;
         // 与can_cancel_pending使用同一临界区：禁止代号检查通过后被关控抢占，
         // 又把已取消的旧运动帧送进邮箱。获取信号量和等待始终在临界区外。
         taskENTER_CRITICAL();
@@ -108,6 +109,26 @@ static void sending_service(CAN_HandleTypeDef *handle, osMessageQueueId_t queue,
         const HAL_StatusTypeDef sent =
             cancelled || expired ? HAL_ERROR
                                  : HAL_CAN_AddTxMessage(handle, &header, msg.data, &mailbox);
+        // Capture the exact message passed to HAL inside the same critical section.
+        // Include both GM6020 protocol groups so changing protocol needs no new probe.
+        if (bus == 0 && (msg.id == 0x1fe || msg.id == 0x2fe ||
+                         msg.id == 0x1ff || msg.id == 0x2ff)) {
+            auto &d = g_can1_yaw_tx_debug;
+            ++d.seq;
+            ++d.attempts;
+            if (cancelled) ++d.cancelled;
+            else if (expired) ++d.expired;
+            else if (sent == HAL_OK) ++d.submitted;
+            else ++d.failed;
+            d.updated_ms = HAL_GetTick();
+            d.id = msg.id;
+            d.dlc = msg.len;
+            d.mailbox = mailbox;
+            d.hal_result = uint32_t(sent);
+            d.can_esr = handle->Instance->ESR;
+            for (unsigned i = 0; i < 8; ++i) d.data[i] = msg.data[i];
+            ++d.seq;
+        }
         taskEXIT_CRITICAL();
         if (cancelled) {
             osSemaphoreRelease(sem);

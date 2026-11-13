@@ -20,6 +20,8 @@ Config config() {
     c.joint_mask = kAllJoints;
     c.hardware_confirmed = true;
     c.pitch.mapping_confirmed = true;
+    // Legacy tests exercise manual capture_zero; the fixed-zero case overrides this.
+    c.joint[Yaw].fixed_zero_encoder = -1;
     return c;
 }
 bool feed_dji(ArmControl &arm, unsigned joint, uint32_t ms, unsigned encoder = 1000,
@@ -60,7 +62,7 @@ YawRuntimeLimits limits(uint32_t version = 1) {
 }
 bool yaw_zero(const Frame *f, unsigned n) {
     for (unsigned i = 0; i < n; ++i)
-        if (f[i].id == 0x1fe || f[i].id == 0x2fe)
+        if (f[i].id == 0x1fe || f[i].id == 0x2fe || f[i].id == 0x1ff || f[i].id == 0x2ff)
             for (uint8_t b : f[i].data)
                 if (b)
                     return false;
@@ -94,6 +96,20 @@ int test_yaw() {
         CHECK(reversed.status().joint[Yaw].position_deg < -8);
         CHECK(feed(reversed, 20, 100));
         CHECK(!reversed.status().joint[Yaw].calibrated);
+    }
+    { // Yaw-only enable ignores a latched fault from another arm joint.
+        Config c = config();
+        c.hardware_confirmed = true;
+        ArmControl a(c);
+        CHECK(feed_all(a, 0));
+        CHECK(a.capture_zero(kAllJoints, 0) == Result::Ok);
+        CHECK(a.enable(1u << Roll, 0) == Result::Ok);
+        for (uint32_t t = 4; t <= 60; t += 4)
+            CHECK(feed(a, t)); // Keep Yaw fresh; Roll times out on enable's refresh.
+        CHECK(a.enable(1u << Yaw, 60, true) == Result::Ok);
+        CHECK(a.status().faults & FeedbackTimeout);
+        CHECK(a.status().joint[Yaw].enabled);
+        CHECK(a.enable(kAllJoints, 60) == Result::FaultLatched);
     }
     { // Task adaptation preserves the public debug ABI and one-shot requests.
         static_assert(sizeof(YawLimitRequest) == 8);
@@ -433,7 +449,8 @@ int test_yaw() {
         CHECK(a.set_yaw_envelope(-1, 1, 1) == Result::InvalidArgument);
         const unsigned n = a.step(0, frames);
         for (unsigned i = 0; i < n; ++i)
-            CHECK(frames[i].id != 0x1fe && frames[i].id != 0x2fe);
+            CHECK(frames[i].id != 0x1fe && frames[i].id != 0x2fe &&
+                  frames[i].id != 0x1ff && frames[i].id != 0x2ff);
     }
     { // Operator and inner loop consume the same effective limit version.
         auto c = config();

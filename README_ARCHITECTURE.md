@@ -42,7 +42,7 @@ wait_next_cycle        阻塞到下周期，迟到时不连续补跑
 
 协调入口直接发布现有 `ChassisCommand`，底盘通过 `Robot_GetChassisCommand()` 一次取得请求，不再经历 `RobotControlStatus → ChassisCommand` 的搬运。请求包含运行/停车/复位、速度/转向、时间、必要事件和运行时调参值；整车快照保留诊断及INS标定状态来源。`Robot_ReportArmState`在同一临界区撤销底盘请求，保留发送后发现故障的同周期覆盖。恒零的yaw_follow和历史API版本宏已删；这轮不增加动作枚举、不移动健康线程或再拆模块。
 
-当前 `kChassisIndependent=true` 时，`Robot_Execute` 在0档发布 `independent=true` 的底盘命令：左拨杆上、遥控在线且回中解锁后，用左竖/右横直接驱动，底盘本身不要求机械臂 active、Yaw、IMU 或功率许可。解锁后左横还可在同一owner内直控 Yaw（命令5/6只使能/失能Yaw），使用 `arm.yaw_limits()` 的线束软限位，不经过正常行驶姿态包络。上电、关控、翻车、遥控失联、左拨杆离开上档、功率锁存都会撤销 `drive_armed`；重新运动需左拨杆上、右拨杆中、五通道回中保持 `neutral_ms=300ms`。`g_robot_status.independent_armed`、`yaw_direct_active`、`yaw_direct_target_deg` 是只读状态。该模式用于比赛/交接，改回 `false` 才恢复整车互锁路径。
+当前 `kChassisIndependent=true` 时，`Robot_Execute` 在0档发布 `independent=true` 的底盘命令：左拨杆上、遥控在线且回中解锁后，用左竖/右横直接驱动，底盘本身不要求机械臂 active、Yaw、IMU 或功率许可。解锁后左横还可在同一owner内直控 Yaw（命令5/6只使能/失能Yaw），使用 `arm.yaw_limits()` 的线束软限位，不经过正常行驶姿态包络。上电、关控、翻车、遥控失联、左拨杆离开上档、功率锁存都会撤销 `drive_armed`；重新运动需左拨杆上、五通道回中保持 `neutral_ms=300ms`；右拨杆位置不参与独立底盘解锁。`g_robot_status.independent_armed`、`yaw_direct_active`、`yaw_direct_target_deg` 是只读状态。该模式用于比赛/交接，改回 `false` 才恢复整车互锁路径。
 
 先看`Chassis/chassis_config.h`，再看`chassis_control.*`理解差速、斜坡、PI；电调报文/方向/量化看`chassis_motor.*`，功率协议看`Power/power_meter.*`，能量停车与制动限流看`Power/chassis_power.*`。运行时选档/锁定门控在`Vehicle/robot_tuning.*`；`chassis_bench.*`保留静止健康检查与兼容测试，不再作为日常脉冲入口。
 

@@ -43,6 +43,8 @@ Config bench() {
     c.joint_mask = kAllJoints;
     c.hardware_confirmed = true;
     c.pitch.mapping_confirmed = true;
+    // Legacy synthetic encoder tests use manual capture_zero, not the measured fixed zero.
+    c.joint[Yaw].fixed_zero_encoder = -1;
     return c;
 }
 void dji(ArmControl &a, unsigned joint, unsigned e, uint32_t ms, int rpm = 0, unsigned temp = 25) {
@@ -115,10 +117,10 @@ void run() {
             CHECK(f[i].bus == 1);
         CHECK(find(f, n, 1, 1)->data[7] == 0xfd);
         CHECK(a.feedback_id(Yaw) == 0x205);
-        CHECK(find(f, n, 1, 0x1fe) != nullptr); // 电流模式yaw ID1占0x1fe第一槽
-        CHECK(find(f, n, 1, 0x2fe) == nullptr);
-        CHECK(find(f, n, 1, 0x2ff) == nullptr); // 当前配置不再发送6020电压帧
-        CHECK(kArmConfig.joint[Yaw].motor == Motor::Gm6020Current);
+        CHECK(find(f, n, 1, 0x1ff) != nullptr); // 电压模式yaw ID1占0x1ff第一槽
+        CHECK(find(f, n, 1, 0x2ff) == nullptr);
+        CHECK(find(f, n, 1, 0x1fe) == nullptr); // 当前配置不发送6020电流帧
+        CHECK(kArmConfig.joint[Yaw].motor == Motor::Gm6020Voltage);
         ArmControl b(bench());
         CHECK(b.enable(1, 0) == Result::NotOnline);
         all(b, 0);
@@ -271,6 +273,7 @@ void run() {
         for (unsigned id = 1; id <= 7; ++id)
             for (int sign = -1; sign <= 1; sign += 2) {
                 Config c = bench();
+                c.joint[Yaw].motor = Motor::Gm6020Current;
                 c.joint[Yaw].motor_id = id;
                 c.joint[Yaw].max_effort = 3000;
                 c.joint[Yaw].velocity_kp = 1000000;
@@ -300,6 +303,8 @@ void run() {
                 CHECK(dji_zero(f, n));
             }
         Config c = bench();
+        c.joint[Yaw].motor = Motor::Gm6020Current;
+        c.joint[Yaw].max_effort = 3000;
         c.joint[Yaw].velocity_kp = 1000000;
         c.joint[Yaw].direction = -1;
         ArmControl a(c);
@@ -311,14 +316,17 @@ void run() {
         auto n = a.step(0, f);
         const auto *current = find(f, n, 1, 0x1fe);
         CHECK(current != nullptr);
-        // 默认上限300mA约对应1638原码；反向只影响报文符号，状态effort仍为关节正向mA。
-        CHECK(a.status().joint[Yaw].effort == 300);
-        CHECK(int16_t(uint16_t(current->data[0]) << 8 | current->data[1]) == -1638);
+        // 显式电流模式兼容测试：上限跟随配置，反向只影响报文符号。
+        const float expected_effort = c.joint[Yaw].max_effort;
+        const auto expected_raw = int16_t(-expected_effort * (16384.0f / 3000.0f));
+        CHECK(a.status().joint[Yaw].effort == expected_effort);
+        CHECK(int16_t(uint16_t(current->data[0]) << 8 | current->data[1]) == expected_raw);
         dji(a, Yaw, 1000, 4, 0, 80);
         n = a.step(4, f);
         CHECK(a.status().faults & OverTemperature);
         CHECK(dji_zero(f, n));
         c = bench();
+        c.joint[Yaw].motor = Motor::Gm6020Current;
         c.joint[Yaw].max_effort = 3001;
         ArmControl bad_limit(c);
         CHECK(!bad_limit.status().configuration_valid);

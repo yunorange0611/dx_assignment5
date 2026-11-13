@@ -19,6 +19,8 @@ bool near(float a, float b, float eps = 0.0001f) {
 Config vehicle() {
     auto c = kArmConfig;
     c.joint_mask = kAllJoints;
+    // Legacy synthetic encoder tests use manual capture_zero, not the measured fixed zero.
+    c.joint[Yaw].fixed_zero_encoder = -1;
     return c;
 }
 OperatorConfig settings() {
