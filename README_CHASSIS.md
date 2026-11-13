@@ -106,6 +106,7 @@ FreeMASTER「行驶加减速与转向」组的五项 `tune_chassis_*` 在正常�
 - `braking_current_ma` 默认8000，避免下坡/功率停车制动太弱。
 - FM「功率限制（当前未启用）」组的 `tune_chassis_power_budget_w`、`tune_chassis_power_filter_ms` 只改RAM参数；`confirmed` 必须改源码重编。
 - `g_chassis_status.power_speed_scale` 是功率/能量限速比例，`power_filtered_w` 是滤波后功率，用于现场判断是否在降速。
+- 只读诊断：`min_energy_j` 是本次统计最低缓冲，`power_over_50_ms` 是原始功率超50W累计时间，`power_over_latched` 表示本次曾超50W。三者不参与控制、不请求停车、不切电；上电、成功清功率锁存或底盘维护清错后清零。
 - 完整参数表、调参步骤和现场记录表见 [功率限制调参说明.md](fm调参/功率限制调参说明.md)。
 
 ### 独立底盘翻车保护（2026-11-12）

@@ -109,10 +109,34 @@ int test_vehicle() {
             p.step(t, meter(t, 400, 80), true, false);
         CHECK(p.status().filtered_power_w > 75);
         CHECK(p.status().speed_scale > .5f && p.status().speed_scale < .6f);
+        CHECK(!p.status().stop_requested && p.status().phase == PowerPhase::Driving);
+        CHECK(p.status().power_over_50_ms > 0 && p.status().power_over_latched);
         const float candidate[2] = {5000, -5000}, rpm[2] = {100, 100};
         float out[2];
         p.limit(candidate, rpm, out);
         CHECK(out[0] == 5000 && out[1] == -5000);
+    }
+    { // Diagnostic only: raw over-50 time, latch and minimum energy; no power cut.
+        auto cfg = kChassisPowerConfig; // confirmed=false must still observe the meter.
+        ChassisPower p(cfg);
+        p.step(0, meter(0, 400, 60), false, true);
+        CHECK(p.status().power_over_latched && p.status().power_over_50_ms == 0);
+        CHECK(near(p.status().min_energy_j, 400));
+        p.step(4, meter(4, 390, 60), false, true);
+        CHECK(p.status().power_over_50_ms == 4);
+        p.step(8, meter(8, 380, 49.9f), false, true);
+        CHECK(p.status().power_over_50_ms == 4 && p.status().power_over_latched == 1);
+        CHECK(near(p.status().min_energy_j, 380));
+        p.step(300, meter(8, 300, 60), false, true); // Stale frame: no time and no energy count.
+        CHECK(p.status().power_over_50_ms == 4 && near(p.status().min_energy_j, 380));
+        p.step(304, meter(304, 370, 60), false, true); // First fresh frame after a gap: no elapsed.
+        CHECK(p.status().power_over_50_ms == 4);
+        p.step(308, meter(308, 360, 60), false, true);
+        CHECK(p.status().power_over_50_ms == 8);
+        CHECK(near(p.status().min_energy_j, 360));
+        p.reset_diagnostics();
+        CHECK(p.status().power_over_50_ms == 0 && !p.status().power_over_latched &&
+              p.status().min_energy_j == 0);
     }
     { // Runtime power tuning is validated, but confirmed=false keeps it inactive.
         auto cfg = kChassisPowerConfig;
@@ -144,6 +168,8 @@ int test_vehicle() {
         CHECK(!p.clear(20, meter(20, 200), true));
         CHECK(!p.clear(221, meter(0), true));
         CHECK(p.clear(224, meter(224), true));
+        CHECK(p.status().power_over_50_ms == 0 && p.status().power_over_latched == 0 &&
+              p.status().min_energy_j == 0);
         CHECK(!p.status().session_allowed && !p.status().inhibited);
         CHECK(!p.status().stop_requested && p.status().speed_scale == 0 &&
               p.status().drive_scale == 0);

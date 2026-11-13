@@ -204,6 +204,8 @@ void read_local_stop_request(ChassisRuntime &runtime) {
             runtime.control.trip(0);
             can_cancel_pending(2);
             if (request.mode == CHASSIS_DEBUG_CLEAR) {
+                // 维护清错同时开始一轮新的功率诊断统计；不改变清错判定。
+                runtime.energy.reset_diagnostics();
                 const bool wheels_cleared = runtime.control.clear_faults();
                 const bool power_cleared = !runtime.energy.status().confirmed ||
                     runtime.energy.clear(runtime.now_ms, runtime.power.status(), true);
@@ -402,6 +404,9 @@ void publish_status(const ChassisRuntime &runtime) {
     status.omega_rad_s = control.omega_rad_s;
     status.power_w = power.power_w;
     status.energy_j = power.energy_j;
+    status.min_energy_j = energy.min_energy_j;
+    status.power_over_50_ms = energy.power_over_50_ms;
+    status.power_over_latched = energy.power_over_latched;
     status.power_speed_scale = energy.speed_scale;
     status.power_filtered_w = energy.filtered_power_w;
     status.power_received_ms = power.received_ms;

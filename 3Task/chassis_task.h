@@ -5,14 +5,15 @@ extern "C" {
 #endif
 typedef struct {
     uint32_t updated_ms, faults, rx_dropped, tx_errors;
-    uint32_t feedback_ms[2], feedback_frames[2], power_received_ms, power_frames;
+    uint32_t feedback_ms[2], feedback_frames[2], power_received_ms, power_frames, power_over_50_ms;
     float measured_rpm[2], target_rpm[2], current_ma[2], temperature_c[2];
-    float v_m_s, omega_rad_s, power_w, energy_j;
+    float v_m_s, omega_rad_s, power_w, energy_j, min_energy_j;
     float power_speed_scale, power_filtered_w;
     uint8_t ready, configuration_valid, hardware_confirmed, enabled, wheels_stationary,
         bench_active;
     uint8_t power_configuration_valid, power_confirmed;
-    uint8_t power_session_allowed, power_stop_requested, power_inhibited, power_phase, power_reason;
+    uint8_t power_session_allowed, power_stop_requested, power_inhibited, power_phase, power_reason,
+        power_over_latched;
     uint8_t tune_mode, tune_blocked;
     uint32_t tune_epoch, tune_result; // Runtime mode epoch; result uses ChassisTuneResult.
     float tune_current_limit_ma;

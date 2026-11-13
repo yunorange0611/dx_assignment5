@@ -203,7 +203,7 @@ YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
             [('yaw_parameter_result','Yaw参数结果 0成功',''),('yaw_position_kp','Yaw生效位置P','1/s'),
              ('yaw_velocity_kp','Yaw生效速度P',''),('yaw_velocity_ki','Yaw生效速度I',''),
              ('yaw_current_limit_ma','Yaw生效电流上限','mA')])
-POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('power_filtered_w','滤波后功率','W'),('power_speed_scale','功率/能量限速比例',''),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启','')])
+POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('min_energy_j','本次最低缓冲能量','J'),('power_over_50_ms','原始功率超50W累计时间','ms'),('power_over_latched','曾超50W锁存',''),('power_filtered_w','滤波后功率','W'),('power_speed_scale','功率/能量限速比例',''),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启','')])
 POWER_TUNE = [
     V('tune_chassis_power_budget_w','功率预算 50W以下','W',True,1,49,
       note='confirmed=false 时不生效；当前代码默认未启用。'),
@@ -370,6 +370,9 @@ def groups():
         G('功率限制（当前未启用）', POWER_TUNE + [
             V('g_chassis_status.power_w','功率计瞬时功率','W'),
             V('g_chassis_status.energy_j','缓冲能量','J'),
+            V('g_chassis_status.min_energy_j','本次最低缓冲能量','J'),
+            V('g_chassis_status.power_over_50_ms','原始功率超50W累计时间','ms'),
+            V('g_chassis_status.power_over_latched','曾超50W锁存 只读'),
             V('g_chassis_status.power_filtered_w','滤波后功率','W'),
             V('g_chassis_status.power_speed_scale','功率/能量限速比例 0..1'),
             V('g_chassis_status.power_confirmed','功率限制已确认'),
@@ -432,13 +435,17 @@ def groups():
             V('g_ins_debug_command', '请求IMU静态标定 写1', write=True, low=0, high=1),
             V('g_chassis_status.power_w', '功率计反馈', 'W'),
             V('g_chassis_status.energy_j', '缓冲能量', 'J'),
+            V('g_chassis_status.min_energy_j', '本次最低缓冲能量', 'J'),
+            V('g_chassis_status.power_over_50_ms', '原始功率超50W累计时间', 'ms'),
+            V('g_chassis_status.power_over_latched', '曾超50W锁存'),
             V('g_chassis_status.power_phase', '功率停车阶段'),
             V('g_chassis_status.power_reason', '功率停车原因'),
             V('g_chassis_status.power_frames', '功率帧累计'),
             V('g_chassis_status.power_received_ms', '功率最近接收时刻', 'ms'),
             V('g_chassis_status.faults', '底盘故障位图'),
             V('g_vehicle_health.reasons', '整车不放行原因位图')],
-          [('功率与缓冲', ['g_chassis_status.power_w', 'g_chassis_status.energy_j'])]),
+          [('功率与缓冲', ['g_chassis_status.power_w', 'g_chassis_status.energy_j',
+                          'g_chassis_status.min_energy_j'])]),
         # 第9批：Yaw位置双环，目标/参考/反馈/输出同图。
         G('第9批 Yaw位置双环', select + yaw_params + YAW_POSITION +
           joint_fields(0, ('target_deg', 'reference_deg', 'position_deg',

@@ -1,0 +1,211 @@
+工程车调参关键变量列表（2026-11-13）
+
+适用：当前 Debug/Release 五轴整车固件；三份 FreeMASTER 工程使用同一份 Debug ELF。用途：按本次对象选一组，将完整变量名复制到 Watch；本表不导入地址、不改变通信或权限。
+
+权限：“可写”是你提交的输入；“只读”由程序更新，不能写成1绕过检查。源码确认项不是 FreeMASTER 日常变量。在线参数与零位只存 RAM。
+
+当前没有 tune_enable：选 robot_tune_mode 后直接写目标，非零即执行、写0停止；切档清一次原目标/历史。电流档非零最多500ms；速度档和 Yaw 档不会自动结束。
+
+当前 kChassisIndependent=true：0档为独立底盘直驱。左拨杆上、遥控在线、右拨杆中、五通道回中并保持300ms 后，g_robot_status.independent_armed=1 才接受摇杆。上电、关控、翻车、遥控失联、离开上档、功率锁存都会撤销解锁。
+
+解锁后左横直控Yaw，需要Yaw在线/已校零/已使能；命令5只使能Yaw，命令6只失能Yaw。该路径使用线束软限位，不使用正常行驶姿态包络；Yaw未使能时底盘照常、Yaw不动。
+
+Yaw固定单圈零点：对正车头且失能时读 g_arm_status.joint[0].raw_encoder，填入 yaw_config.h 的 kYawZeroEncoder 后重编烧录；-1 表示仍用命令2人工校零。固定零点轴首次开控 homing=1，先回零再接受目标。
+
+[01 常驻与0档直驱]
+变量名 | 权限 | 含义、数值与使用方法
+robot_tune_mode | 可写 | 0正常；1左轮电流；2右轮电流；3左轮速度；4右轮速度；5Yaw速度；6Yaw位置。选档不等于出力；切档清一次目标。
+g_robot_debug_command | 可写 | 0空闲；1全局关控；2人工姿态校零；3清机械臂故障；4请求正常开控；5只使能Yaw；6只失能Yaw。程序取走后回0；2/3也请求关控。
+g_robot_tune_status.ready | 只读 | 0未放行；1调参门控通过，可接收小目标。目标为0时ready=0是正常的。
+g_robot_tune_status.blocked | 只读 | 1本周期被锁禁；排除原因后重新选档并重写目标，不会迟到执行。
+g_robot_tune_status.reason | 只读 | 0正常模式；1就绪；2条件未就绪；3已停止；4输入非法；5电流超时；6保留；7目标为0/未开始。
+uwTick | 只读 | 系统毫秒计数，应持续增长；单独增长不能证明各控制任务健康。
+g_robot_status.updated_ms | 只读 | 协调任务发布时间，ms，应持续更新。
+g_chassis_status.updated_ms | 只读 | 底盘发布时间，ms，应持续更新。
+g_arm_status.updated_ms | 只读 | 机械臂发布时间，ms，应持续更新。
+g_robot_status.stop_epoch | 只读 | 显式全局停止事件代号；命令1后应增加，即使原本已失能。
+g_dr16_status.valid | 只读 | 接收状态中的报文有效；不单独代表当前在线，还要看接收年龄。
+g_robot_status.remote_online | 只读 | 0遥控无效或超时；1当前满足在线条件。不能写1模拟在线。
+g_robot_status.remote_age_ms | 只读 | 距最近遥控帧的时间，ms；约100ms超时后失联。
+g_robot_status.remote_axis[0] | 只读 | 映射、方向和死区处理后的左竖，[-1,1]；0档直驱的纵向请求。
+g_robot_status.remote_axis[3] | 只读 | 处理后的右横，[-1,1]；0档直驱的转向请求，右推顺时针。
+g_robot_status.remote_switch[0] | 只读 | 处理后的左拨杆：1上、3中、2下；0档直驱要求上档。
+g_robot_status.independent_stop_latched | 只读 | 0档直驱的 STOP/翻车锁存；可用回中或命令4清除，清除后仍需回中解锁。
+g_robot_status.independent_armed | 只读 | 1已回中解锁，可接受摇杆，也是左横直控Yaw的前置；上电/关控/翻车/失联/离开上档/功率锁存会清0。
+g_robot_status.yaw_direct_active | 只读 | 1独立底盘正在用左横直控Yaw；需要Yaw已在线/校零/使能且解锁有效。
+g_robot_status.yaw_direct_target_deg | 只读 | 左横直控积分出的Yaw目标角，deg；受线束软限位约束。
+g_chassis_status.independent | 只读 | 1底盘正在按0档独立直驱输出。
+g_chassis_status.enabled | 只读 | 0底盘输出失能；1底盘控制器允许输出。目标为0时也可以enabled=1。
+g_chassis_status.faults | 只读 | 底盘故障位图，0无故障；非0按README_CHASSIS核对，不是可写开关。
+g_chassis_status.wheels_stationary | 只读 | 1两驱动轮满足静止判据；不能证明车身没有滑移。
+g_chassis_status.v_m_s | 只读 | 轮速估计纵向速度，m/s；不是请求值。
+g_chassis_status.omega_rad_s | 只读 | 轮速估计转向角速度，rad/s；不是请求值。
+g_chassis_status.target_rpm[0] | 只读 | 左轮目标转子速度，rpm。
+g_chassis_status.target_rpm[1] | 只读 | 右轮目标转子速度，rpm。
+g_chassis_status.measured_rpm[0] | 只读 | 左轮实测转子速度，rpm。
+g_chassis_status.measured_rpm[1] | 只读 | 右轮实测转子速度，rpm。
+g_chassis_status.current_ma[0] | 只读 | 左轮最终提交电流，mA；不是电机执行确认。
+g_chassis_status.current_ma[1] | 只读 | 右轮最终提交电流，mA；不是电机执行确认。
+
+[02 机械臂与保持]
+变量名 | 权限 | 含义、数值与使用方法
+g_robot_status.mode | 只读 | 0安全；1行驶；2夹取；3待机。
+g_robot_status.active | 只读 | 1机械臂协调开控；0未开控。独立底盘直驱时可为0。
+g_robot_status.wait_neutral | 只读 | 1正在等待回中等切换条件；不等于全部出力条件都满足。
+g_robot_status.protection_current_reasons | 只读 | 当前保护原因位图；0无当前原因。单次关控位可能只出现一周期。
+g_robot_status.protection_latched_reasons | 只读 | 历史锁存保护原因位图；健康恢复不会自行清锁存或开控。
+g_arm_status.enabled_mask | 只读 | 机械臂实际使能轴掩码；正常五轴应为0x1f，调参时可能只含已保持轴。
+g_arm_status.last_result | 只读 | 最近一次Arm操作结果；0成功，1参数错误，2配置未确认，3忙，4反馈离线，5未校零，6故障，7仍在动，8目标越界。
+g_arm_status.joint[0].online | 只读 | Yaw反馈在线。
+g_arm_status.joint[0].calibrated | 只读 | Yaw已人工校零。
+g_arm_status.joint[0].position_deg | 只读 | Yaw相对校零角，deg。
+g_arm_status.joint[0].target_deg | 只读 | Yaw目标角，deg。
+g_arm_status.joint[0].reference_deg | 只读 | Yaw参考角，deg；参考轨迹可以比目标慢。
+g_arm_status.joint[0].velocity_deg_s | 只读 | Yaw实测角速度，deg/s。
+g_arm_status.joint[0].velocity_target_deg_s | 只读 | Yaw速度环目标，deg/s。
+g_arm_status.joint[0].effort | 只读 | Yaw控制输出，mA。
+g_arm_status.joint[1].online | 只读 | 大pitch DM反馈在线。
+g_arm_status.joint[1].calibrated | 只读 | 大pitch已参与联合校零。
+g_arm_status.joint[1].position_deg | 只读 | 肩关节角 q肩，deg；相对联合零位。
+g_arm_status.joint[1].target_deg | 只读 | 肩关节目标，deg。
+g_arm_status.joint[1].effort | 只读 | 大pitch控制输出，Nm。
+g_arm_status.joint[2].online | 只读 | 小pitch DM反馈在线。
+g_arm_status.joint[2].calibrated | 只读 | 小pitch已参与联合校零。
+g_arm_status.joint[2].position_deg | 只读 | 肘相对角 q肘，deg；相对联合零位。
+g_arm_status.joint[2].target_deg | 只读 | 肘相对目标，deg。
+g_arm_status.joint[2].effort | 只读 | 小pitch控制输出，Nm；不是肘关节广义力矩。
+g_arm_status.joint[3].online | 只读 | roll M2006反馈在线。
+g_arm_status.joint[3].faults | 只读 | roll故障位图。
+g_arm_status.joint[4].online | 只读 | 夹爪 M2006反馈在线。
+g_arm_status.joint[4].faults | 只读 | 夹爪故障位图。
+
+[03 轮组调参]
+变量名 | 权限 | 含义、数值与使用方法
+tune_current_ma | 可写 | mode1/2的所选轮电流目标，mA，范围±10000。非零即开始500ms计时；改大小/正负不能延长，写0停止。
+tune_speed_rpm | 可写 | mode3/4的所选轮速度目标，±9000转子rpm；不是轮胎rpm，也不会500ms自动结束。
+tune_wheel_kp | 可写 | 轮速PI的P，mA/rpm；mode1～4中合法值直接生效。
+tune_wheel_ki | 可写 | 轮速PI的I，mA/(rpm·s)；先0调P，再按需要加I。
+tune_wheel_current_limit_ma | 可写 | 本次轮测试输出限流，mA；应为正，且最终受源码max_current_ma约束。
+g_chassis_status.tune_mode | 只读 | 底盘实际调参档。
+g_chassis_status.tune_blocked | 只读 | 1底盘本地调参锁禁；查反馈、故障和功率条件，先回0档处理。
+g_chassis_status.tune_result | 只读 | 轮参数/测试结果：0待机、1成功、2非法、3忙、4未就绪。
+g_chassis_status.tune_current_limit_ma | 只读 | 本次轮测试最终生效限流，mA。
+g_chassis_tune_status.result | 只读 | 轮参数处理结果；成功也要核对实际生效值。
+g_chassis_tune_status.velocity_kp | 只读 | 当前生效轮速P，mA/rpm。
+g_chassis_tune_status.velocity_ki | 只读 | 当前生效轮速I，mA/(rpm·s)。
+g_chassis_tune_status.max_current_ma | 只读 | 当前生效运行限流，mA。
+g_chassis_status.feedback_ms[0] | 只读 | 左轮最近反馈时刻，ms。
+g_chassis_status.feedback_ms[1] | 只读 | 右轮最近反馈时刻，ms。
+g_chassis_status.temperature_c[0] | 只读 | 左轮电机温度，℃。
+g_chassis_status.temperature_c[1] | 只读 | 右轮电机温度，℃。
+
+[04 Yaw调参]
+变量名 | 权限 | 含义、数值与使用方法
+tune_yaw_half_range_deg | 可写 | Yaw线束软限位半幅，deg；直接填写，owner检查后生效。看result与active_half_range_deg。
+tune_yaw_speed_deg_s | 可写 | mode5速度内环目标，deg/s，范围±5；非零即执行，写0停止。
+tune_yaw_target_deg | 可写 | mode6位置目标，deg；切6档时自动对齐当前角，目标须在生效软限位内。
+tune_yaw_position_kp | 可写 | Yaw位置P，1/s；mode6中合法值直接生效。
+tune_yaw_velocity_kp | 可写 | Yaw速度P，mA/(deg/s)。
+tune_yaw_velocity_ki | 可写 | Yaw速度I，mA/deg。
+tune_yaw_current_limit_ma | 可写 | Yaw测试电流上限，mA；最终受150mA及已生效上限约束。
+g_yaw_limit_status.result | 只读 | 半幅申请结果；0成功。
+g_yaw_limit_status.ready | 只读 | 1在线限位就绪。
+g_yaw_limit_status.active_half_range_deg | 只读 | 当前生效半幅，deg。
+g_yaw_limit_status.min_deg | 只读 | 当前生效最小角，deg。
+g_yaw_limit_status.max_deg | 只读 | 当前生效最大角，deg。
+g_yaw_limit_status.max_speed_deg_s | 只读 | 限位基础速度上限，deg/s。
+g_robot_tune_status.yaw_parameter_result | 只读 | Yaw参数结果；0成功。
+g_robot_tune_status.yaw_position_kp | 只读 | 当前生效Yaw位置P。
+g_robot_tune_status.yaw_velocity_kp | 只读 | 当前生效Yaw速度P。
+g_robot_tune_status.yaw_velocity_ki | 只读 | 当前生效Yaw速度I。
+g_robot_tune_status.yaw_current_limit_ma | 只读 | 当前生效Yaw电流上限，mA。
+g_arm_status.joint[0].enabled | 只读 | Yaw已使能；独立底盘直控需要它为1。
+g_arm_status.joint[0].faults | 只读 | Yaw故障位图；非0时直控不生效。
+g_arm_status.joint[0].raw_encoder | 只读 | Yaw原始单圈编码器0..8191；对正车头且失能时抄到kYawZeroEncoder。
+g_arm_status.joint[0].fixed_zero_encoder | 只读 | 已配置的固定零点；-1表示未填写，仍用人工校零。
+g_arm_status.joint[0].homing | 只读 | 1固定零点轴开控回零中；回零完成前不接受位置/遥控目标。
+
+[05 底盘行驶与功率]
+变量名 | 权限 | 含义、数值与使用方法
+tune_chassis_acceleration_m_s2 | 可写 | 行驶加速度，m/s²；只接受有限正数。
+tune_chassis_deceleration_m_s2 | 可写 | 行驶减速度，m/s²；松杆/回中时使用。
+tune_chassis_angular_accel_rad_s2 | 可写 | 转向角加速度，rad/s²。
+tune_chassis_angular_decel_rad_s2 | 可写 | 转向角减速度，rad/s²。
+tune_chassis_max_turn_rad_s | 可写 | 最大转向角速度，rad/s。
+tune_chassis_power_budget_w | 可写 | 功率预算，W；仅在源码ChassisPowerConfig.confirmed=true时生效。默认45W，最高49W。
+tune_chassis_power_filter_ms | 可写 | 功率一阶滤波时间，ms；越大越不理会坎/减速带瞬时尖峰。
+g_chassis_status.power_w | 只读 | 功率计瞬时底盘总功率，W。
+g_chassis_status.energy_j | 只读 | 裁判缓冲能量Z，J；开局约500J。
+g_chassis_status.min_energy_j | 只读 | 本次统计内最低缓冲能量，J；上电或成功清功率锁存/底盘维护清错后重新统计，功率计首帧前显示0。
+g_chassis_status.power_over_50_ms | 只读 | 原始功率超过50W的累计时间，ms；不受滤波影响，丢帧/超时期间不计。只做诊断，不切电。
+g_chassis_status.power_over_latched | 只读 | 本次统计内曾出现原始功率>50W；1不是故障，过坎尖峰也会置1。
+g_chassis_status.power_filtered_w | 只读 | 滤波后功率，W；与budget_w比较。
+g_chassis_status.power_speed_scale | 只读 | 功率/能量综合限速比例0..1；1不限速，<1在降速。
+g_chassis_status.power_configuration_valid | 只读 | 功率配置数值合法。
+g_chassis_status.power_confirmed | 只读 | 源码confirmed是否生效。
+g_chassis_status.power_phase | 只读 | 0Disabled，1Ready，2Driving，3StopLowEnergy，4StopFeedback，5Inhibited。
+g_chassis_status.power_reason | 只读 | 0None，1Unconfirmed，2InvalidConfig，3NoMeter，4LowEnergy，5FeedbackLost，6StopTimeout，7Stopped，8ExternalStop。
+g_chassis_status.power_session_allowed | 只读 | 1功率模块允许出力。
+g_chassis_status.power_stop_requested | 只读 | 1请求受控停车。
+g_chassis_status.power_inhibited | 只读 | 1锁存禁行，需要清错并满足恢复条件。
+g_chassis_status.power_frames | 只读 | 功率帧累计；应持续增加。
+g_chassis_status.power_received_ms | 只读 | 功率最近接收时刻，ms。
+
+[06 遥控接收与映射]
+变量名 | 权限 | 含义、数值与使用方法
+g_dr16_status.frame.channel[0] | 只读 | 原始中心化通道，暂定右横；中位约0、满杆约±660。
+g_dr16_status.frame.channel[1] | 只读 | 暂定右竖，范围同上。
+g_dr16_status.frame.channel[2] | 只读 | 暂定左横，范围同上。
+g_dr16_status.frame.channel[3] | 只读 | 暂定左竖，范围同上。
+g_dr16_status.frame.channel[4] | 只读 | 拨轮通道；调参不再强制回中，但安全操作应回中。
+g_dr16_status.frame.switches[0] | 只读 | 原始拨杆0：上1、中3、下2。
+g_dr16_status.frame.switches[1] | 只读 | 原始拨杆1：上1、中3、下2。
+g_robot_status.remote_axis[1] | 只读 | 处理后的左横，[-1,1]；独立底盘0档解锁后直控Yaw。
+g_robot_status.remote_axis[2] | 只读 | 处理后的右竖，[-1,1]。
+g_robot_status.remote_switch[1] | 只读 | 处理后的右拨杆：1上、3中、2下；0档解锁要求中档3。
+g_dr16_status.good_frames | 只读 | 有效帧累计；关闭遥控器后应停止增长。
+g_dr16_status.rejected_frames | 只读 | 拒收批次累计；合法长度18/36/54/72。
+g_dr16_status.uart_errors | 只读 | 串口错误累计。
+g_dr16_status.start_calls | 只读 | 接收初始化调用次数，正常至少1。
+g_dr16_status.service_ms | 只读 | 接收维护心跳，ms。
+g_dr16_status.rx_running | 只读 | 1 UART及DMA接收已运行。
+g_dr16_status.rx_events | 只读 | UART DMA接收回调累计。
+g_dr16_status.rx_bytes | 只读 | 接收回调累计字节数。
+g_dr16_status.last_size | 只读 | 最近回调字节数；合法18/36/54/72。
+g_dr16_status.dma_remaining | 只读 | 当前DMA剩余计数，初始72。
+g_dr16_status.last_uart_error | 只读 | 位：1校验、2噪声、4帧格式、8溢出、16DMA。
+g_dr16_status.received_ms | 只读 | 最近有效帧接收时刻，ms；不是距离现在的年龄。
+g_dr16_status.consecutive_frames | 只读 | 连续有效帧数。
+
+[07 IMU、整车与翻车]
+变量名 | 权限 | 含义、数值与使用方法
+g_ins_status.updated_ms | 只读 | IMU发布时间，ms。
+g_ins_status.received_ms | 只读 | IMU采样时刻，ms。
+g_ins_status.valid | 只读 | IMU有效；需要已校准且无故障。
+g_ins_status.calibrated | 只读 | 陀螺偏置校准完成。
+g_ins_status.faults | 只读 | IMU故障位图。
+g_ins_status.tilt_deg | 只读 | 当前倾斜角，deg。
+g_ins_status.tipped | 只读 | 翻车判定；独立底盘也会被它否决并撤销解锁。
+g_ins_status.calibrating | 只读 | 正在静态标定。
+g_ins_debug_command | 可写 | 写1请求IMU静态标定；程序取走后回0。
+tune_attitude_trip_deg | 可写 | 翻车触发角，deg；默认55。
+tune_attitude_release_deg | 可写 | 翻车解除角，deg；默认40。
+tune_attitude_trip_ms | 可写 | 翻车触发持续时间，ms；默认150。
+tune_attitude_release_ms | 可写 | 翻车解除持续时间，ms；默认500。
+g_vehicle_health.healthy | 只读 | 整车聚合健康。
+g_vehicle_health.reasons | 只读 | 整车不放行原因位图；0无原因。独立底盘0档不直接使用它。
+
+[08 源码确认项]
+变量名 | 权限 | 含义、数值与使用方法
+kChassisIndependent | 源码确认 | true=0档独立底盘直驱并允许左横Yaw直控；改回false恢复整车许可路径。
+ChassisConfig.hardware_confirmed | 源码确认 | 底盘轮组实物核对；当前为true。
+ChassisConfig.max_current_ma | 源码确认 | 轮速PI输出绝对钳位，当前15000mA；也是调参限流的上限。
+ChassisPowerConfig.confirmed | 源码确认 | 功率环总开关；默认false，改true后重编才生效。
+ChassisPowerConfig.budget_w/warning_energy_j/stop_energy_j/restart_energy_j | 源码确认 | 功率预算与缓冲能量阈值；默认45W/300J/80J/350J。
+kYawZeroEncoder | 源码确认 | Yaw固定单圈零点0..8191；-1=未填写，仍用命令2人工校零。
+kYawSafetyConfirmed | 源码确认 | Yaw线束限位与制动确认；当前false。
+kArmConfig.pitch.mapping_confirmed | 源码确认 | 两DM驱动件、方向和连杆分支映射确认；当前false。
+kOperatorConfig.mapping_confirmed | 源码确认 | DR16通道/方向/拨杆映射确认；当前false。
+AttitudeConfig.installation_confirmed/thresholds_confirmed | 源码确认 | IMU安装与翻车阈值确认；当前false。
+kVehicleConfig.posture_confirmed | 源码确认 | 可行驶机械臂收拢姿态确认；当前false。
+kArmConfig.hardware_confirmed | 源码确认 | 机械臂硬件配置确认；当前false。

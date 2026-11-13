@@ -2,6 +2,8 @@
 #include <cmath>
 namespace engineer {
 namespace {
+constexpr float kPowerOverW = 50;
+constexpr uint32_t kDiagnosticMaxGapMs = 100;
 float clamp(float x, float l, float h) {
     return std::fmax(l, std::fmin(h, x));
 }
@@ -31,11 +33,45 @@ bool ChassisPower::fresh(uint32_t now, const PowerMeterStatus &m) const {
     return m.frames && uint32_t(now - m.received_ms) <= c_.timeout_ms && std::isfinite(m.power_w) &&
            std::isfinite(m.energy_j);
 }
+void ChassisPower::reset_diagnostics() {
+    s_.power_over_50_ms = 0;
+    s_.min_energy_j = 0;
+    s_.power_over_latched = 0;
+    diagnostic_previous_ms_ = 0;
+    diagnostic_have_step_ = false;
+    diagnostic_energy_valid_ = false;
+}
+void ChassisPower::update_diagnostics(uint32_t now, const PowerMeterStatus &m) {
+    // 只统计连续的新鲜帧，丢帧/超时期间不累计；不影响功率环相位。
+    if (!fresh(now, m)) {
+        diagnostic_previous_ms_ = now;
+        diagnostic_have_step_ = false;
+        return;
+    }
+    if (!diagnostic_energy_valid_ || m.energy_j < s_.min_energy_j) {
+        s_.min_energy_j = m.energy_j;
+        diagnostic_energy_valid_ = true;
+    }
+    if (m.power_w > kPowerOverW)
+        s_.power_over_latched = 1;
+    if (diagnostic_have_step_ && m.power_w > kPowerOverW) {
+        const uint32_t elapsed = uint32_t(now - diagnostic_previous_ms_);
+        if (elapsed > 0 && elapsed <= kDiagnosticMaxGapMs) {
+            if (s_.power_over_50_ms > UINT32_MAX - elapsed)
+                s_.power_over_50_ms = UINT32_MAX;
+            else
+                s_.power_over_50_ms += elapsed;
+        }
+    }
+    diagnostic_previous_ms_ = now;
+    diagnostic_have_step_ = true;
+}
 const ChassisPowerState &ChassisPower::step(uint32_t now, const PowerMeterStatus &m, bool enabled,
                                             bool stationary) {
     const bool had_permission = s_.session_allowed;
     s_.updated_ms = now;
     s_.meter_online = fresh(now, m);
+    update_diagnostics(now, m);
     s_.stop_requested = false;
     s_.speed_scale = s_.drive_scale = 0;
     s_.filtered_power_w = 0;
@@ -123,6 +159,7 @@ bool ChassisPower::clear(uint32_t now, const PowerMeterStatus &m, bool disabled)
     filtered_power_w_ = 0;
     previous_ms_ = 0;
     have_step_ = false;
+    reset_diagnostics();
     return true;
 }
 void ChassisPower::limit(const float candidate[2], const float rpm[2], float out[2]) const {
