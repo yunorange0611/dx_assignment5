@@ -300,9 +300,10 @@ STEPS = [
     page('第7批 Yaw速度内环PI', setting('第7批 Yaw速度内环PI', '先P后I，验证小角速度和边界减速。') + '''
 <h2>起步参数</h2>
 ''' + table(['变量', '本次示例'], [
-        (v('tune_yaw_velocity_kp'), '20；源码占位，不是最终答案。'),
+        (v('tune_yaw_velocity_kp'), '50~100；先用低P，静摩擦交给前馈。'),
         (v('tune_yaw_velocity_ki'), '0，先关积分。'),
-        (v('tune_yaw_voltage_limit_raw'), '25000 raw；Yaw调参电压原码上限25000。'),
+        (v('tune_yaw_voltage_limit_raw'), '5000 起步；确认方向后再加。'),
+        (v('tune_yaw_friction_ff_raw'), '0 起步；500→1000→1500 找到刚好能动的值。'),
         (v('robot_tune_mode'), '5。'),
         (v('tune_yaw_speed_deg_s'), '+1°/s，<b>最后写</b>；非零即开始。')]) + '''
 <h2>步骤</h2>

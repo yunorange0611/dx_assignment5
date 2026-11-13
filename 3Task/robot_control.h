@@ -57,7 +57,7 @@ extern volatile uint32_t robot_tune_mode;
 extern volatile float tune_current_ma, tune_speed_rpm, tune_yaw_speed_deg_s, tune_yaw_target_deg;
 extern volatile float tune_wheel_kp, tune_wheel_ki, tune_wheel_current_limit_ma;
 extern volatile float tune_yaw_position_kp, tune_yaw_velocity_kp, tune_yaw_velocity_ki,
-    tune_yaw_voltage_limit_raw, tune_yaw_half_range_deg;
+    tune_yaw_voltage_limit_raw, tune_yaw_friction_ff_raw, tune_yaw_half_range_deg;
 typedef struct {
     uint32_t updated_ms, mode, epoch, reason;
     uint8_t ready, blocked, held_mask;
@@ -84,3 +84,4 @@ struct ChassisCommand;
 // The chassis checks updated_ms locally and retains its feedback/power/fault vetoes.
 bool Robot_GetChassisCommand(engineer::ChassisCommand *command);
 #endif
+

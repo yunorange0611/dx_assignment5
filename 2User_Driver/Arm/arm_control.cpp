@@ -5,6 +5,9 @@
 namespace engineer {
 namespace {
 constexpr float kRadToDeg = 57.29577951308232f;
+// Below this speed target the Yaw friction feedforward is disabled, so a hold
+// command near zero does not buzz against static friction.
+constexpr float kYawFrictionDeadbandDegS = 0.5f;
 float clamp(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
@@ -60,24 +63,25 @@ ArmControl::ArmControl(const Config &c)
 
 float ArmControl::drive_min(unsigned i) const {
     if (i == Yaw)
-        return yaw_motion_min_;
+        return yaw_tuning_unlimited_ ? -180.0f : yaw_motion_min_;
     return i == SmallPitch ? config_.pitch.second_drive_min_deg : config_.joint[i].min_deg;
 }
 float ArmControl::drive_max(unsigned i) const {
     if (i == Yaw)
-        return yaw_motion_max_;
+        return yaw_tuning_unlimited_ ? 180.0f : yaw_motion_max_;
     return i == SmallPitch ? config_.pitch.second_drive_max_deg : config_.joint[i].max_deg;
 }
 float ArmControl::drive_speed_limit(unsigned i) const {
     if (i == Yaw)
-        return yaw_motion_speed_;
+        return yaw_tuning_unlimited_ ? yaw_limits_.max_speed_deg_s : yaw_motion_speed_;
     return i == SmallPitch ? config_.pitch.second_drive_max_speed_deg_s
                            : config_.joint[i].max_speed_deg_s;
 }
 bool ArmControl::targets_in_range(const float q[kJointCount]) const {
     for (unsigned i = 0; i < kJointCount; ++i)
         if (selected(i))
-            if (!finite(q[i]) || q[i] < config_.joint[i].min_deg || q[i] > config_.joint[i].max_deg)
+            if (!finite(q[i]) || (!(i == Yaw && yaw_tuning_unlimited_) &&
+                (q[i] < config_.joint[i].min_deg || q[i] > config_.joint[i].max_deg)))
                 return false;
     const float a2 = q[BigPitch] + q[SmallPitch];
     return finite(a2) && a2 >= drive_min(SmallPitch) && a2 <= drive_max(SmallPitch);
@@ -300,18 +304,20 @@ bool ArmControl::receive(uint8_t bus, uint16_t id, const uint8_t *d, uint8_t len
             if (encoder >= 8192)
                 return false;
             s.raw_encoder = encoder;
-            if (!r.have_feedback) {
+            const bool fixed_absolute_zero = i == Yaw && c.fixed_zero_encoder >= 0;
+            if (fixed_absolute_zero) {
+                // The fixed Yaw zero is an absolute encoder reference. A long
+                // feedback gap must not invalidate it or reintroduce multi-turn
+                // unwrap error; recompute the single-turn delta every frame.
+                int delta = int(encoder) - c.fixed_zero_encoder;
+                if (delta > 4096) delta -= 8192;
+                if (delta < -4096) delta += 8192;
+                r.encoder_sum = delta;
+                r.zero_motor_deg = 0;
+                s.calibrated = true;
+            } else if (!r.have_feedback) {
                 r.encoder_sum = encoder;
-                if (i == Yaw && c.fixed_zero_encoder >= 0) {
-                    int delta = int(encoder) - c.fixed_zero_encoder;
-                    if (delta > 4096) delta -= 8192;
-                    if (delta < -4096) delta += 8192;
-                    r.encoder_sum = delta;
-                    r.zero_motor_deg = 0;
-                    s.calibrated = true;
-                }
-            }
-            else if (uint32_t(now - s.last_feedback_ms) > config_.dji_unwrap_gap_ms) {
+            } else if (uint32_t(now - s.last_feedback_ms) > config_.dji_unwrap_gap_ms) {
                 r.encoder_sum = encoder;
                 s.calibrated = false;
                 if (s.enabled)
@@ -412,7 +418,8 @@ Result ArmControl::hold(uint8_t mask, uint32_t now) {
             return status_.last_result = Result::NotOnline;
         if (!s.calibrated)
             return status_.last_result = Result::NotCalibrated;
-        if (!finite(s.position_deg) || s.position_deg < c.min_deg || s.position_deg > c.max_deg ||
+        if (!finite(s.position_deg) ||
+            (!(i == Yaw && yaw_tuning_unlimited_) && (s.position_deg < c.min_deg || s.position_deg > c.max_deg)) ||
             !finite(s.drive_position_deg) || s.drive_position_deg < drive_min(i) ||
             s.drive_position_deg > drive_max(i))
             return status_.last_result = Result::OutOfRange;
@@ -474,8 +481,12 @@ Result ArmControl::set_yaw_limits(const YawRuntimeLimits &l, uint32_t now) {
     return status_.last_result = Result::Ok;
 }
 Result ArmControl::set_yaw_envelope(float lo, float hi, float speed) {
+    // Modes 5/6 always run without the confirmed wire range; the normal
+    // control path restores it when it leaves those modes.
+    const float allowed_lo = yaw_tuning_unlimited_ ? -180.0f : yaw_limits_.min_deg;
+    const float allowed_hi = yaw_tuning_unlimited_ ? 180.0f : yaw_limits_.max_deg;
     if (!selected(Yaw) || !finite(lo) || !finite(hi) || !finite(speed) || lo >= hi ||
-        lo < yaw_limits_.min_deg || hi > yaw_limits_.max_deg || speed <= 0 ||
+        lo < allowed_lo || hi > allowed_hi || speed <= 0 ||
         speed > yaw_limits_.max_speed_deg_s)
         return status_.last_result = Result::InvalidArgument;
     const auto &s = status_.joint[Yaw];
@@ -489,7 +500,7 @@ Result ArmControl::set_yaw_envelope(float lo, float hi, float speed) {
 }
 Result ArmControl::set_yaw_test_speed(float speed, uint32_t now) {
     if (!selected(Yaw) || !(status_.enabled_mask & (1u << Yaw)) || !finite(speed) ||
-        std::fabs(speed) > 5.0f || std::fabs(speed) > yaw_motion_speed_)
+        std::fabs(speed) > 100.0f)
         return status_.last_result = Result::InvalidArgument;
     // Speed-loop tuning explicitly takes ownership instead of startup homing.
     status_.joint[Yaw].homing = false;
@@ -514,14 +525,20 @@ void ArmControl::clear_yaw_test() {
     r.integral = r.reference_velocity = 0;
     update_drive_references();
 }
+void ArmControl::set_yaw_friction_feedforward(float raw) {
+    if (finite(raw) && raw >= 0 && raw <= startup_effort_cap_[Yaw])
+        yaw_friction_ff_raw_ = raw;
+}
 float ArmControl::limit_yaw_speed(float requested, float dt) const {
+    if (yaw_tuning_unlimited_) return requested;
     const auto &s = status_.joint[Yaw];
     const float a = yaw_limits_.braking_accel_deg_s2;
     const float margin = yaw_limits_.braking_margin_deg + std::fabs(s.velocity_deg_s) * dt;
     const float left = std::fmax(0.0f, s.position_deg - yaw_motion_min_ - margin);
     const float right = std::fmax(0.0f, yaw_motion_max_ - s.position_deg - margin);
-    const float lo = -std::fmin(yaw_motion_speed_, std::sqrt(2 * a * left));
-    const float hi = std::fmin(yaw_motion_speed_, std::sqrt(2 * a * right));
+    const float speed_cap = yaw_test_active_ ? 100.0f : yaw_motion_speed_;
+    const float lo = -std::fmin(speed_cap, std::sqrt(2 * a * left));
+    const float hi = std::fmin(speed_cap, std::sqrt(2 * a * right));
     return clamp(requested, lo, hi);
 }
 void ArmControl::transport_fault() {
@@ -580,10 +597,11 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
             return status_.last_result = Result::NotOnline;
         if (!s.calibrated)
             return status_.last_result = Result::NotCalibrated;
+        const bool live_yaw = runtime && i == Yaw;
         if (!finite(s.drive_velocity_deg_s) ||
-            std::fabs(s.drive_velocity_deg_s) > c.stationary_speed_deg_s)
+            (!live_yaw && std::fabs(s.drive_velocity_deg_s) > c.stationary_speed_deg_s))
             return status_.last_result = Result::Moving;
-        if (runtime && (!finite(s.drive_target_deg) || !finite(s.drive_reference_deg) ||
+        if (runtime && !live_yaw && (!finite(s.drive_target_deg) || !finite(s.drive_reference_deg) ||
                         std::fabs(s.drive_target_deg - s.drive_position_deg) > .5f ||
                         std::fabs(s.drive_reference_deg - s.drive_position_deg) > .5f ||
                         std::fabs(runtime_[j].reference_velocity) > .00001f ||
@@ -602,10 +620,16 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
     for (unsigned j = 0; j < kJointCount; ++j) {
         if (!(affected & (1u << j)))
             continue;
-        runtime_[j].integral = 0;
-        runtime_[j].reference_velocity = 0;
-        status_.joint[j].drive_reference_velocity_deg_s = 0;
-        status_.joint[j].velocity_target_deg_s = 0;
+        if (runtime && i == Yaw) {
+            // Live gain/limit edits must not reset the active motion trajectory.
+            runtime_[j].integral = clamp(runtime_[j].integral,
+                                         -tuning.effort_limit, tuning.effort_limit);
+        } else {
+            runtime_[j].integral = 0;
+            runtime_[j].reference_velocity = 0;
+            status_.joint[j].drive_reference_velocity_deg_s = 0;
+            status_.joint[j].velocity_target_deg_s = 0;
+        }
     }
     if (affected & kPitchPair) {
         pitch_speed_ = 0;
@@ -636,6 +660,7 @@ void ArmControl::refresh(uint32_t now) {
                 trip(FeedbackTimeout, i);
         }
         if (runtime_[i].have_feedback && c.motor != Motor::Dm4310Mit &&
+            !(i == Yaw && c.fixed_zero_encoder >= 0) &&
             uint32_t(now - s.last_feedback_ms) > config_.dji_unwrap_gap_ms) {
             s.calibrated = false;
             if (s.enabled)
@@ -662,8 +687,9 @@ void ArmControl::refresh(uint32_t now) {
             trip(OverTemperature, i);
         else if (c.motor == Motor::Dm4310Mit && s.motor_state >= 8)
             trip(MotorError, i);
-        else if (s.position_deg < c.min_deg - c.limit_margin_deg ||
-                 s.position_deg > c.max_deg + c.limit_margin_deg)
+        else if (!(i == Yaw && yaw_tuning_unlimited_) &&
+                 (s.position_deg < c.min_deg - c.limit_margin_deg ||
+                  s.position_deg > c.max_deg + c.limit_margin_deg))
             trip(PositionLimit, i);
         else if (s.drive_position_deg < drive_min(i) - c.limit_margin_deg ||
                  s.drive_position_deg > drive_max(i) + c.limit_margin_deg)
@@ -726,7 +752,8 @@ Result ArmControl::enable(uint8_t mask, uint32_t now, bool independent_yaw) {
                 return status_.last_result = Result::NotOnline;
             if (!s.calibrated)
                 return status_.last_result = Result::NotCalibrated;
-            if (s.position_deg < c.min_deg || s.position_deg > c.max_deg)
+            if (!(i == Yaw && yaw_tuning_unlimited_) &&
+                (s.position_deg < c.min_deg || s.position_deg > c.max_deg))
                 return status_.last_result = Result::OutOfRange;
             if (s.drive_position_deg < drive_min(i) || s.drive_position_deg > drive_max(i))
                 return status_.last_result = Result::OutOfRange;
@@ -766,7 +793,8 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
             const auto &c = config_.joint[i];
             if (!finite(q[i]))
                 return status_.last_result = Result::InvalidArgument;
-            if (q[i] < c.min_deg || q[i] > c.max_deg)
+            if (!(i == Yaw && yaw_tuning_unlimited_) &&
+                (q[i] < c.min_deg || q[i] > c.max_deg))
                 return status_.last_result = Result::OutOfRange;
             auto &s = status_.joint[i];
             if (s.homing && std::fabs(s.position_deg) <= 5.0f &&
@@ -780,12 +808,15 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
     for (unsigned i = 0; i < kJointCount; ++i)
         if (mask & (1u << i)) {
             status_.joint[i].target_deg =
-                i == Yaw ? clamp(next[i],
-                                 std::fmax(yaw_motion_min_, status_.joint[i].position_deg -
-                                                                yaw_limits_.max_target_lead_deg),
-                                 std::fmin(yaw_motion_max_, status_.joint[i].position_deg +
-                                                                yaw_limits_.max_target_lead_deg))
-                         : q[i];
+                i == Yaw
+                    ? (yaw_tuning_unlimited_
+                           ? clamp(next[i], -180.0f, 180.0f)
+                           : clamp(next[i],
+                                   std::fmax(yaw_motion_min_, status_.joint[i].position_deg -
+                                                                  yaw_limits_.max_target_lead_deg),
+                                   std::fmin(yaw_motion_max_, status_.joint[i].position_deg +
+                                                                  yaw_limits_.max_target_lead_deg)))
+                    : q[i];
             runtime_[i].last_command_ms = now;
         }
     if (mask & kPitchPair) {
@@ -865,7 +896,8 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
         const auto &c = config_.joint[i];
         if (s.enabled &&
             (!finite(s.reference_deg) || !finite(s.drive_reference_deg) ||
-             s.reference_deg < c.min_deg - 0.0001f || s.reference_deg > c.max_deg + 0.0001f ||
+             (!(i == Yaw && yaw_tuning_unlimited_) &&
+              (s.reference_deg < c.min_deg - 0.0001f || s.reference_deg > c.max_deg + 0.0001f)) ||
              s.drive_reference_deg < drive_min(i) - 0.0001f ||
              s.drive_reference_deg > drive_max(i) + 0.0001f))
             trip(PositionLimit, i);
@@ -893,7 +925,11 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             const float e = speed_target - s.drive_velocity_deg_s;
             const float limit = std::fmin(r.effort_limit, tuning_effort_limit_[i]);
             const float next_i = clamp(r.integral + c.velocity_ki * e * dt, -limit, limit);
-            const float u = c.velocity_kp * e + next_i;
+            float feedforward = 0;
+            if (i == Yaw && c.motor == Motor::Gm6020Voltage &&
+                std::fabs(speed_target) > kYawFrictionDeadbandDegS)
+                feedforward = (speed_target > 0 ? 1.0f : -1.0f) * yaw_friction_ff_raw_;
+            const float u = c.velocity_kp * e + next_i + feedforward;
             float final = clamp(u, -limit, limit);
             if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
                 (s.drive_position_deg >= drive_max(i) && final > 0))

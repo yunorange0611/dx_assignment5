@@ -12,7 +12,7 @@
 - 源码职责：[README_ARCHITECTURE.md](README_ARCHITECTURE.md)；参数：[README_CHASSIS.md](README_CHASSIS.md)、[README_YAW.md](README_YAW.md)。
 - 遥控/关控：[README_REMOTE.md](README_REMOTE.md)；整车保护：[README_VEHICLE.md](README_VEHICLE.md)；机械依据：[README_ARM.md](README_ARM.md)。
 
-`fm调参/`三个 `.pmpx` 是同一固件的不同观察页面，变量显示名使用源码符号、Group 使用中文。日常均加载 `build/Debug/dx_assignment5_freertos.elf`；板内程序必须与 ELF 同次构建。沿用现有通信方式，不增加 FMSTR 驱动。
+`fm调参/`三个整车 `.pmpx` 和一份只面向 Yaw 的 `Yaw调参.pmpx`（由 `_工具/生成Yaw工程.py` 生成，含速度/输出/位置曲线）都是同一固件的观察页面，变量显示名使用源码符号、Group 使用中文。日常均加载 `build/Debug/dx_assignment5_freertos.elf`；板内程序必须与 ELF 同次构建。沿用现有通信方式，不增加 FMSTR 驱动。
 
 ## 一份固件内的调参档
 

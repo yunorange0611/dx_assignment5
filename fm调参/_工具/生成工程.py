@@ -193,13 +193,14 @@ YAW_LIMIT = YAW_ZERO + [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',T
               note='实物确认的线束半幅；直接填写，owner检查后生效。看result与active_half_range_deg，不写旧限位序号。')] + variables('g_yaw_limit_status',
               [('result','限位结果 0成功',''),('ready','在线限位就绪',''),('active_half_range_deg','生效半幅','deg'),
                ('min_deg','生效最小角','deg'),('max_deg','生效最大角','deg'),('max_speed_deg_s','限位基础速度上限','deg/s')])
-YAW_SPEED = [V('tune_yaw_speed_deg_s','Yaw速度内环目标','deg/s',True,-5,5)]
+YAW_SPEED = [V('tune_yaw_speed_deg_s','Yaw速度内环目标','deg/s',True,-100,100)]
 YAW_POSITION = [V('tune_yaw_target_deg','Yaw位置双环目标','deg',True,-85,85,
                  note='切6档时自动对齐当前角。目标必须在已生效线束软限位内，先测1到2度小动作。')]
 YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
             V('tune_yaw_velocity_kp','Yaw速度P','raw/(deg/s)',True,0,1000000),
             V('tune_yaw_velocity_ki','Yaw速度I','raw/deg',True,0,1000000),
-            V('tune_yaw_voltage_limit_raw','Yaw测试输出上限 电压原码','raw',True,0,25000)] + variables('g_robot_tune_status',
+            V('tune_yaw_voltage_limit_raw','Yaw测试输出上限 电压原码','raw',True,0,25000),
+            V('tune_yaw_friction_ff_raw','Yaw静摩擦前馈 电压原码','raw',True,0,25000)] + variables('g_robot_tune_status',
             [('yaw_parameter_result','Yaw参数结果 0成功',''),('yaw_position_kp','Yaw生效位置P','1/s'),
              ('yaw_velocity_kp','Yaw生效速度P',''),('yaw_velocity_ki','Yaw生效速度I',''),
              ('yaw_voltage_limit_raw','Yaw生效输出上限 电压原码','raw')])
@@ -362,6 +363,7 @@ def groups():
             V('g_arm_status.joint[0].target_deg','Yaw目标','deg'),
             V('g_arm_status.joint[0].velocity_deg_s','Yaw速度','deg/s'),
             V('g_arm_status.joint[0].effort','Yaw输出 电压原码','raw'),
+            V('tune_yaw_friction_ff_raw','Yaw静摩擦前馈 电压原码','raw',True,0,25000),
             V('g_arm_status.joint[0].enabled','Yaw使能'),
             V('g_arm_status.joint[0].calibrated','Yaw校零'),
             V('g_arm_status.joint[0].faults','Yaw故障位图'),
@@ -593,7 +595,7 @@ def groups():
             V('g_robot_tune_status.reason', '调参原因 0正常1就绪2未就绪3关控4非法5电流超时6保留7目标为0/未开始'),
             V('g_robot_tune_status.ready', '调参已就绪'),
             V('g_robot_tune_status.blocked', '调参锁禁')] + YAW_LIMIT + [
-                V('tune_yaw_speed_deg_s', 'Yaw速度内环目标', 'deg/s', True, -5, 5),
+                V('tune_yaw_speed_deg_s', 'Yaw速度内环目标', 'deg/s', True, -100, 100),
                 V('tune_yaw_target_deg', 'Yaw位置双环目标', 'deg', True, -90, 90)] +
           joint_fields(0, ('online', 'calibrated', 'enabled', 'faults', 'feedback_age_ms',
                            'position_deg', 'target_deg', 'velocity_deg_s', 'effort'))),

@@ -88,7 +88,7 @@ const TuneState &RobotTuning::step(const TuneInput &input) {
         limit = 9000;
     } else if (input.mode == TuneYawSpeed) {
         value = input.yaw_speed_deg_s;
-        limit = 5;
+        limit = 100; // Yaw speed-loop tuning target, deg/s.
     } else {
         value = input.yaw_target_deg;
         if (!std::isfinite(input.yaw_min_deg) || !std::isfinite(input.yaw_max_deg) ||

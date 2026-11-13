@@ -95,7 +95,27 @@ int test_yaw() {
         CHECK(feed(reversed, 0, 100));
         CHECK(reversed.status().joint[Yaw].position_deg < -8);
         CHECK(feed(reversed, 20, 100));
-        CHECK(!reversed.status().joint[Yaw].calibrated);
+        CHECK(reversed.status().joint[Yaw].calibrated); // Fixed absolute zero survives a long gap.
+        CHECK(reversed.status().joint[Yaw].position_deg < -8);
+    }
+    { // Detached-motor tuning can disable the wire range for modes 5/6.
+        Config c = config();
+        c.joint[Yaw].fixed_zero_encoder = 6352;
+        ArmControl a(c);
+        CHECK(feed(a, 0, 1184)); // +132.9 deg from the fixed zero.
+        CHECK(a.status().joint[Yaw].calibrated);
+        CHECK(std::fabs(a.status().joint[Yaw].position_deg - 132.8906f) < 0.01f);
+        CHECK(a.enable(1, 0, true) == Result::OutOfRange);
+        a.set_yaw_tuning_limits(false); // modes 5/6 drop the wire range
+        CHECK(a.enable(1, 0, true) == Result::Ok);
+        CHECK(a.set_yaw_envelope(-180, 180, 10) == Result::Ok);
+        a.bypass_yaw_homing_for_tuning();
+        float q[kJointCount]{};
+        q[Yaw] = 132.8906f;
+        CHECK(a.set_targets(1, q, 0) == Result::Ok);
+        CHECK(std::fabs(a.status().joint[Yaw].target_deg - q[Yaw]) < 0.01f);
+        a.set_yaw_tuning_limits(true);
+        CHECK(a.set_yaw_envelope(-85, 85, 10) == Result::OutOfRange);
     }
     { // Yaw-only enable ignores a latched fault from another arm joint.
         Config c = config();
@@ -110,6 +130,47 @@ int test_yaw() {
         CHECK(a.status().faults & FeedbackTimeout);
         CHECK(a.status().joint[Yaw].enabled);
         CHECK(a.enable(kAllJoints, 60) == Result::FaultLatched);
+    }
+    { // Voltage-mode Yaw static-friction feedforward follows the speed target sign.
+        Config c = config();
+        c.joint[Yaw].velocity_kp = 0;
+        c.joint[Yaw].velocity_ki = 0;
+        c.joint[Yaw].max_effort = 5000;
+        ArmControl a(c);
+        Frame frames[kJointCount]{};
+        CHECK(feed(a, 0));
+        CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        a.set_yaw_friction_feedforward(500);
+        CHECK(a.set_yaw_test_speed(5, 0) == Result::Ok);
+        a.step(0, frames);
+        CHECK(a.status().joint[Yaw].effort == 500);
+        CHECK(a.set_yaw_test_speed(-5, 0) == Result::Ok);
+        a.step(4, frames);
+        CHECK(a.status().joint[Yaw].effort == -500);
+        CHECK(a.set_yaw_test_speed(0, 4) == Result::Ok);
+        a.step(8, frames);
+        CHECK(a.status().joint[Yaw].effort == 0);
+    }
+    { // Live PID/limit edits keep the Yaw speed target and motion reference.
+        ArmControl a(config());
+        Frame frames[kJointCount]{};
+        CHECK(feed(a, 0));
+        CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        CHECK(a.set_yaw_test_speed(2, 0) == Result::Ok);
+        a.step(0, frames);
+        const float target = a.status().joint[Yaw].target_deg;
+        const float reference = a.status().joint[Yaw].reference_deg;
+        const float velocity_target = a.status().joint[Yaw].velocity_target_deg_s;
+        const JointTuning tuned{3, 20, 12, 20000};
+        CHECK(a.set_tuning_runtime(Yaw, tuned, 4) == Result::Ok);
+        CHECK(a.status().joint[Yaw].target_deg == target);
+        CHECK(a.status().joint[Yaw].reference_deg == reference);
+        CHECK(a.status().joint[Yaw].velocity_target_deg_s == velocity_target);
+        CHECK(feed(a, 4));
+        a.step(4, frames);
+        CHECK(a.status().joint[Yaw].velocity_target_deg_s == 2);
     }
     { // Task adaptation preserves the public debug ABI and one-shot requests.
         static_assert(sizeof(YawLimitRequest) == 8);
@@ -311,7 +372,7 @@ int test_yaw() {
         CHECK(a.set_yaw_test_speed(1, 0) == Result::InvalidArgument);
         CHECK(a.enable(1, 0) == Result::Ok);
         CHECK(a.set_effort_limit(Yaw, 150) == Result::Ok);
-        CHECK(a.set_yaw_test_speed(6, 0) == Result::InvalidArgument);
+        CHECK(a.set_yaw_test_speed(101, 0) == Result::InvalidArgument);
         CHECK(a.set_yaw_test_speed(2, 0) == Result::Ok);
         a.step(0, frames);
         CHECK(a.status().joint[Yaw].velocity_target_deg_s == 2);
@@ -410,7 +471,7 @@ int test_yaw() {
         CHECK(a.get_tuning(Yaw, read) && read.velocity_kp == tuned.velocity_kp &&
               read.effort_limit == tuned.effort_limit);
         CHECK(a.set_yaw_test_speed(2, 0) == Result::Ok);
-        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Busy);
+        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Ok);
         CHECK(a.set_yaw_test_speed(0, 0) == Result::Ok);
         CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Ok);
         CHECK(a.get_tuning(Yaw, read) && read.effort_limit == original.effort_limit);
@@ -424,11 +485,11 @@ int test_yaw() {
         a.clear_yaw_test();
         q[Yaw] = 1;
         CHECK(a.set_targets(1u << Yaw, q, 0) == Result::Ok);
-        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Busy);
+        CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Ok);
         CHECK(a.hold(1u << Yaw, 0) == Result::Ok);
         CHECK(a.set_tuning_runtime(Yaw, original, 0) == Result::Ok);
         CHECK(feed_all(a, 4, 1000, 1));
-        CHECK(a.set_tuning_runtime(Yaw, original, 4) == Result::Moving);
+        CHECK(a.set_tuning_runtime(Yaw, original, 4) == Result::Ok);
         CHECK(a.status().enabled_mask == kAllJoints);
         CHECK(feed_all(a, 8));
         JointTuning pitch{};

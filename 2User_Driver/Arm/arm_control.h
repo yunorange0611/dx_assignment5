@@ -135,6 +135,10 @@ class ArmControl {
     Result set_yaw_envelope(float min_deg, float max_deg, float speed_deg_s);
     Result set_yaw_test_speed(float speed_deg_s, uint32_t now_ms);
     void clear_yaw_test();
+    void set_yaw_tuning_limits(bool enabled) { yaw_tuning_unlimited_ = !enabled; }
+    // Voltage-mode Yaw only. Added in the direction of a non-zero speed target
+    // to break static friction; zero disables. Invalid writes keep the old value.
+    void set_yaw_friction_feedforward(float raw);
     // Called only after the tuning owner has enabled and validated Yaw.
     void bypass_yaw_homing_for_tuning() { status_.joint[Yaw].homing = false; }
     const YawRuntimeLimits &yaw_limits() const {
@@ -165,7 +169,9 @@ class ArmControl {
     float pitch_speed_ = 0, pitch_speed_limit_ = 0, pitch_accel_limit_ = 0;
     bool pitch_path_active_ = false;
     YawRuntimeLimits yaw_limits_{};
+    bool yaw_tuning_unlimited_ = false;
     float yaw_motion_min_ = 0, yaw_motion_max_ = 0, yaw_motion_speed_ = 0, yaw_test_speed_ = 0;
+    float yaw_friction_ff_raw_ = 0;
     bool yaw_test_active_ = false;
     float limit_yaw_speed(float requested, float dt) const;
     void refresh(uint32_t now_ms);

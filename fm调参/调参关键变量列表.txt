@@ -108,6 +108,7 @@ tune_yaw_position_kp | 可写 | Yaw位置P，1/s；mode6中合法值直接生效
 tune_yaw_velocity_kp | 可写 | Yaw速度P，电压原码/(deg/s)。
 tune_yaw_velocity_ki | 可写 | Yaw速度I，电压原码/deg。
 tune_yaw_voltage_limit_raw | 可写 | Yaw测试输出上限，电压原码；默认25000，最终受编译/已生效上限约束。
+tune_yaw_friction_ff_raw | 可写 | Yaw静摩擦前馈，电压原码；速度目标超过0.5deg/s时按方向叠加，0关闭，默认0。
 g_yaw_limit_status.result | 只读 | 半幅申请结果；0成功。
 g_yaw_limit_status.ready | 只读 | 1在线限位就绪。
 g_yaw_limit_status.active_half_range_deg | 只读 | 当前生效半幅，deg。

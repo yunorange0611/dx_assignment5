@@ -26,7 +26,8 @@ volatile float tune_wheel_kp = engineer::kChassisConfig.velocity_kp,
     tune_wheel_ki = engineer::kChassisConfig.velocity_ki, tune_wheel_current_limit_ma = 10000;
 volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
-    tune_yaw_velocity_ki = 10, tune_yaw_voltage_limit_raw = 25000, tune_yaw_half_range_deg = 0;
+    tune_yaw_velocity_ki = 10, tune_yaw_voltage_limit_raw = 25000,
+    tune_yaw_friction_ff_raw = 0, tune_yaw_half_range_deg = 0;
 RobotTuneStatus g_robot_tune_status{};
 }
 namespace {
@@ -89,6 +90,9 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     JointTuning yaw_tune{};
     taskENTER_CRITICAL();
     requested = robot_tune_mode;
+    // Modes 5/6 always drop the Yaw wire range.
+    arm.set_yaw_tuning_limits(!(requested == ROBOT_TUNE_YAW_SPEED ||
+                                requested == ROBOT_TUNE_YAW_POSITION));
     current = tune_current_ma;
     speed = tune_speed_rpm;
     yaw_speed = tune_yaw_speed_deg_s;
@@ -169,6 +173,9 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
                             requested <= ROBOT_TUNE_RIGHT_SPEED;
     const bool yaw_mode = requested == ROBOT_TUNE_YAW_SPEED ||
                           requested == ROBOT_TUNE_YAW_POSITION;
+    // Limitless Yaw tuning also removes the wire-range envelope for this
+    // session; normal control restores it as soon as the mode leaves 5/6.
+    const bool yaw_limitless = yaw_mode;
     // Wheel tuning is independent of arm calibration and IMU commissioning.
     // Yaw tuning is independent of the rest of the arm; only Yaw CAN state and
     // CAN1 transport/timing faults participate. Other arm joints are not owners.
@@ -210,11 +217,22 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     // deliberately not part of this readiness check.
     const bool yaw_ready = arm.status().configuration_valid && yaw.online && yaw.calibrated &&
         !yaw.faults && !(arm.status().faults & (TransportError | TimingError)) &&
-        uint32_t(now - yaw.last_feedback_ms) <= kArmConfig.dji_unwrap_gap_ms &&
+        uint32_t(now - yaw.last_feedback_ms) <= kArmConfig.feedback_timeout_ms &&
         yaw.temperature_c < kArmConfig.joint[Yaw].max_temperature_c;
     const bool still = yaw_mode
         ? std::fabs(yaw.velocity_deg_s) <= kArmConfig.joint[Yaw].stationary_speed_deg_s
         : holders_still && wheels_fresh && wheels.wheels_stationary;
+    // Apply live Yaw gain/limit edits before the readiness check. Otherwise the
+    // first cycle after an edit reports "not applied", blocks the tuning step
+    // and clears the speed target the operator just wrote.
+    uint32_t yaw_parameter_result = g_robot_tune_status.yaw_parameter_result;
+    if (yaw_mode && !fatal && yaw_ready) {
+        JointTuning actual{};
+        arm.get_tuning(Yaw, actual);
+        if (actual.position_kp != yaw_tune.position_kp || actual.velocity_kp != yaw_tune.velocity_kp ||
+            actual.velocity_ki != yaw_tune.velocity_ki || actual.effort_limit != yaw_tune.effort_limit)
+            yaw_parameter_result = uint32_t(arm.set_tuning_runtime(Yaw, yaw_tune, now));
+    }
     JointTuning accepted_yaw{};
     arm.get_tuning(Yaw, accepted_yaw);
     const bool yaw_parameters_applied =
@@ -226,7 +244,8 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     auto state = tuning.step({requested, now,
         (wheel_mode || yaw_mode || kOperatorConfig.mapping_confirmed) && !fatal,
         selected_ok, still, fatal, current, speed, yaw_speed, yaw_target,
-        yaw.position_deg, arm.yaw_limits().min_deg, arm.yaw_limits().max_deg, enable == 1});
+        yaw.position_deg, yaw_limitless ? -180.0f : arm.yaw_limits().min_deg,
+        yaw_limitless ? 180.0f : arm.yaw_limits().max_deg, enable == 1});
 
     if (state.changed) {
         zero_tune_targets(yaw.position_deg);
@@ -251,16 +270,6 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
         tune_exit_wait = true;
     }
 
-    uint32_t yaw_parameter_result = g_robot_tune_status.yaw_parameter_result;
-    if (yaw_mode && !fatal && yaw_ready &&
-        (!state.ready || (requested == ROBOT_TUNE_YAW_SPEED ? yaw_speed == 0 :
-                           std::fabs(yaw_target - yaw.position_deg) <= .5f))) {
-        JointTuning actual{};
-        arm.get_tuning(Yaw, actual);
-        if (actual.position_kp != yaw_tune.position_kp || actual.velocity_kp != yaw_tune.velocity_kp ||
-            actual.velocity_ki != yaw_tune.velocity_ki || actual.effort_limit != yaw_tune.effort_limit)
-            yaw_parameter_result = uint32_t(arm.set_tuning_runtime(Yaw, yaw_tune, now));
-    }
     if (state.ready && yaw_mode && !fatal) {
         INS_RevokeCalibrationPermission(now);
         if (!arm.status().joint[Yaw].enabled) {
@@ -269,10 +278,14 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
             else
                 fatal = true;
         }
-        // Test range is the configured wire range, not the Drive posture envelope.
-        const auto &l = arm.yaw_limits();
-        if (!fatal && arm.set_yaw_envelope(l.min_deg, l.max_deg, l.max_speed_deg_s) != Result::Ok)
-            fatal = true;
+        // Modes 5/6 do not install the wire-range envelope. Keeping the old
+        // yaw_motion_* values means normal control immediately regains the
+        // confirmed limits as soon as the tuning mode is left.
+        if (!fatal && !yaw_limitless) {
+            const auto &l = arm.yaw_limits();
+            if (arm.set_yaw_envelope(l.min_deg, l.max_deg, l.max_speed_deg_s) != Result::Ok)
+                fatal = true;
+        }
         JointTuning accepted{};
         arm.get_tuning(Yaw, accepted);
         if (!fatal && arm.set_effort_limit(Yaw, std::fmin(25000.0f, accepted.effort_limit)) != Result::Ok)
@@ -459,6 +472,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     Interlocks locks;
     bool arm_request, stop_request;
     uint32_t debug_command;
+    float yaw_friction_ff = 0;
     taskENTER_CRITICAL();
     locks = shared_interlocks;
     arm_request = arm_requested;
@@ -467,7 +481,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     stop_requested = false;
     debug_command = g_robot_debug_command;
     g_robot_debug_command = ROBOT_DEBUG_IDLE;
+    yaw_friction_ff = tune_yaw_friction_ff_raw;
     taskEXIT_CRITICAL();
+    arm.set_yaw_friction_feedforward(yaw_friction_ff);
     DR16Status rx{};
     DR16_GetStatus(&rx);
     now = HAL_GetTick();
@@ -630,7 +646,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         !(arm.status().faults & (TransportError | TimingError)) &&
         uint32_t(now - yaw_joint.last_feedback_ms) <= kArmConfig.feedback_timeout_ms &&
         yaw_joint.temperature_c < kArmConfig.joint[Yaw].max_temperature_c;
-    const bool yaw_drive_requested = kChassisIndependent && robot_tune_mode == 0 &&
+    // 临时只调底盘：恢复true即可重新接入行驶档Yaw自动使能/回零/摇杆控制。
+    constexpr bool drive_yaw_enabled = false;
+    const bool yaw_drive_requested = drive_yaw_enabled && kChassisIndependent && robot_tune_mode == 0 &&
         drive_switch && drive_armed && !global_stop && !chassis_stop_latched &&
         !tipover && !power_stop && remote_ok && debug_command != ROBOT_DEBUG_DISABLE_YAW;
     if (result.request_enable) {
@@ -670,7 +688,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
 #endif
         arm.enable(1u << Yaw, now, true);
     } else if (kChassisIndependent && robot_tune_mode == 0 &&
-               ((yaw_direct_was_active && !yaw_drive_requested) || global_stop || !remote_ok ||
+               (!drive_yaw_enabled || (yaw_direct_was_active && !yaw_drive_requested) || global_stop || !remote_ok ||
                 tipover || debug_command == ROBOT_DEBUG_DISABLE_YAW)) {
         arm.disable_joints(1u << Yaw);
     }
