@@ -1,12 +1,14 @@
 # 两轮底盘：参数与运行时调参
 
-CAN2左轮ID1、右轮ID2，反馈0x201/0x202，输出0x200第一/二槽；CAN1由原机械臂任务管理。日常构建 `Debug/Release`，同一整车固件通过 `robot_tune_mode` 和 `tune_enable` 调参。
+CAN2左轮ID1、右轮ID2，反馈0x201/0x202，输出0x200第一/二槽；CAN1由原机械臂任务管理。日常构建 `Debug/Release`，同一整车固件通过 `robot_tune_mode` 选对象，直接写目标；代码没有 `tune_enable`。
+
+**当前 `kChassisIndependent=true`**：0档是底盘独立直驱，左拨杆上 + 回中解锁后直接用左竖/右横；底盘本身不依赖机械臂/Yaw/IMU/功率。左横直控Yaw另需Yaw在线/校零/使能，见下文“Yaw直控”。上电、关控、翻车、遥控失联、离开上档、功率锁存都会撤销解锁；恢复需左拨杆上、右拨杆中、五通道回中300ms，`g_robot_status.independent_armed=1` 后才接受摇杆。改回 `false` 才恢复整车许可路径。
 
 正常控制链为 `Robot_GetChassisCommand → ChassisControl → ChassisPower → ChassisMotor组帧 → CAN2`。摇杆直接映射目标速度再限加减速，`speed_request/turn_request`为[-1,1]；前进和逆时针为正，倒车不反转转向，不做Yaw跟随。
 
 ## 修改入口
 
-源码参数在 `2User_Driver/Chassis/chassis_config.h`。实测确认默认关闭，只确认已经核对的项目。
+源码参数在 `2User_Driver/Chassis/chassis_config.h`。当前底盘 `hardware_confirmed=true`（轮 ID/方向/几何已按实测确认）；其他模块的确认门槛仍按各自文档保留。
 
 | 内容 | 字段 |
 |---|---|
@@ -17,7 +19,7 @@ CAN2左轮ID1、右轮ID2，反馈0x201/0x202，输出0x200第一/二槽；CAN1�
 | 轮速PI/运行限流 | `velocity_kp`、`velocity_ki`、`max_current_ma` |
 | 超时、轮静止确认 | `feedback_timeout_ms`、`command_timeout_ms`、`stationary_rpm`、`stationary_ms` |
 
-FreeMASTER日常直接修改 `tune_wheel_kp`、`tune_wheel_ki`、`tune_wheel_current_limit_ma`，在测试停止、目标归零和新鲜静止反馈满足时由原owner校验生效；查看 `g_chassis_tune_status`、`g_chassis_status.tune_result`，不改只读状态。测试限流还受300mA及编译上限约束。参数只存RAM，确定后写回源码。底盘没有独立快速档参数，快速请求不会使车变快；功率参数在 `Power/chassis_power.h`。
+FreeMASTER日常直接修改 `tune_wheel_kp`、`tune_wheel_ki`、`tune_wheel_current_limit_ma`；在轮组调参档内，合法参数直接在线生效，不要求目标归零或静止，也不插入失能周期。查看 `g_chassis_tune_status`、`g_chassis_status.tune_result`，不改只读状态。测试电流目标最大 ±10000mA，输出限流还受 `tune_wheel_current_limit_ma` 和源码 `max_current_ma`（默认15000mA）约束。参数只存RAM，确定后写回源码。底盘没有独立快速档参数，快速请求不会使车变快；功率参数在 `Power/chassis_power.h`，现场说明见 [功率限制调参说明.md](fm调参/功率限制调参说明.md)。
 
 ## 同一固件内测轮
 
@@ -28,15 +30,15 @@ FreeMASTER日常直接修改 `tune_wheel_kp`、`tune_wheel_ki`、`tune_wheel_cur
 
 两轮悬空并固定车体。需要抬臂时先在0档正常夹取，抬起后左拨杆下进入待机、右拨杆中、五通道回中并等实际静止。已使能轴继续保持，未使能轴不因选轮调参而自动使能。
 
-每次按 **enable=0 → 等轮子停稳 → 选择mode → 确认电流/速度目标为0 → enable=1 → 写小目标**。切mode自动关闭 `tune_enable` 并清原目标/PI历史；只给选中轮输出，另一轮槽位0。先电流确认正负方向，再Ki=0调速度P，最后少量加I。速度单位是转子rpm，不是轮轴rpm。
+每次按 **目标0 → 等轮子停稳 → 选择mode → 确认电流/速度目标为0 → 写小目标**。切mode会清一次原目标/PI历史；非零目标即执行，写0停止。只给选中轮输出，另一轮槽位0。先电流确认正负方向，再Ki=0调速度P，最后少量加I。电流目标最大 ±10000mA；速度目标最大 ±9000 转子rpm，单位是3508转子rpm，不是轮轴rpm。
 
-`tune_enable=0`停止轮测试而不撤机械臂保持。模式1/2非零电流最多500ms，不能靠改幅值或符号延长。失联、反馈/温度/时序异常、发送失败、全局关控和本地故障均能撤销测试；健康恢复不自动续跑。回0档清本次调参锁，再按需清本地硬故障、重新选档和使能。模式5/6调Yaw时两轮禁止输出。
+把目标写0或回0档停止轮测试，而不撤机械臂保持。模式1/2非零电流最多500ms，不能靠改幅值或符号延长；模式3/4速度档不会自动结束，必须写0或回0档。失联、反馈/温度/时序异常、发送失败、全局关控和本地故障均能撤销测试；目标会被清0，健康恢复不自动续跑。回0档清本次调参锁，再按需清本地硬故障、重新选档并重写目标。模式5/6调Yaw时两轮禁止输出。
 
-功率未实测确认时仅允许上述受限悬空调轮，不代表可以落地行驶；一旦功率配置确认，数据超时、低能量和禁止运行继续约束调轮。本地CAN2停止/清错不直接撤销CAN1机械臂保持；正常行驶限功率制动见 [README_VEHICLE.md](README_VEHICLE.md)。
+功率未实测确认时，独立底盘0档不经过功率环，只受 `max_current_ma` 和速度斜坡约束；这不代表可以落地行驶。一旦 `confirmed=true`，数据超时、低能量和禁止运行会同时约束调轮和独立直驱。本地CAN2停止/清错不直接撤销CAN1机械臂保持；完整说明见 [README_VEHICLE.md](README_VEHICLE.md) 和 [功率限制调参说明.md](fm调参/功率限制调参说明.md)。
 
 ## 退出、清错与观察
 
-先enable=0、等实际停稳，再mode=0。0档不是总关控；机械臂继续保持，正常遥控需停稳回中后写 `g_robot_debug_command=4` 明确恢复。全局关控始终用命令1或 `Robot_StopControl()`。
+先把目标写0、等实际停稳，再mode=0。0档不是总关控；机械臂继续保持，正常遥控需停稳回中后写 `g_robot_debug_command=4` 明确恢复。全局关控始终用命令1或 `Robot_StopControl()`。
 
 `g_chassis_debug_request`仅保留本地维护：mode0停止、mode1清错，最后递增request_seq；旧mode2/3、wheel/duration/confirm不再是日常出力入口。清错不自动使能，需核对硬故障和功率锁存。日常选轮/给目标无需填这组请求。
 
@@ -45,12 +47,16 @@ FreeMASTER日常直接修改 `tune_wheel_kp`、`tune_wheel_ki`、`tune_wheel_cur
 每批步骤和异常处理以原 [00_分批调参步骤.pdf](fm调参/00_分批调参步骤.pdf)、[01_排障与变量说明.pdf](fm调参/01_排障与变量说明.pdf) 为准；三个FreeMASTER工程使用同一Debug固件ELF。软件验证不能替代实物方向、停车距离与负载验收。
 
 
+## 历史记录与专项说明
+
+以下按时间保留当时的实测记录；与上文冲突时以上文当前说明为准。0档底盘直驱、Yaw直控、功率限制和翻车保护四节仍是当前专项说明。
+
 ### 2026-11-11 底盘调参放行简化
-单轮调参(mode 1–4)不再依赖mapping_confirmed、hardware_confirmed、机械臂故障/校零及IMU就绪；这些条件仍用于原正常整车路径。保留遥控在线、明确关控、任务时序、轮反馈/温度、CAN故障、参数合法性、限流和电流脉冲超时。先架空调轮，不视为整车放行。mode只选对象，tune_enable控制执行；切对象仍清零一次。
+单轮调参(mode 1–4)不再依赖mapping_confirmed、hardware_confirmed、机械臂故障/校零及IMU就绪；这些条件仍用于原正常整车路径。保留遥控在线、明确关控、任务时序、轮反馈/温度、CAN故障、参数合法性、限流和电流脉冲超时。先架空调轮，不视为整车放行。当时mode只选对象，tune_enable控制执行；切对象仍清零一次。
 
 
 ### 2026-11-11 目标直接执行
-robot_tune_mode仅选择对象/控制层。tune_enable为旧FM兼容符号，不再控制执行。先选mode（切档清目标一次），再写电流/速度目标，非零即执行，归零停止。电流500ms超时仍保留；超时后需把目标写0，待状态解除，再给新目标。mode6为yaw位置保持，进入时目标捕获当前角度，不用enable。全局关控、失联、设备反馈与输出限制不变。
+robot_tune_mode仅选择对象/控制层。当时tune_enable为旧FM兼容符号，不再控制执行。先选mode（切档清目标一次），再写电流/速度目标，非零即执行，归零停止。电流500ms超时仍保留；超时后需把目标写0，待状态解除，再给新目标。mode6为yaw位置保持，进入时目标捕获当前角度，不用enable。全局关控、失联、设备反馈与输出限制不变。
 
 
 2026-11-11：tune_enable全局符号已彻底删除，mode选对象后直接给目标。电流档仍保留500ms超时，超时会清目标；速度档无该脉冲超时。FM必须使用新ELF刷新绑定，不可沿用删除符号后的旧表。
@@ -71,12 +77,22 @@ robot_tune_mode仅选择对象/控制层。tune_enable为旧FM兼容符号，不
 轮速PI实测记录：Kp=3.4、Ki=1.3，已同步正常控制默认值与FM调参初值。移除RobotTuning失败后必须零目标解锁的历史锁存；故障仍禁止输出并由owner清目标，条件恢复后直接提交新目标即可。电流500ms超时仍保留。
 
 
-### 2026-11-11 0档底盘直驱（交接用）
-- `ChassisConfig.h` 的 `kChassisIndependent=true` 时：`robot_tune_mode=0`、左拨杆上、遥控在线，底盘直接使用共用解析值 `remote_axis[0]`（左竖）和 `remote_axis[3]`（右横）驱动；不再要求机械臂 active、Yaw 半幅、IMU 或功率计。
-- 左拨杆中/下、松杆、遥控失联、命令1：停止/制动。
-- 遥控解析、通道、方向、死区仍共用；机械臂/Yaw 代码不参与底盘输出。
-- `ChassisCommand.independent` 是内部标记；`g_chassis_status.independent` 为只读状态。FreeMASTER 的“0档底盘直驱｜左拨杆上”Group 用于观察。
+### 0档底盘直驱（比赛/交接）
+- `ChassisConfig.h` 的 `kChassisIndependent=true` 时：`robot_tune_mode=0`、左拨杆上、遥控在线，底盘直接使用共用解析值 `remote_axis[0]`（左竖）和 `remote_axis[3]`（右横）驱动；底盘本身不再要求机械臂 active、Yaw 半幅、IMU 或功率计，左横Yaw直控另需Yaw在线/校零/使能。
+- 左拨杆中/下、松杆、遥控失联、命令1、功率锁存（`power_confirmed` 且 `power_stop_requested`/`power_inhibited`）：停止/制动。
+- 上电、关控、翻车、遥控失联、左拨杆中/下、功率锁存都会使 `drive_armed=0`；重新运动必须先左拨杆上、遥控在线、五通道回中、右拨杆中位并保持 `neutral_ms=300ms`，`g_robot_status.independent_armed=1` 后才接受摇杆运动。
+- `independent_stop_latched` 可由关控释放 + 回中清除，也可由命令4清除；清除本身不会立即出力，仍要经过上面的回中解锁。功率锁存清除还要满足 `restart_energy_j` 且功率数据新鲜。
+- 遥控解析、通道、方向、死区仍共用；机械臂/Yaw 代码不参与底盘输出。物理通道/方向仍须实测核对，独立模式本身不检查 `mapping_confirmed`。
+- `ChassisCommand.independent` 是内部标记；`g_chassis_status.independent` 为只读状态。FreeMASTER 的“0档底盘直驱｜左拨杆上”Group 用于观察，`independent_armed` 表示已回中解锁。
 - 以后整车联调时把 `kChassisIndependent` 改回 false，恢复 `Robot_GetChassisCommand()` 的整车许可路径；底盘控制算法和 CAN2 发送入口不变。
+
+### Yaw 直控（独立底盘行驶模式）
+- 左横 `remote_axis[1]` 控制 Yaw；目标按 `max_speed_deg_s` 积分，限制用 `arm.yaw_limits()`；未配置限位时退回 `kYawConfig` 的 -90..90° / 10°/s。
+- 只使能 Yaw 用命令5，只失能 Yaw 用命令6，不碰其他机械臂关节。
+- 比赛左拨杆上：底盘前后/转向 + Yaw 左横；Yaw 必须 online/calibrated/enabled。Yaw 未使能/未校零时 Yaw 不动，底盘照常。
+- Yaw 直控只在 `independent_armed=1` 后生效；底盘停止、翻车、失联、功率停车或离开上档会撤销直控，Yaw 走统一失能/保持路径（通常失能，不主动回中）。
+- 零点/使能顺序：`kYawZeroEncoder` 已填时首次反馈自动 calibrated；未填则 `robot_tune_mode=6` + 命令2 只校 Yaw。随后 `robot_tune_mode=0` → 命令5 只使能 Yaw；固定零点轴首次开控先 `homing` 回零，回零期间左横不推进目标。
+- FM「Yaw直控｜左横」组看 `yaw_direct_active`、`yaw_direct_target_deg`、Yaw 反馈/目标/速度/输出/故障。
 
 ### 行驶斜坡在线调参
 FreeMASTER「行驶加减速与转向」组的五项 `tune_chassis_*` 在正常底盘控制周期生效：行驶加速/减速、转向角加速度/角减速度、最大转向角速度。只接受有限正数，非法输入保留上一生效值。默认值来自 `chassis_config.h`，在线修改不保存到 Flash，不影响单轮测试、限流或停止保护。

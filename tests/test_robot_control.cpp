@@ -400,12 +400,27 @@ int test_robot_control() {
         g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
         ArmControl independent_arm(kArmConfig);
         CHECK(feed_all(independent_arm, now));
+        auto run = [&](uint32_t t, bool left_up, int left_y) {
+            fresh_inputs(t);
+            if (left_up)
+                g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+            g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = int16_t(left_y);
+            Robot_Execute(independent_arm, t, false);
+            Robot_GetChassisCommand(&command);
+            Robot_GetControlStatus(&s);
+        };
         Robot_RequestControl(); // Clear any STOP latch left by earlier blocks.
-        Robot_Execute(independent_arm, now, false);
-        CHECK(Robot_GetControlStatus(&s));
+        for (unsigned i = 0; i <= 76; ++i) { // 304ms neutral arming window.
+            now += 4;
+            run(now, true, 0);
+        }
+        CHECK(Robot_GetControlStatus(&s) && s.independent_armed);
         CHECK(Robot_GetChassisCommand(&command));
-        CHECK(command.independent && command.enabled);
-        CHECK(command.speed_request > .9f && command.turn_request == 0);
+        CHECK(command.independent && command.enabled && command.speed_request == 0);
+        now += 4;
+        run(now, true, 660);
+        CHECK(command.enabled && command.speed_request > .9f && command.turn_request == 0);
+        CHECK(Robot_GetControlStatus(&s));
         CHECK(!s.emergency_stop && !s.stop_chassis);
         CHECK(s.longitudinal_speed_request > .9f);
         ChassisControl direct(kChassisConfig);
@@ -430,56 +445,93 @@ int test_robot_control() {
         // Explicit STOP latches and must not auto-resume from the held stick.
         Robot_StopControl();
         now += 4;
-        fresh_inputs(now);
-        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
-        Robot_Execute(independent_arm, now, false);
+        run(now, true, 660);
         CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.stop);
         now += 4;
-        fresh_inputs(now);
-        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
-        Robot_Execute(independent_arm, now, false);
+        run(now, true, 660);
         CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.stop);
 
-        // Explicit command 4 clears the latch.
+        // Command 4 clears the latch, but a held stick must not re-arm.
         Robot_RequestControl();
         now += 4;
-        fresh_inputs(now);
-        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
-        Robot_Execute(independent_arm, now, false);
-        CHECK(Robot_GetChassisCommand(&command) && command.enabled && command.independent);
+        run(now, true, 660);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled);
+        for (unsigned i = 0; i <= 76; ++i) {
+            now += 4;
+            run(now, true, 0);
+        }
+        CHECK(command.enabled && command.independent);
+        now += 4;
+        run(now, true, 660);
+        CHECK(command.enabled && command.speed_request > .9f);
 
-        // Tip-over stops and latches the independent chassis; command 4 clears after upright.
+        // Tip-over stops and latches; a held stick cannot re-arm after clearing.
         vehicle_reasons = PROTECT_TIPPED;
         now += 4;
-        fresh_inputs(now);
-        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
-        Robot_Execute(independent_arm, now, false);
+        run(now, true, 660);
         CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.stop);
         CHECK(Robot_GetControlStatus(&s) && s.independent_stop_latched);
         vehicle_reasons = 0;
         now += 4;
-        fresh_inputs(now);
-        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
-        Robot_Execute(independent_arm, now, false);
-        CHECK(Robot_GetChassisCommand(&command) && !command.enabled); // Latch needs command 4.
+        run(now, true, 660);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled);
         Robot_RequestControl();
         now += 4;
-        fresh_inputs(now);
-        g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
-        g_dr16_status.frame.channel[kOperatorConfig.left_y_channel] = 660;
-        Robot_Execute(independent_arm, now, false);
-        CHECK(Robot_GetChassisCommand(&command) && command.enabled && command.independent);
+        run(now, true, 660);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled);
+        for (unsigned i = 0; i <= 76; ++i) {
+            now += 4;
+            run(now, true, 0);
+        }
+        CHECK(command.enabled && command.independent);
 
         // Consume the request and leave a clean latch state for later tests.
         Robot_RequestControl();
         now += 4;
         fresh_inputs(now);
         Robot_Execute(independent_arm, now, false);
+    }
+    if (kArmConfig.joint_mask == kAllJoints) {
+        // Yaw direct: left horizontal moves Yaw even when only Yaw is enabled.
+        kChassisIndependent = true;
+        robot_tune_mode = 0;
+        uint32_t now = 1600;
+        auto local = kArmConfig;
+        local.hardware_confirmed = true;
+        local.pitch.mapping_confirmed = true;
+        ArmControl yaw_direct(local);
+        now += 4;
+        fresh_inputs(now);
+        CHECK(feed_all(yaw_direct, now));
+        robot_tune_mode = ROBOT_TUNE_YAW_POSITION;
+        g_robot_debug_command = ROBOT_DEBUG_CAPTURE_ZERO;
+        Robot_Execute(yaw_direct, now, false);
+        CHECK(yaw_direct.status().joint[Yaw].calibrated);
+        robot_tune_mode = ROBOT_TUNE_NORMAL;
+        now += 4;
+        fresh_inputs(now);
+        CHECK(feed_all(yaw_direct, now));
+        g_robot_debug_command = ROBOT_DEBUG_ENABLE_YAW;
+        Robot_Execute(yaw_direct, now, false);
+        CHECK(yaw_direct.status().joint[Yaw].enabled);
+        Robot_RequestControl();
+        auto yaw_run = [&](uint32_t t, int left_x) {
+            fresh_inputs(t);
+            feed_all(yaw_direct, t);
+            g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+            g_dr16_status.frame.channel[kOperatorConfig.left_x_channel] = int16_t(left_x);
+            Robot_Execute(yaw_direct, t, false);
+            Robot_GetControlStatus(&s);
+        };
+        for (unsigned i = 0; i <= 76; ++i) {
+            now += 4;
+            yaw_run(now, 0);
+        }
+        CHECK(s.independent_armed && s.yaw_direct_active);
+        now += 4;
+        yaw_run(now, 660);
+        CHECK(s.yaw_direct_active && s.yaw_direct_target_deg > 0);
+        CHECK(yaw_direct.status().joint[Yaw].target_deg > 0);
     }
     kChassisIndependent = true;
     return 0;

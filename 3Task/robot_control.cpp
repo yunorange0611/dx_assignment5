@@ -33,7 +33,12 @@ namespace {
 engineer::Interlocks shared_interlocks;
 engineer::ChassisCommand chassis_command;
 bool arm_requested = false, stop_requested = false;
-bool chassis_stop_latched = false; // Independent chassis STOP; cleared only by explicit command 4.
+bool chassis_stop_latched = false; // Independent STOP/tip-over latch; neutral or command 4 clears.
+bool drive_armed = false;          // Stick-neutral re-arm before accepting motion.
+bool drive_neutral_tracking = false;
+uint32_t drive_neutral_since_ms = 0;
+float yaw_direct_target_deg = 0;
+bool yaw_direct_was_active = false;
 uint32_t stop_epoch = 0;
 engineer::RobotTuning tuning;
 bool tune_exit_wait = false;
@@ -479,22 +484,18 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         case ROBOT_DEBUG_REQUEST_CONTROL:
             arm_request = true;
             break;
+        case ROBOT_DEBUG_ENABLE_YAW:
+            arm.enable(1u << Yaw, now);
+            break;
+        case ROBOT_DEBUG_DISABLE_YAW:
+            arm.disable_joints(1u << Yaw);
+            break;
         case ROBOT_DEBUG_IDLE:
             break;
         default:
             stop_request = true;
             break;
         }
-    }
-    // Independent chassis STOP is latched. A one-cycle stop_request would
-    // otherwise allow the next cycle to restart from the still-held stick.
-    if (kChassisIndependent) {
-        if (force_stop || stop_request)
-            chassis_stop_latched = true;
-        else if (arm_request)
-            chassis_stop_latched = false;
-    } else {
-        chassis_stop_latched = false;
     }
     RemoteInput input{rx.frame, rx.received_ms, rx.valid && rx.consecutive_frames >= 3};
     const uint32_t elapsed =
@@ -533,10 +534,56 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         vehicle_protection(now)};
     Task_Protect_Tick(&protection_input, now);
     const bool tipover = (Task_Protect_GetStatus().current_reasons & PROTECT_TIPPED) != 0;
-    // The independent chassis does not wait for arm/IMU commissioning, but a
-    // real tip-over must stop it and latch until the operator clears/restarts.
-    if (kChassisIndependent && tipover)
-        chassis_stop_latched = true;
+    // Independent chassis: stop/tip-over latches; release with neutral sticks,
+    // then require neutral_ms before re-arming. A held stick never auto-resumes.
+    const bool global_stop = force_stop || stop_request;
+    bool drive_neutral = remote_ok;
+    for (int channel : input.frame.channel)
+        drive_neutral &= std::abs(channel) <= 30;
+    const bool switches_valid = kOperatorConfig.left_switch_index < 2 &&
+                                kOperatorConfig.right_switch_index < 2;
+    drive_neutral &= switches_valid &&
+        input.frame.switches[kOperatorConfig.right_switch_index] == DR16_SWITCH_MID;
+    const bool drive_switch = switches_valid &&
+        input.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP;
+    ChassisStatus chassis_status{};
+    const bool power_stop = Chassis_GetStatus(&chassis_status) && chassis_status.power_confirmed &&
+        (chassis_status.power_stop_requested || chassis_status.power_inhibited);
+    if (kChassisIndependent) {
+        if (global_stop || tipover) {
+            chassis_stop_latched = true;
+            drive_armed = false;
+            drive_neutral_tracking = false;
+        } else if (chassis_stop_latched && drive_neutral) {
+            chassis_stop_latched = false;
+            drive_armed = false;
+            drive_neutral_tracking = false;
+        } else if (arm_request) {
+            chassis_stop_latched = false;
+            drive_armed = false;
+            drive_neutral_tracking = false;
+        }
+        if (!drive_switch || global_stop || chassis_stop_latched || tipover || !remote_ok ||
+            power_stop) {
+            drive_armed = false;
+            drive_neutral_tracking = false;
+        } else if (!drive_armed) {
+            if (drive_neutral) {
+                if (!drive_neutral_tracking) {
+                    drive_neutral_tracking = true;
+                    drive_neutral_since_ms = now;
+                }
+                if (uint32_t(now - drive_neutral_since_ms) >= kOperatorConfig.neutral_ms)
+                    drive_armed = true;
+            } else {
+                drive_neutral_tracking = false;
+            }
+        }
+    } else {
+        chassis_stop_latched = false;
+        drive_armed = false;
+        drive_neutral_tracking = false;
+    }
     auto result = controller.step(input, locks, arm.status(), now, arm_request,
                                   Task_Protect_GetStatus().current_reasons != 0);
     if (bench && result.mode == RobotMode::Safe && result.block == OperatorBlock::NeedArm &&
@@ -560,6 +607,14 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     };
     if (!bench)
         Yaw_ApplyOperatingEnvelope(arm, locks, result);
+    const auto &yaw_joint = arm.status().joint[Yaw];
+    const bool yaw_ok = arm.status().configuration_valid && yaw_joint.online &&
+        yaw_joint.calibrated && yaw_joint.enabled && !yaw_joint.faults &&
+        !(arm.status().faults & (TransportError | TimingError)) &&
+        uint32_t(now - yaw_joint.last_feedback_ms) <= kArmConfig.feedback_timeout_ms &&
+        yaw_joint.temperature_c < kArmConfig.joint[Yaw].max_temperature_c;
+    const bool yaw_direct = kChassisIndependent && drive_switch && drive_armed && !global_stop &&
+        !chassis_stop_latched && !tipover && !power_stop && remote_ok && yaw_ok;
     if (result.request_enable) {
 #if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
         // Revoke before ArmControl can enable an output. A stale disabled
@@ -574,15 +629,45 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     }
     if (Task_Protect_GetStatus().disabled && result.active)
         reject();
-    if (result.disable_arm)
-        arm.disable();
-    else if (result.active) {
+    if (result.disable_arm) {
+        if (yaw_ok) {
+            const uint8_t non_yaw = kAllJoints & ~(1u << Yaw);
+            arm.disable_joints(non_yaw);
+        } else {
+            arm.disable();
+        }
+    } else if (result.active) {
         if (arm.set_effort_limit(Gripper, result.gripper_effort_limit) != Result::Ok ||
             arm.set_targets(kArmConfig.joint_mask, result.target_deg, now) != Result::Ok) {
             Task_Protect_Trip(PROTECT_ARM_FAULT, now);
             reject();
         }
     }
+    if (yaw_direct) {
+        const auto &limits = arm.yaw_limits();
+        float min_deg = limits.min_deg, max_deg = limits.max_deg;
+        float speed = limits.max_speed_deg_s;
+        if (limits.version == 0 || !(max_deg > min_deg) || !(speed > 0)) {
+            min_deg = kArmConfig.joint[Yaw].min_deg;
+            max_deg = kArmConfig.joint[Yaw].max_deg;
+            speed = kArmConfig.joint[Yaw].max_speed_deg_s;
+        }
+        if (yaw_joint.homing)
+            yaw_direct_target_deg = 0;
+        else if (!yaw_direct_was_active)
+            yaw_direct_target_deg = std::fmax(min_deg, std::fmin(max_deg, yaw_joint.position_deg));
+        const float dt = elapsed > 0 && elapsed <= 20 ? elapsed * .001f : 0;
+        const float stick = remote_axis_value(input.frame, kOperatorConfig.left_x_channel,
+                                              kOperatorConfig.axis_direction[1],
+                                              kOperatorConfig.deadband);
+        yaw_direct_target_deg = std::fmax(
+            min_deg, std::fmin(max_deg, yaw_direct_target_deg + (yaw_joint.homing ? 0.0f : stick * speed * dt)));
+        float targets[kJointCount]{};
+        targets[Yaw] = yaw_direct_target_deg;
+        if (arm.set_targets(1u << Yaw, targets, now) == Result::Ok)
+            result.target_deg[Yaw] = yaw_direct_target_deg;
+    }
+    yaw_direct_was_active = yaw_direct;
     RobotControlStatus next{};
     observe_remote(next, input);
     next.updated_ms = now;
@@ -596,6 +681,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     next.active = result.active;
     next.wait_neutral = result.wait_neutral;
     next.independent_stop_latched = chassis_stop_latched;
+    next.independent_armed = drive_armed;
+    next.yaw_direct_active = yaw_direct;
+    next.yaw_direct_target_deg = yaw_direct_target_deg;
     next.remote_online = remote_ok;
     next.remote_age_ms = now - input.received_ms;
     next.interlock_age_ms = bench ? 0 : now - locks.received_ms; // 台架不使用此输入，非伪造停车反馈
@@ -622,12 +710,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     // result.active（机械臂开控）和整车/云台/IMU/功率许可。
     const bool independent = kChassisIndependent && !bench && robot_tune_mode == 0;
     if (independent) {
-        const bool switches_valid = kOperatorConfig.left_switch_index < 2;
-        const bool drive_switch = switches_valid &&
-            input.frame.switches[kOperatorConfig.left_switch_index] == DR16_SWITCH_UP;
         command.independent = true;
         command.enabled = drive_switch && remote_ok && !force_stop && !stop_request &&
-                          !chassis_stop_latched && !tipover;
+                          !chassis_stop_latched && !tipover && drive_armed;
         command.speed_request = next.remote_axis[0];
         command.turn_request = -next.remote_axis[3];
         command.stop = !command.enabled ||

@@ -68,6 +68,33 @@ bool yaw_zero(const Frame *f, unsigned n) {
 }
 } // namespace
 int test_yaw() {
+    { // Fixed absolute zero: wrap at startup, direction, recapture and return target.
+        Config c = config();
+        c.joint[Yaw].fixed_zero_encoder = 8100;
+        ArmControl a(c);
+        CHECK(feed(a, 0, 100));
+        CHECK(a.status().joint[Yaw].raw_encoder == 100);
+        CHECK(a.status().joint[Yaw].calibrated);
+        CHECK(std::fabs(a.status().joint[Yaw].position_deg - 192 * 360.0f / 8192) < .001f);
+        CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.status().joint[Yaw].position_deg > 8);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        CHECK(a.status().joint[Yaw].homing);
+        CHECK(a.status().joint[Yaw].target_deg == 0);
+        float q[kJointCount]{};
+        q[Yaw] = 20;
+        CHECK(a.set_targets(1, q, 0) == Result::Ok);
+        CHECK(a.status().joint[Yaw].target_deg < a.status().joint[Yaw].position_deg);
+        CHECK(feed(a, 4, 8100));
+        CHECK(a.set_targets(1, q, 4) == Result::Ok);
+        CHECK(!a.status().joint[Yaw].homing);
+        c.joint[Yaw].direction = -1;
+        ArmControl reversed(c);
+        CHECK(feed(reversed, 0, 100));
+        CHECK(reversed.status().joint[Yaw].position_deg < -8);
+        CHECK(feed(reversed, 20, 100));
+        CHECK(!reversed.status().joint[Yaw].calibrated);
+    }
     { // Task adaptation preserves the public debug ABI and one-shot requests.
         static_assert(sizeof(YawLimitRequest) == 8);
         static_assert(sizeof(YawLimitStatus) == 32);

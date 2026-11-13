@@ -17,13 +17,16 @@ typedef struct {
     uint8_t ready, mode, block, active, wait_neutral, remote_online;
     uint8_t emergency_stop, stop_chassis, longitudinal_brake, reset_chassis_motion;
     uint8_t fast_requested, drive_gear, drive_yaw_limited, protection_disabled;
-    uint8_t independent_stop_latched; // 0档直驱 STOP 锁存；命令4清除。
+    uint8_t independent_stop_latched; // 0档直驱 STOP/翻车锁存；回中或命令4清除。
+    uint8_t independent_armed;        // 0档直驱已回中解锁，可接受摇杆运动。
+    uint8_t yaw_direct_active;        // 独立底盘行驶模式正在用左横直控 Yaw。
     uint8_t joint_mask;  // 0x1f整车 / 0x1e四轴；台架始终发布底盘停控
     uint32_t stop_epoch; // Explicit global stop event, including an already-disabled robot.
     uint32_t updated_ms, motion_epoch, remote_age_ms, interlock_age_ms;
     uint32_t protection_current_reasons, protection_latched_reasons, protection_last_trip_ms;
     // 均为[-1,1]速度请求：纵向正=前进，turn正=逆时针，非m/s或rad/s。
     float longitudinal_speed_request, turn_rate_request, yaw_relative_deg;
+    float yaw_direct_target_deg;
     float target_deg[5], gripper_effort_limit;
     // Read-only remote observations, also refreshed while disabled/tuning.
     // left Y, left X, right Y, right X: mapped direction + deadband, [-1,1].
@@ -38,7 +41,9 @@ enum RobotDebugCommand {
     ROBOT_DEBUG_STOP,
     ROBOT_DEBUG_CAPTURE_ZERO,
     ROBOT_DEBUG_CLEAR_FAULTS,
-    ROBOT_DEBUG_REQUEST_CONTROL
+    ROBOT_DEBUG_REQUEST_CONTROL,
+    ROBOT_DEBUG_ENABLE_YAW,  // 只使能 Yaw，不碰其他机械臂关节
+    ROBOT_DEBUG_DISABLE_YAW  // 只失能 Yaw
 };
 extern volatile uint32_t g_robot_debug_command;
 // One daily firmware. Remote Drive/Grab/Standby remains independent of these

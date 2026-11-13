@@ -111,7 +111,7 @@ COMMON = MODE + ENABLE + TUNE_STATUS + [V('uwTick', '系统毫秒计数', 'ms'),
           V('g_robot_status.active', '机械臂协调开控'), V('g_arm_status.enabled_mask', '机械臂使能掩码'),
           V('g_robot_status.protection_current_reasons', '当前保护原因位图'),
           V('g_robot_status.protection_latched_reasons', '历史锁存原因位图'),
-          V('g_robot_debug_command', '整车命令 1停2校零3清错4请求开控', write=True, low=0, high=4)]
+          V('g_robot_debug_command', '整车命令 1停2校零3清错4请求开控5仅使能Yaw6仅失能Yaw', write=True, low=0, high=6)]
 CH_COMMON = variables('g_chassis_status', [('updated_ms','底盘发布时间','ms'),('ready','底盘任务就绪',''),
             ('configuration_valid','底盘配置合法',''),('hardware_confirmed','底盘实测确认',''),
             ('faults','底盘故障位图',''),('enabled','底盘出力使能',''),
@@ -184,7 +184,12 @@ ARM_TUNE = [V('g_arm_tune_request.joint','调参轴 0Yaw1肩2肘3Roll4爪',write
             V('g_arm_tune_request.velocity_ki','速度I申请',write=True,low=0,high=1000000),
             V('g_arm_tune_request.effort_limit','运行输出上限申请 DM为Nm DJI为mA',write=True,low=0,high=1000000),
             V('g_arm_tune_request.request_seq','关节参数提交序号 最后加1',write=True,low=0,high=2147483647)] + variables('g_arm_tune_status', [('consumed_seq','已消费关节参数序号',''),('active_seq','已生效关节参数序号',''),('result','关节参数结果 engineer::Result',''),('active_joint','最近生效轴',''),('position_kp','生效位置P','1/s'),('velocity_kp','生效速度P',''),('velocity_ki','生效速度I',''),('effort_limit','生效输出上限 注意轴单位','')])
-YAW_LIMIT = [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',True,2.001,90,
+YAW_ZERO = [
+    V('g_arm_status.joint[0].raw_encoder', 'Yaw原始编码器 对正车头时抄到kYawZeroEncoder', note='只读0..8191；零点在Arm/yaw_config.h填写，重新编译烧录。'),
+    V('g_arm_status.joint[0].fixed_zero_encoder', 'Yaw已配置固定零点 -1未填写'),
+    V('g_arm_status.joint[0].homing', 'Yaw开控回零中'),
+]
+YAW_LIMIT = YAW_ZERO + [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',True,2.001,90,
               note='实物确认的线束半幅；直接填写，owner检查后生效。看result与active_half_range_deg，不写旧限位序号。')] + variables('g_yaw_limit_status',
               [('result','限位结果 0成功',''),('ready','在线限位就绪',''),('active_half_range_deg','生效半幅','deg'),
                ('min_deg','生效最小角','deg'),('max_deg','生效最大角','deg'),('max_speed_deg_s','限位基础速度上限','deg/s')])
@@ -263,8 +268,9 @@ def groups():
     # 一个批次一个 Group；每页只放本批要写的目标、要看的反馈和必要曲线。
     # 档位/使能只保留两行，不再加入左下右中、回中300ms、停稳等门控步骤。
     select = MODE + ENABLE
-    command = [V('g_robot_debug_command', '整车命令 0空闲1停2校零3清错4请求开控',
-                 write=True, low=0, high=4)]
+    command = [V('g_robot_debug_command',
+                 '整车命令 0空闲1停2校零3清错4请求开控5仅使能Yaw6仅失能Yaw',
+                 write=True, low=0, high=6)]
     wheel_params = CH_TUNE[:3]
     wheel_status = CH_TUNE[3:]
     yaw_params = YAW_TUNE[:4]
@@ -282,7 +288,8 @@ def groups():
             V('g_robot_status.remote_switch[0]', '左拨杆 上1中3下2'),
             V('g_dr16_status.valid', '遥控帧有效'),
             V('g_robot_status.remote_age_ms', '遥控接收年龄', 'ms'),
-            V('g_robot_status.independent_stop_latched', '独立底盘STOP锁存 命令4清除'),
+            V('g_robot_status.independent_stop_latched', '独立底盘STOP锁存 回中/命令4清除'),
+            V('g_robot_status.independent_armed', '独立底盘已回中解锁'),
             V('g_chassis_status.independent', '底盘直驱中'),
             V('g_chassis_status.enabled', '底盘出力使能'),
             V('g_chassis_status.faults', '底盘故障位图'),
@@ -344,8 +351,22 @@ def groups():
             V('g_ins_debug_command','请求IMU静态标定 写1',write=True,low=0,high=1),
             V('g_chassis_status.independent','独立底盘直驱中'),
             V('g_chassis_status.enabled','底盘出力使能'),
-            V('g_robot_status.independent_stop_latched','独立底盘STOP锁存 命令4清除'),
+            V('g_robot_status.independent_stop_latched','独立底盘STOP锁存 回中/命令4清除'),
+            V('g_robot_status.independent_armed','独立底盘已回中解锁'),
             V('g_robot_status.protection_current_reasons','当前保护原因位图')]),
+        G('Yaw直控｜左横', select + [
+            V('g_robot_debug_command','命令5仅使能Yaw 6仅失能Yaw',write=True,low=0,high=6),
+            V('g_robot_status.yaw_direct_active','Yaw直控中'),
+            V('g_robot_status.yaw_direct_target_deg','Yaw直控目标','deg'),
+            V('g_arm_status.joint[0].position_deg','Yaw反馈','deg'),
+            V('g_arm_status.joint[0].target_deg','Yaw目标','deg'),
+            V('g_arm_status.joint[0].velocity_deg_s','Yaw速度','deg/s'),
+            V('g_arm_status.joint[0].effort','Yaw输出','mA'),
+            V('g_arm_status.joint[0].enabled','Yaw使能'),
+            V('g_arm_status.joint[0].calibrated','Yaw校零'),
+            V('g_arm_status.joint[0].faults','Yaw故障位图'),
+            V('g_yaw_limit_status.active_half_range_deg','Yaw半幅','deg'),
+            V('g_yaw_limit_status.result','Yaw限位结果')]),
         G('功率限制（当前未启用）', POWER_TUNE + [
             V('g_chassis_status.power_w','功率计瞬时功率','W'),
             V('g_chassis_status.energy_j','缓冲能量','J'),
@@ -382,7 +403,7 @@ def groups():
                                 'g_arm_status.joint[2].position_deg',
                                 'g_arm_status.joint[2].effort'])]),
         # 第6批：Yaw中位与半幅，不加运动曲线。
-        G('第6批 Yaw线束中位与软限位', select + command + half_range + [
+        G('第6批 Yaw线束中位与软限位', YAW_ZERO + select + command + half_range + [
             V('g_yaw_limit_status.result', '限位结果 0成功'),
             V('g_yaw_limit_status.active_half_range_deg', '生效半幅', 'deg'),
             V('g_yaw_limit_status.min_deg', '生效最小角', 'deg'),
@@ -584,8 +605,9 @@ def groups():
 def arm_groups():
     # 机械臂页同样按“02_机械臂抬起与保持.pdf”的步骤分组，每步只留必要量。
     select = MODE + ENABLE
-    command = [V('g_robot_debug_command', '整车命令 0空闲1停2校零3清错4请求开控',
-                 write=True, low=0, high=4)]
+    command = [V('g_robot_debug_command',
+                 '整车命令 0空闲1停2校零3清错4请求开控5仅使能Yaw6仅失能Yaw',
+                 write=True, low=0, high=6)]
     items = [
         G('第0步 关控与连接', select + command + [
             V('uwTick', '系统毫秒计数', 'ms'),

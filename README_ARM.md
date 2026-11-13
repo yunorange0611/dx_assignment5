@@ -2,7 +2,7 @@
 
 工程基于 [dx_assignment5_freertos](https://github.com/liqibei/dx_assignment5_freertos/tree/80450f4790afac2a29b0d66d94a6952ad3ab08e1)。机械臂负责人维护大/小 pitch、roll、夹爪四轴；另一位同学维护两台 M3508 底盘和大 yaw GM6020。yaw 参数独立在 `2User_Driver`，运行时仍由统一 CAN1 五轴任务控制。协作入口见 [AGENTS.md](AGENTS.md)；原教学模板说明完整保存在 [docs/TEMPLATE_README.md](docs/TEMPLATE_README.md)。
 
-整车按《遥控器.docx》V2.1保留行驶、夹取、待机与统一关控。日常Debug/Release均为五轴整车固件，通过robot_tune_mode0～6与tune_enable切换正常控制、轮测试和Yaw闭环；不换固件。调参详细步骤见fm调参原PDF，遥控、命令和接口见README_REMOTE.md。
+整车按《遥控器.docx》V2.1保留行驶、夹取、待机与统一关控。日常Debug/Release均为五轴整车固件，通过robot_tune_mode0～6切换正常控制、轮测试和Yaw闭环；没有单独enable，选档后直接写目标；不换固件。调参详细步骤见fm调参原PDF，遥控、命令和接口见README_REMOTE.md。
 
 ## 当前实现
 
@@ -126,13 +126,15 @@ a2目标 = q肩目标 + q肘目标
 
 把机构手动摆到约定零位并固定支撑，待电机静止后调用 `Arm_CaptureZero(mask)`。mask 只要包含任意一个 pitch，就必须同时包含两 pitch（`0x06`），否则返回 `InvalidArgument`；底层 `Arm_Enable(mask)` 同样拒绝半对 pitch。调试命令2在正常0档校五轴，mode5/6只校Yaw；不隐式开控。联合校零要确认两台驱动均静止，不能只用相减后的肘速度判断静止。夹爪须采用上述安全张开参考零位。
 
-校零只记录 MCU RAM 偏置，不运动、不向 DM 发送保存零点指令。断电/MCU 复位后需重新标定；DJI 反馈中断超过 5 ms 也会使软件多圈位置失效并要求重新标定。跨零累计要求相邻有效反馈之间转子转角小于半圈。不能依赖上电位置当作机械绝对位置。
+Yaw也可用固定单圈零点：失能对正车头，读 `g_arm_status.joint[0].raw_encoder`（0..8191）填入 `yaw_config.h` 的 `kYawZeroEncoder`，重编烧录；首次反馈自动 `calibrated=1`，命令2跳过固定Yaw，首次开控先 `homing` 回零。`kYawZeroEncoder=-1` 时仍用上述人工校零。
 
-具体校零、清错和开控见README_REMOTE.md及fm调参原PDF。正常遥控明确命令4或Robot_RequestControl；全局关控命令1或Robot_StopControl。左拨杆上为行驶、下为待机，不沿用旧台架上档关控或上→中开控。故障恢复不自动启。
+校零只记录 MCU RAM 偏置，不运动、不向 DM 发送保存零点指令；固定Yaw零点来自源码 `kYawZeroEncoder`，不存RAM。断电/MCU 复位后需重新标定；DJI 反馈中断超过 5 ms 也会使软件多圈位置失效并要求重新标定。跨零累计要求相邻有效反馈之间转子转角小于半圈。不能依赖上电位置当作机械绝对位置。
+
+具体校零、清错和开控见README_REMOTE.md及fm调参原PDF。正常遥控明确命令4或Robot_RequestControl；全局关控命令1或Robot_StopControl。独立底盘模式下命令5/6只使能/失能Yaw，不碰其他关节，Yaw直控见README_YAW.md。左拨杆上为行驶、下为待机，不沿用旧台架上档关控或上→中开控。故障恢复不自动启。
 
 机械臂其他轴在线PID仍可用 `g_arm_tune_request`：填joint和position_kp/velocity_kp/velocity_ki/effort_limit，最后递增request_seq；全轴失能、所选轴反馈已校零且静止健康后才生效，pitch同时查两驱动。只读结果为g_arm_tune_status，输出不能超过编译cap（DM为Nm、DJI为mA），成功不使能、拒绝不排队，参数只存RAM。Yaw日常直接用tune_yaw_*变量，见README_YAW.md。
 
-需要抬臂测轮时，在0档正常夹取中抬起，左下待机保持，随后enable=0、实际静止、选轮mode并明确enable=1。enable0或切档只处理测试对象，其他已使能关节保持，未使能轴不自动开启；全局关控仍按统一策略失能。原 [02_机械臂抬起与保持.pdf](fm调参/02_机械臂抬起与保持.pdf) 给出逐项步骤。
+需要抬臂测轮时，在0档正常夹取中抬起，左下待机保持，随后把目标写0、等实际静止、选轮mode并写非零目标。目标0或切档只处理测试对象，其他已使能关节保持，未使能轴不自动开启；全局关控仍按统一策略失能。原 [02_机械臂抬起与保持.pdf](fm调参/02_机械臂抬起与保持.pdf) 给出逐项步骤。
 
 底层 `Arm_Enable(mask)` 从当前反馈姿态开始保持，不沿用使能前的目标。协调层统一调用它，并每 4 ms 刷新当前配置的目标；另一任务不应调用 `Arm_SetTargets()` 与遥控层争用目标。电机控制核心仍有 250 ms 目标看门狗；正常遥控和整车底盘互锁另有100ms超时。受限调参检查所选对象和已保持关节实际健康。提交函数返回 1 只表示请求已接收，实际执行结果须读取状态；接口仅用于任务上下文。`Arm_Disable` 使用独立停机标志，不受命令队列满影响。
 
@@ -186,10 +188,10 @@ Debug/Release均为同一整车功能。日常输出 `build/Debug/engineer_vehic
 
 ## 机械臂上车刷入固件后的确认顺序
 
-1. **一份固件，先看失能反馈。** 使用Debug整车固件和同目录ELF；检查joint_mask=0x1f、enabled_mask=0、robot_tune_mode=0、tune_enable=0、真实反馈与遥控原码。各确认门槛保留到实物核对完成。
+1. **一份固件，先看失能反馈。** 使用Debug整车固件和同目录ELF；检查joint_mask=0x1f、enabled_mask=0、robot_tune_mode=0、各调参目标为0、真实反馈与遥控原码。各确认门槛保留到实物核对完成。
 2. **机械对应与人工校零。** 手扶/支撑失能机构，核对两 DM 长板/短曲柄、roll、夹爪的反馈方向和传动比；记录联合 pitch 零位及夹爪安全张开零位。更新已确认参数、重新构建后再校零。完整命令和开控步骤按 [README_REMOTE.md](README_REMOTE.md) 执行。
 3. **低输出小角度。** pitch 成对验证肩变而肘目标固定时第二驱动随肩变化的关系，观察关节角与驱动角；再调 roll、夹爪。只展开当前轴的目标、反馈、effort 和已有故障状态，逐步确认跟踪、振荡、限幅和温升。
-4. **待机、局部停止与关控。** 验证待机保持不自动使能、tune_enable0停止所调对象而保留其他轴保持、命令1全局关控、遥控关闭与反馈故障。恢复后先回0档，在正常模式回中命令4明确重开；左上是行驶。支撑机构验证电机侧超时，不放宽时限掩盖丢帧。
+4. **待机、局部停止与关控。** 验证待机保持不自动使能、目标0或回0档停止所调对象而保留其他轴保持、命令1全局关控、遥控关闭与反馈故障。恢复后先回0档，在正常模式回中命令4明确重开；左上是行驶。支撑机构验证电机侧超时，不放宽时限掩盖丢帧。
 5. **负载与整车留待分阶段验证。** 实测行程、组合干涉、夹爪接触和保持参数后再逐步带载；当前没有重力补偿、接触检测或恒力保持。主控卡死/总线断线时不能保证停机帧送达；底盘制动和 CAN2 停机仍由底盘模块独立完成。
 
 ## 协议依据

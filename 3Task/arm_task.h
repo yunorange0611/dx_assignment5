@@ -18,6 +18,9 @@ typedef struct {
     float velocity_target_deg_s;
     uint32_t received, feedback_age_ms, faults;
     uint8_t online, calibrated, enabled, motor_state;
+    uint16_t raw_encoder;
+    int16_t fixed_zero_encoder;
+    uint8_t homing;
 } ArmJointStatus;
 typedef struct {
     ArmJointStatus joint[ARM_JOINT_COUNT];

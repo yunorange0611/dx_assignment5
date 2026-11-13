@@ -79,7 +79,7 @@ def pdf(filename, pages):
         p.insert_text((42, 817), 'RM / ' + filename.split('_')[0] + ' / ' + str(i + 1) +
                       ' of ' + str(len(doc)), fontsize=8, color=(.25, .35, .4))
     doc.set_metadata(dict(title=filename.removesuffix('.pdf'), author='工程车电控协作',
-                          subject='2026-11-11：单Debug整车固件；按批次调参；不换固件'))
+                          subject='2026-11-13：单Debug整车固件；0档独立底盘直驱；直接写调参目标；不换固件'))
     doc.subset_fonts()
     path = ROOT / filename
     data = doc.tobytes(garbage=4, deflate=True)
@@ -120,6 +120,7 @@ STEPS = [
         '<b>异常先停：</b>目标写0或切回0档；全局关控用 <code>g_robot_debug_command=1</code>。',
         '<b>在线值只在RAM：</b>FreeMASTER 改的参数重启就丢，确认后写回源码。') + '''
 <p class="stop"><b>左上是行驶，不是关控；左下是待机保持，不是撤力。</b>机械臂没有承托时不要做关控、校零或大电流测试。</p>
+<p class="note"><b>当前0档是独立底盘直驱：</b>左拨杆上、遥控在线、五通道回中且右拨杆中保持300ms后，左竖/右横直接驱动底盘；左横在解锁后还可直控Yaw（需Yaw已在线/校零/使能；命令5只使能Yaw、6只失能Yaw），使用线束软限位，不用正常行驶姿态包络；不要求机械臂 active、IMU 或功率。上电、关控、翻车、失联、离开上档、功率锁存都会撤销解锁，重新运动要重做回中。改回 <code>kChassisIndependent=false</code> 才恢复整车互锁路径。</p>
 '''),
     page('路线表：按第0～12批走', '''
 ''' + table(['批次 / Group', '档位', '本批目标', '做完得到什么'], [
@@ -129,7 +130,7 @@ STEPS = [
         ('第3批 右轮ID2电流方向', '2', '右轮重复正反方向。', '右轮方向正确。'),
         ('第4批 两轮速度PI', '3 / 4', '先P后I，左3档、右4档。', '两轮速度闭环可用。'),
         ('第5批 0档抬臂左下保持', '0', '正常0档抬臂，待机保持，再测轮。', '抬起的机械臂在调轮时不下垂。'),
-        ('第6批 Yaw线束中位与软限位', '5 / 6', '人工中位校零，申请小半幅。', 'Yaw有可信的零位和范围。'),
+        ('第6批 Yaw线束中位与软限位', '5 / 6', '填写固定零点或人工中位校零，申请小半幅。', 'Yaw有可信的零位和范围。'),
         ('第7批 Yaw速度内环PI', '5', '小角速度正负跟踪，验证边界减速。', 'Yaw速度环稳定。'),
         ('第8批 IMU功率与真实整车许可', '0', '确认真实IMU、功率和互锁。', '正常0档有真实放行条件。'),
         ('第9批 Yaw位置双环', '6', '小角度位置目标，调位置P。', 'Yaw位置环可用。'),
@@ -137,6 +138,7 @@ STEPS = [
         ('第11批 停止清错与故障恢复', '0 / 退出', '分别测退出、关控、清错、功率停车。', '故障不续跑，停车距离可接受。'),
         ('第12批 固化参数与重启复验', '0', '写回源码，重烧后复验。', '重启后行为一致。')]) + '''
 <p>第5批要用正常遥控抬臂。<b>第8批的真实条件还没做好，就先跳过第5批</b>，继续独立调轮和Yaw。不要为了提前抬臂伪造IMU、功率或互锁许可。</p>
+<p class="note">当前 <code>kChassisIndependent=true</code>：0档底盘直驱不要求第8批的整车条件；第8批只影响正常整车/机械臂路径。底盘方向、回中解锁、松杆停车和功率锁存仍要逐项验证。Yaw直控另见“独立底盘Yaw直控”页；命令5/6只使能/失能Yaw。</p>
 ''' + table(['总线 / 对象', '配置'], [
         ('CAN2 左/右 M3508', 'ID1/ID2，反馈0x201/0x202，指令0x200第一/二槽。'),
         ('CAN1 Yaw GM6020', '电流模式，ID1，反馈0x205，指令0x1FE第一槽。'),
@@ -166,7 +168,7 @@ STEPS = [
         '<b>写参数：</b>改 P/I、限流或半幅；没有单独的 enable 变量。',
         '<b>开始：</b>电流/速度档直接写非零目标，位置档写目标角；看 <code>ready=1</code>、<code>blocked=0</code>。目标保持0时未开始是正常的。',
         '<b>停：</b>目标写0；或 <code>robot_tune_mode=0</code> 退出。') + '''
-<p class="note">当前代码没有 <code>tune_enable</code>，也不再要求“左下右中、5通道回中300ms、停稳”。但机械臂必须支撑、轮子必须悬空或落地条件明确，这是安全要求。</p>
+<p class="note">当前代码没有 <code>tune_enable</code>，也不再要求“左下右中、5通道回中300ms、停稳”才进入调参。但0档独立底盘直驱仍要求回中300ms解锁；机械臂必须支撑、轮子必须悬空或落地条件明确，这是安全要求。</p>
 <p class="stop"><b>电流档非零最多500ms；速度档和位置档没有自动结束。</b>速度/位置测试必须自己写0或退出。故障、失联后不会自动续跑，恢复后要重新选档并重新写目标。</p>
 '''),
     page('第0批 安全常驻', setting('第0批 安全常驻', '不接电机动力，验证命令1、遥控失联和零输出。') + '''
@@ -207,7 +209,7 @@ STEPS = [
     page('第2批 左轮ID1电流方向', setting('第2批 左轮ID1电流方向', '只让左轮出一个小电流，确认方向和500ms截止。') + '''
 <h2>写入顺序</h2>
 ''' + table(['变量', '本次示例'], [
-        (v('tune_wheel_current_limit_ma'), '100mA；硬上限300mA。'),
+        (v('tune_wheel_current_limit_ma'), '100mA；目标最大±10000mA，输出限流受源码 max_current_ma 约束。'),
         (v('robot_tune_mode'), '1。切档会清旧目标。'),
         (v('tune_current_ma'), '+50mA；非零即开始本次测试，<b>最后写这一项</b>。')]) + '''
 <h2>步骤</h2>
@@ -233,14 +235,14 @@ STEPS = [
         '看 <code>measured_rpm[1]</code> 与实物向前一致；500ms后归零。',
         '反方向：目标0、mode0、等停；再 mode2、写 −50。') + check(
         '右轮单独正反方向正确；左轮始终零输出；超时能停。') + '''
-<p class="note">功率未确认时只允许这种≤300mA的独立悬空调轮；正常0档不能借此绕过功率和互锁。</p>
+<p class="note">功率未确认时独立底盘0档不经过功率环，只受 max_current_ma 和速度斜坡约束；这不代表可以落地行驶。调轮仍应使用小电流、悬空条件。</p>
 '''),
     page('第4批 两轮速度PI', setting('第4批 两轮速度PI', '先P后I；先左轮3档，再右轮4档。') + '''
 <h2>起步参数</h2>
 ''' + table(['变量', '本次示例'], [
         (v('tune_wheel_kp'), '1.0 mA/rpm；源码占位，不是最终答案。'),
         (v('tune_wheel_ki'), '0，先关积分。'),
-        (v('tune_wheel_current_limit_ma'), '100mA；调轮硬上限300mA。'),
+        (v('tune_wheel_current_limit_ma'), '100mA；目标最大±10000mA，输出限流受源码 max_current_ma 约束。'),
         (v('robot_tune_mode'), '3（左）或4（右）。'),
         (v('tune_speed_rpm'), '+50，<b>3508转子rpm</b>。')]) + '''
 <h2>步骤</h2>
@@ -276,16 +278,23 @@ STEPS = [
         '抬臂平稳、待机几秒不下垂、切轮调参时机械臂不掉。') + '''
 <p class="stop">两DM当前各0.3Nm只是启动上限，不保证抬得起实物。effort顶限还下垂时先承托，与队友核对负载/力矩，不要猛加I。命令1会撤掉保持。</p>
 '''),
-    page('第6批 Yaw线束中位与软限位', setting('第6批 Yaw线束中位与软限位', '人工找中位，申请一个已确认的小半幅。') + '''
-<h2>中位与校零</h2>
+    page('第6批 Yaw线束中位与软限位', setting('第6批 Yaw线束中位与软限位', '填写固定单圈零点或人工找中位，申请一个已确认的小半幅。') + '''
+<h2>固定零点（推荐）</h2>
 ''' + ol(
         '支撑机械臂；<code>robot_tune_mode=0</code>、目标0；命令1；确认 <code>enabled_mask=0</code>。',
+        '失能状态下把车头和Yaw对正；读 <code>g_arm_status.joint[0].raw_encoder</code>（0..8191），不要凭空填0。',
+        '把该整数写入 <code>Arm/yaw_config.h</code> 的 <code>kYawZeroEncoder</code>，重编Debug并烧录，刷新FM符号。',
+        '首次反馈后 <code>fixed_zero_encoder</code> 显示该值、<code>calibrated=1</code>；命令2不会覆盖固定Yaw零点。') + '''
+<h2>人工校零（kYawZeroEncoder=-1时）</h2>
+''' + ol(
         '手转Yaw很小角度，看 <code>joint[0].position_deg</code> 的方向；找自然、未预拧的中位，在底盘和Yaw外圈做标记，停稳。',
-        '写 <code>robot_tune_mode=5</code> 或6；写命令2（只校Yaw）；看 <code>last_result=0</code>、<code>joint[0].calibrated=1</code>、<code>position_deg≈0</code>。',
+        '写 <code>robot_tune_mode=5</code> 或6；写命令2（只校Yaw）；看 <code>last_result=0</code>、<code>joint[0].calibrated=1</code>、<code>position_deg≈0</code>。') + '''
+<h2>半幅</h2>
+''' + ol(
         '直接写 <code>tune_yaw_half_range_deg</code>（按线束实测，例如10）；看 <code>g_yaw_limit_status.result=0</code>、<code>active_half_range_deg</code>、<code>min/max</code>；实际角、目标、参考都要留2°余量。',
         '被拒绝：改好条件后重新写一个<b>不同的</b>已确认值；拒绝不会排队。') + check(
-        '中位可重复、半幅生效、边界值正确。') + '''
-<p class="note"><b>mode0的命令2校全部五轴；mode5/6的命令2只校Yaw。</b>无滑环，不能转整圈找零；重启/重烧后重新对中位再校零。</p>
+        '零点可重复、半幅生效、边界值正确。') + '''
+<p class="note"><b>固定零点写在源码，重启/重烧后仍有效；人工校零只存RAM。</b>mode0的命令2校全部五轴（固定Yaw跳过），mode5/6的命令2只校Yaw。无滑环，不能转整圈找零。</p>
 <p class="small">软件接受半幅2°～90°只是防误填边界，不是线束能承受90°的证明。</p>
 '''),
     page('第7批 Yaw速度内环PI', setting('第7批 Yaw速度内环PI', '先P后I，验证小角速度和边界减速。') + '''
@@ -312,6 +321,24 @@ STEPS = [
         ('有重复静差', 'I少量加，例如0.2；不同时改P。'),
         ('回零反摆', '先减I。')]) + '''
 '''),
+    page('独立底盘Yaw直控（比赛）', setting('0档底盘直驱｜左横Yaw', '解锁后左横直接控制Yaw；不经过正常行驶姿态包络。') + '''
+<p class="note">前提：<code>kChassisIndependent=true</code>、<code>robot_tune_mode=0</code>、左拨杆上、遥控在线、五通道回中且右拨杆中保持300ms，<code>independent_armed=1</code>。Yaw 必须在线、已校零、无故障。</p>
+<h2>使能</h2>
+''' + ol(
+        '支撑机械臂，确认Yaw线束中位和已生效半幅；<code>g_yaw_limit_status.ready=1</code>。',
+        '写 <code>g_robot_debug_command=5</code>：只使能Yaw，不动其他关节；确认 <code>joint[0].enabled=1</code>。',
+        '若 <code>homing=1</code>：固定零点轴先回零，等 <code>position_deg≈0</code>、<code>homing=0</code>；回零期间左横不推进目标。',
+        '需要停Yaw：写命令6只失能Yaw；命令1会全局关控。') + '''
+<h2>直控</h2>
+''' + ol(
+        '左拨杆上、右拨杆中、五通道回中，等 <code>independent_armed=1</code>、<code>yaw_direct_active=1</code>、<code>homing=0</code>。',
+        '左横轻推，<code>yaw_direct_target_deg</code> 从当前角按限位速度积分；看 <code>joint[0].position_deg</code>、<code>velocity_deg_s</code>、<code>effort</code>。',
+        '松开左横保持当前目标，不回中；目标只能在 <code>g_yaw_limit_status.min_deg/max_deg</code> 内。',
+        '离开上档、关控、翻车、失联、功率停车都会撤销直控，Yaw按统一策略失能（通常不主动回中）；恢复要重新回中解锁并使能Yaw。') + check(
+        '只动Yaw、其他关节不动；松开保持；边界前减速；关控/离档立即撤销。') + '''
+<p class="stop">这条路径使用线束软限位，不是正常行驶姿态包络，也不是碰撞保护；先确认整臂和线束不会干涉。</p>
+<p class="small">Yaw未使能时底盘照常驱动，Yaw不动；不要把“底盘在动”当作Yaw已受控。</p>
+'''),
     page('第8批 IMU功率与真实整车许可', setting('第8批 IMU功率与真实整车许可', '确认真实IMU、功率和整车许可，不驱动。') + '''
 <h2>IMU</h2>
 ''' + ol(
@@ -321,9 +348,10 @@ STEPS = [
 <h2>功率与整车</h2>
 ''' + ol(
         '功率计：<code>power_frames</code> 增长、<code>power_received_ms</code> 刷新、<code>power_w/energy_j</code> 合理。',
-        '实测帧周期和低能量/超时阈值后，再把 <code>power_confirmed</code> 改真。',
+        '实测帧周期和低能量/超时阈值后，再把源码 <code>ChassisPowerConfig.confirmed</code> 改真并重编；<code>power_confirmed</code> 是只读状态。',
         '看 <code>g_vehicle_health.reasons=0</code>；非0按表查真实条件，不要写只读许可。') + check(
         'IMU有效且已校准、功率数据新鲜、整车 reasons=0、所有轴失能。') + '''
+<p class="note">当前 <code>kChassisIndependent=true</code> 时，0档底盘直驱不使用本页的整车互锁/功率许可；本页用于改回正常整车路径前的条件核对和机械臂开控。IMU 翻车仍会否决独立底盘。</p>
 ''' + table(['整车 reasons 位', '优先检查'], [
         ('1', '姿态/配置未确认，Yaw在线范围等。'),
         ('2 / 4', '底盘/机械臂快照超时。'),
@@ -351,6 +379,7 @@ STEPS = [
 '''),
     page('第10批 正常遥控慢速落地', setting('第10批 正常遥控慢速落地', '先悬空确认正常链，再小步落地；不测快速档。') + '''
 <h2>恢复正常控制</h2>
+<p class="note">当前 <code>kChassisIndependent=true</code>：0档底盘直驱不需要命令4或机械臂 active；左拨杆上、遥控在线、五通道回中且右拨杆中保持300ms后，左竖/右横直接驱动；左横在解锁后还可直控Yaw（命令5/6只使能/失能Yaw），使用线束软限位。下面第1～2步仅在改回正常整车路径后执行；仍先悬空确认方向和松杆停车，再落地。</p>
 ''' + ol(
         '所有调参目标0、<code>robot_tune_mode=0</code>；机械臂保持，两轮停稳。',
         '第8批真实条件就绪；左中夹取、右中，摇杆回中，<code>wait_neutral=0</code>，写命令4；确认 <code>active=1</code>、<code>enabled_mask=31</code>。',
@@ -401,7 +430,7 @@ STEPS = [
 ''' + ol(
         '停目标、mode0；承托机械臂；命令1；断动力。',
         '写回源码，重编译Debug并烧录；刷新FreeMASTER符号，重开工程。',
-        '重做心跳、命令1、遥控失联；重新校零、申请Yaw半幅、等IMU标定。',
+        '重做心跳、命令1、遥控失联；核对 <code>kYawZeroEncoder</code> 或重新校零、申请Yaw半幅、等IMU标定。',
         '先低输出悬空复验，再正常慢速落地；确认重启没有旧目标自动续跑。') + check(
         '重启后行为一致、参数来自源码、没有自动续跑。') + '''
 <p class="note">FreeMASTER在线修改只在RAM，保存.pmpx不等于写Flash。记录源码版本、生效参数、负载、方向、曲线和停车距离。</p>
@@ -417,7 +446,7 @@ FAULTS = [
         ('Yaw异常/线束受拉', '立即命令1并承托；检查中位和实际角。', '排查6、7'),
         ('所有变量不更新', '先停运动/动力；核对固件和ELF，再查任务。', '排查0'),
         ('ready=0、blocked=1', '看 reason；排除原因后重新选档/写目标。', '排查0、3、7'),
-        ('正常0档不能开控', '查真实整车条件；不能借调参档伪造放行。', '排查5、8')]) + '''
+        ('机械臂0档不能开控', '查真实整车条件；不能借调参档伪造放行。独立底盘直驱不看这些条件。', '排查5、8')]) + '''
 <p class="stop">左上是行驶，不是关控；左下是保持，不是撤力。命令1会撤掉机械臂保持。关掉FreeMASTER通信不会停止速度档。</p>
 <p class="small"><code>current_ma</code> 是提交值，<code>effort</code> 是控制输出，都不是电机执行确认。时间戳和反馈年龄必须持续更新。</p>
 '''),
@@ -442,7 +471,7 @@ FAULTS = [
 ''' + table(['值', '含义', '先做什么'], [
         ('0', '正常/无调参', '看mode是否已退出。'),
         ('1', '调参就绪', '核对ready=1、blocked=0。'),
-        ('2', '未就绪', '查底盘hardware_confirmed、遥控mapping_confirmed、反馈和故障。'),
+        ('2', '未就绪', '查所选对象反馈/配置/故障；Yaw档还需遥控mapping_confirmed，轮档不要求。'),
         ('3', '关控/严重中断', '先承托，排除失联/故障；回0再选。'),
         ('4', '模式/目标非法', '查mode 0～6、有限数值、本档范围。'),
         ('5', '电流超时', '非零电流到500ms；目标0、mode0、停稳后再选。'),
@@ -477,11 +506,12 @@ FAULTS = [
 '''),
     page('排查3：调轮参数与机械臂保持', '''
 <h2>参数看实际生效值</h2>
-<p><code>tune_wheel_kp/ki/current_limit_ma</code> 是申请输入；看 <code>g_chassis_tune_status.result</code> 和实际 <code>velocity_kp/ki/max_current_ma</code>。</p>
+<p><code>tune_wheel_kp/ki/current_limit_ma</code> 是输入；在 mode1～4 中合法值直接生效，不要求目标归零或停稳。看 <code>g_chassis_status.tune_result</code> 和实际 <code>g_chassis_tune_status.velocity_kp/ki/max_current_ma</code>。</p>
 ''' + table(['结果', '含义'], [
-        ('0 / 1', '尚未处理 / 成功；成功也要核对实际值。'),
-        ('2', '参数非法：P需正、I非负、限流1～300mA。'),
-        ('3', '忙：先目标0、停稳再改。'),
+        ('0', '待机/未进入轮组调参。'),
+        ('1', '已生效；成功也要核对实际值。'),
+        ('2', '参数非法：P>0、I>=0、限流>0且不超过源码 max_current_ma。'),
+        ('3', '忙：当前周期在切换/提交，等下一周期再看。'),
         ('4', '反馈/配置/源时间/本地健康未就绪。')]) + '''
 <h2>机械臂不应因调轮自动使能</h2>
 ''' + ol(
@@ -506,7 +536,7 @@ FAULTS = [
         ('8 / 16', 'IMU无效/翻车'),
         ('32', '轮故障或轮反馈不新鲜'),
         ('64 / 128', '功率/能量禁止，或机械臂故障')]) + '''
-<p class="small">位值可相加，例如72=64+8。不能把许可写1解除；任务持续根据真实反馈生产互锁。功率默认未确认时只允许≤300mA悬空调轮。</p>
+<p class="small">位值可相加，例如72=64+8。不能把许可写1解除；任务持续根据真实反馈生产互锁。功率默认未确认时独立底盘0档不经过功率环；调轮仍应小电流悬空。</p>
 '''),
     page('排查6/7：Yaw 不动、限位被拒', '''
 <h2>四个硬条件</h2>
@@ -520,11 +550,13 @@ FAULTS = [
 ''' + table(['值', '含义/处理'], [
         ('0', '成功；同时核对active_half_range和实际P/I/上限。'),
         ('1 / 2', '参数非法 / 配置未确认。'),
-        ('3', '忙：限位要全轴失能；参数先目标0、停稳再改。'),
+        ('3', '忙：限位要全轴失能；参数先把速度写0或目标对齐当前角，再改。'),
         ('4 / 5', '不在线 / 没校零。'),
         ('6 / 7', '故障锁存 / 仍在动。'),
         ('8', '新范围排除了实际角、目标或参考；先安全回中。')]) + '''
 <p><b>靠边变慢</b>是正常制动，不要加P或半幅突破。<b>目标写了没动</b>：先查切档是否清了目标，再看ready/blocked和实际参数。</p>
+<p><b>独立底盘左横直控Yaw：</b>先确认 <code>independent_armed=1</code>、<code>yaw_direct_active=1</code>、<code>joint[0].enabled=1</code>；只使能/失能用命令5/6，命令1全局关控。Yaw未使能时底盘照常、Yaw不动。</p>
+<p><b>固定零点：</b>失能对正车头，读 <code>joint[0].raw_encoder</code> 填入 <code>kYawZeroEncoder</code> 后重编；首次反馈 <code>calibrated=1</code>，命令2不覆盖。固定轴首次开控 <code>homing=1</code> 先回零，回零完成前不接受位置/遥控目标。</p>
 <p class="small">mode0命令2校五轴，mode5/6只校Yaw；不要为消报警在任意姿态重新认零。</p>
 '''),
     page('保护记录与清错：当前、历史分开看', '''

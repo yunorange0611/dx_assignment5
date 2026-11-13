@@ -42,6 +42,8 @@ wait_next_cycle        阻塞到下周期，迟到时不连续补跑
 
 协调入口直接发布现有 `ChassisCommand`，底盘通过 `Robot_GetChassisCommand()` 一次取得请求，不再经历 `RobotControlStatus → ChassisCommand` 的搬运。请求包含运行/停车/复位、速度/转向、时间、必要事件和运行时调参值；整车快照保留诊断及INS标定状态来源。`Robot_ReportArmState`在同一临界区撤销底盘请求，保留发送后发现故障的同周期覆盖。恒零的yaw_follow和历史API版本宏已删；这轮不增加动作枚举、不移动健康线程或再拆模块。
 
+当前 `kChassisIndependent=true` 时，`Robot_Execute` 在0档发布 `independent=true` 的底盘命令：左拨杆上、遥控在线且回中解锁后，用左竖/右横直接驱动，底盘本身不要求机械臂 active、Yaw、IMU 或功率许可。解锁后左横还可在同一owner内直控 Yaw（命令5/6只使能/失能Yaw），使用 `arm.yaw_limits()` 的线束软限位，不经过正常行驶姿态包络。上电、关控、翻车、遥控失联、左拨杆离开上档、功率锁存都会撤销 `drive_armed`；重新运动需左拨杆上、右拨杆中、五通道回中保持 `neutral_ms=300ms`。`g_robot_status.independent_armed`、`yaw_direct_active`、`yaw_direct_target_deg` 是只读状态。该模式用于比赛/交接，改回 `false` 才恢复整车互锁路径。
+
 先看`Chassis/chassis_config.h`，再看`chassis_control.*`理解差速、斜坡、PI；电调报文/方向/量化看`chassis_motor.*`，功率协议看`Power/power_meter.*`，能量停车与制动限流看`Power/chassis_power.*`。运行时选档/锁定门控在`Vehicle/robot_tuning.*`；`chassis_bench.*`保留静止健康检查与兼容测试，不再作为日常脉冲入口。
 
 ### 遥控、机械臂和Yaw
@@ -57,13 +59,13 @@ DR16接收/解码
     → arm_task统一CAN1发送与状态发布
 ```
 
-`Robot_Execute`在同一owner内读取 `robot_tune_mode`、`tune_enable` 和小目标：0档交给正常 `ArmOperator`，1～4档发给同一个底盘控制器，5/6档调用同一个Yaw内环/双环。切档自动关闭enable，清原对象目标与历史；新对象明确enable=1后才测试。
+`Robot_Execute`在同一owner内读取 `robot_tune_mode` 和小目标：0档交给正常 `ArmOperator`，1～4档发给同一个底盘控制器，5/6档调用同一个Yaw内环/双环。没有单独的 enable 变量：切档清一次原对象目标与历史，之后电流/速度档写非零目标即执行，位置档写目标角，目标写0停止。500ms只约束轮电流档，轮速和Yaw档不会自动结束。
 
-`Vehicle/robot_tuning.*`只做选档、输入检查、锁定和500ms电流时限，不使能电机或发送CAN。`robot_control.*`负责该门控与原owner的接合，保持未参与调参且已经使能的机械臂，不自动使能其他轴。`tune_enable=0`停止所调对象；全局关控仍走原统一失能路径。
+`Vehicle/robot_tuning.*`只做选档、输入检查、锁定和电流时限，不使能电机或发送CAN。`robot_control.*`负责该门控与原owner的接合，保持未参与调参且已经使能的机械臂，不自动使能其他轴。目标归零或回0档只停止所调对象；全局关控仍走原统一失能路径。
 
 `yaw_service.*`只保留在线半幅同步和运行包络适配，不建立独立调参线程。实际边界/双环仍由ArmControl负责，Yaw只有一个驱动与CAN1发送者。日常不再通过编译宏选择轮或Yaw测试固件；旧台架门控仅作兼容逻辑回归。
 
-退出调参先enable=0、停稳、mode=0，保持到正常遥控模式回中后命令4明确恢复。mode0不是全局关控，详细逐批操作见原 `fm调参/00_分批调参步骤.pdf`。
+退出调参先把目标写0、停稳、mode=0，保持到正常遥控模式回中后命令4明确恢复。mode0不是全局关控，详细逐批操作见原 `fm调参/00_分批调参步骤.pdf`。
 
 ### 真实互锁与IMU校准许可
 

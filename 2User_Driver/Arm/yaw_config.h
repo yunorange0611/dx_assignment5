@@ -5,6 +5,10 @@ namespace engineer {
 // 大yaw负责人维护；仍由ArmControl/arm_task统一闭环并在CAN1发送。
 // 禁止另建同一6020的驱动对象或第二个0x1FE发送者。
 // 以下方向、零位范围、PID和300mA上限仍是台架占位，需负责人实测。
+// 对正车头且失能时，读取 g_arm_status.joint[0].raw_encoder 后填入这里。
+// -1=尚未填写，禁止固定零点自动开控；有效值0..8191。修改后重新编译烧录。
+inline constexpr int16_t kYawZeroEncoder = -1;
+static_assert(kYawZeroEncoder >= -1 && kYawZeroEncoder < 8192, "Yaw zero must be -1 or 0..8191");
 inline constexpr JointConfig kYawConfig = {
     Motor::Gm6020Current,
     1,
@@ -23,7 +27,10 @@ inline constexpr JointConfig kYawConfig = {
     0,
     0,
     0,
-    70 // 无DM协议量程；温度门槛°C
+    70, // 无DM协议量程；温度门槛°C
+    2.0f, // 越界余量deg
+    2.0f, // 静止速度阈值deg/s
+    kYawZeroEncoder
 };
 // These values are placeholders until the wire routing and stopping distance are
 // measured. Confirmation is separate from joint PID/protocol configuration.

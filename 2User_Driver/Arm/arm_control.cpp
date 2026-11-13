@@ -46,6 +46,7 @@ ArmControl::ArmControl(const Config &c)
                                     c.joint[4].max_effort} {
     status_.configuration_valid = valid_config();
     for (unsigned i = 0; i < kJointCount; ++i) {
+        status_.joint[i].fixed_zero_encoder = c.joint[i].fixed_zero_encoder;
         runtime_[i].effort_limit = c.joint[i].max_effort;
         tuning_effort_limit_[i] = c.joint[i].max_effort;
     }
@@ -298,8 +299,18 @@ bool ArmControl::receive(uint8_t bus, uint16_t id, const uint8_t *d, uint8_t len
             const auto encoder = be16(d);
             if (encoder >= 8192)
                 return false;
-            if (!r.have_feedback)
+            s.raw_encoder = encoder;
+            if (!r.have_feedback) {
                 r.encoder_sum = encoder;
+                if (i == Yaw && c.fixed_zero_encoder >= 0) {
+                    int delta = int(encoder) - c.fixed_zero_encoder;
+                    if (delta > 4096) delta -= 8192;
+                    if (delta < -4096) delta += 8192;
+                    r.encoder_sum = delta;
+                    r.zero_motor_deg = 0;
+                    s.calibrated = true;
+                }
+            }
             else if (uint32_t(now - s.last_feedback_ms) > config_.dji_unwrap_gap_ms) {
                 r.encoder_sum = encoder;
                 s.calibrated = false;
@@ -480,6 +491,8 @@ Result ArmControl::set_yaw_test_speed(float speed, uint32_t now) {
     if (!selected(Yaw) || !(status_.enabled_mask & (1u << Yaw)) || !finite(speed) ||
         std::fabs(speed) > 5.0f || std::fabs(speed) > yaw_motion_speed_)
         return status_.last_result = Result::InvalidArgument;
+    // Speed-loop tuning explicitly takes ownership instead of startup homing.
+    status_.joint[Yaw].homing = false;
     yaw_test_active_ = true;
     yaw_test_speed_ = speed;
     runtime_[Yaw].last_command_ms = now;
@@ -672,6 +685,9 @@ Result ArmControl::capture_zero(uint8_t mask, uint32_t now) {
         }
     for (unsigned i = 0; i < kJointCount; ++i)
         if (mask & (1u << i)) {
+            // Fixed yaw zero must not be replaced by a RAM capture command.
+            if (i == Yaw && config_.joint[i].fixed_zero_encoder >= 0)
+                continue;
             runtime_[i].zero_motor_deg = runtime_[i].motor_position_deg;
             auto &s = status_.joint[i];
             s.calibrated = true;
@@ -717,7 +733,8 @@ Result ArmControl::enable(uint8_t mask, uint32_t now) {
             auto &s = status_.joint[i];
             auto &r = runtime_[i];
             s.enabled = true;
-            s.target_deg = s.position_deg;
+            s.homing = i == Yaw && config_.joint[i].fixed_zero_encoder >= 0;
+            s.target_deg = s.homing ? 0.0f : s.position_deg;
             s.reference_deg = s.position_deg;
             r.integral = 0;
             r.reference_velocity = 0;
@@ -744,7 +761,11 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
                 return status_.last_result = Result::InvalidArgument;
             if (q[i] < c.min_deg || q[i] > c.max_deg)
                 return status_.last_result = Result::OutOfRange;
-            next[i] = q[i];
+            auto &s = status_.joint[i];
+            if (s.homing && std::fabs(s.position_deg) <= 0.5f &&
+                std::fabs(s.velocity_deg_s) <= c.stationary_speed_deg_s)
+                s.homing = false;
+            next[i] = s.homing ? 0.0f : q[i];
         }
     // 单个pitch更新保留另一关节目标，完整验证a2后才整包提交，禁止单独clamp a2。
     if (!targets_in_range(next))
@@ -752,7 +773,7 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
     for (unsigned i = 0; i < kJointCount; ++i)
         if (mask & (1u << i)) {
             status_.joint[i].target_deg =
-                i == Yaw ? clamp(q[i],
+                i == Yaw ? clamp(next[i],
                                  std::fmax(yaw_motion_min_, status_.joint[i].position_deg -
                                                                 yaw_limits_.max_target_lead_deg),
                                  std::fmin(yaw_motion_max_, status_.joint[i].position_deg +

@@ -134,6 +134,9 @@ void publish(const ArmControl &arm, uint32_t now) {
         d.calibrated = j.calibrated;
         d.enabled = j.enabled;
         d.motor_state = j.motor_state;
+        d.raw_encoder = j.raw_encoder;
+        d.fixed_zero_encoder = j.fixed_zero_encoder;
+        d.homing = j.homing;
     }
     taskENTER_CRITICAL();
     g_arm_status = next;

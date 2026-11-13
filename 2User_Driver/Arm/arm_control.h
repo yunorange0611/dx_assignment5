@@ -52,6 +52,7 @@ struct JointConfig {
     float max_temperature_c;             // C610不提供温度，此项不适用于M2006
     float limit_margin_deg = 2.0f;       // 反馈越界锁存余量，同样按此轴角度单位
     float stationary_speed_deg_s = 2.0f; // 手动校零允许的驱动速度阈值
+    int16_t fixed_zero_encoder = -1; // DJI单圈固定零点0..8191；-1表示未标定
 };
 struct PitchConfig {
     bool mapping_confirmed; // 两DM实例、正向、联合零位及连杆分支实测确认后才设true
@@ -92,6 +93,9 @@ struct JointStatus {
     uint32_t received, last_feedback_ms, faults;
     bool online, calibrated, enabled;
     uint8_t motor_state; // DM: 0=失能,1=使能,8~F=故障
+    uint16_t raw_encoder; // DJI当前原始单圈编码器，0..8191
+    int16_t fixed_zero_encoder; // 生效配置，-1表示未填写
+    bool homing; // 固定零点轴开控回零中
 };
 struct Status {
     JointStatus joint[kJointCount];
