@@ -532,6 +532,30 @@ int test_robot_control() {
         yaw_run(now, 660);
         CHECK(s.yaw_direct_active && s.yaw_direct_target_deg > 0);
         CHECK(yaw_direct.status().joint[Yaw].target_deg > 0);
+
+        // Fixed-zero yaw joins the drive switch without command 5 or whole-arm confirmation.
+        local.hardware_confirmed = false;
+        local.joint[Yaw].fixed_zero_encoder = 1000;
+        ArmControl automatic(local);
+        auto auto_run = [&](int left_switch, int left_x = 0) {
+            now += 4;
+            fresh_inputs(now);
+            feed_all(automatic, now);
+            g_dr16_status.frame.switches[kOperatorConfig.left_switch_index] = left_switch;
+            g_dr16_status.frame.channel[kOperatorConfig.left_x_channel] = int16_t(left_x);
+            Robot_Execute(automatic, now, false);
+            Robot_GetControlStatus(&s);
+        };
+        auto_run(DR16_SWITCH_DOWN);
+        for (unsigned i = 0; i <= 76; ++i)
+            auto_run(DR16_SWITCH_UP);
+        CHECK(s.independent_armed && s.yaw_direct_active);
+        CHECK(automatic.status().joint[Yaw].enabled);
+        CHECK(automatic.status().enabled_mask == (1u << Yaw));
+        auto_run(DR16_SWITCH_UP, 660);
+        CHECK(automatic.status().joint[Yaw].target_deg > 0);
+        auto_run(DR16_SWITCH_DOWN);
+        CHECK(!automatic.status().joint[Yaw].enabled && !s.yaw_direct_active);
     }
     kChassisIndependent = true;
     return 0;

@@ -116,7 +116,7 @@ class ArmControl {
     bool receive(uint8_t bus, uint16_t id, const uint8_t *data, uint8_t len, uint32_t now_ms);
     Result capture_zero(uint8_t mask, uint32_t now_ms);
     // Explicitly add the requested axes; already-enabled axes keep their state.
-    Result enable(uint8_t mask, uint32_t now_ms);
+    Result enable(uint8_t mask, uint32_t now_ms, bool independent_yaw = false);
     void disable();
     // Owner-only mode changes. Neither operation enables an axis; pitch stays paired.
     Result hold(uint8_t mask, uint32_t now_ms);

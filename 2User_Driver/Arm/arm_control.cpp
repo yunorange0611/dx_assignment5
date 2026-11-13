@@ -699,13 +699,14 @@ Result ArmControl::capture_zero(uint8_t mask, uint32_t now) {
     update_drive_references();
     return status_.last_result = Result::Ok;
 }
-Result ArmControl::enable(uint8_t mask, uint32_t now) {
+Result ArmControl::enable(uint8_t mask, uint32_t now, bool independent_yaw) {
     if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
         return status_.last_result = Result::InvalidArgument;
     const uint8_t added = mask & ~status_.enabled_mask;
     if (!added)
         return status_.last_result = Result::Busy;
-    if (!status_.configuration_valid || !config_.hardware_confirmed ||
+    const bool yaw_only = independent_yaw && mask == (1u << Yaw);
+    if (!status_.configuration_valid || (!config_.hardware_confirmed && !yaw_only) ||
         ((mask & kPitchPair) && !config_.pitch.mapping_confirmed))
         return status_.last_result = Result::ConfigUnconfirmed;
     refresh(now);

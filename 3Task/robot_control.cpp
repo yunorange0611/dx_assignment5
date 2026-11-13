@@ -613,8 +613,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         !(arm.status().faults & (TransportError | TimingError)) &&
         uint32_t(now - yaw_joint.last_feedback_ms) <= kArmConfig.feedback_timeout_ms &&
         yaw_joint.temperature_c < kArmConfig.joint[Yaw].max_temperature_c;
-    const bool yaw_direct = kChassisIndependent && drive_switch && drive_armed && !global_stop &&
-        !chassis_stop_latched && !tipover && !power_stop && remote_ok && yaw_ok;
+    const bool yaw_drive_requested = kChassisIndependent && robot_tune_mode == 0 &&
+        drive_switch && drive_armed && !global_stop && !chassis_stop_latched &&
+        !tipover && !power_stop && remote_ok && debug_command != ROBOT_DEBUG_DISABLE_YAW;
     if (result.request_enable) {
 #if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
         // Revoke before ArmControl can enable an output. A stale disabled
@@ -630,7 +631,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     if (Task_Protect_GetStatus().disabled && result.active)
         reject();
     if (result.disable_arm) {
-        if (yaw_ok) {
+        if (yaw_ok && !global_stop && remote_ok && !tipover) {
             const uint8_t non_yaw = kAllJoints & ~(1u << Yaw);
             arm.disable_joints(non_yaw);
         } else {
@@ -643,6 +644,24 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
             reject();
         }
     }
+    // Same switch/neutral release as the independent chassis; no whole-arm enable.
+    // A fixed zero must be measured first. Keep other four axes under their owner.
+    if (yaw_drive_requested && arm.status().joint[Yaw].fixed_zero_encoder >= 0 &&
+        !arm.status().joint[Yaw].enabled) {
+#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
+        INS_RevokeCalibrationPermission(now);
+#endif
+        arm.enable(1u << Yaw, now, true);
+    } else if (kChassisIndependent && robot_tune_mode == 0 &&
+               ((yaw_direct_was_active && !yaw_drive_requested) || global_stop || !remote_ok ||
+                tipover || debug_command == ROBOT_DEBUG_DISABLE_YAW)) {
+        arm.disable_joints(1u << Yaw);
+    }
+    const auto &current_yaw = arm.status().joint[Yaw];
+    const bool yaw_direct = yaw_drive_requested && current_yaw.enabled &&
+        current_yaw.online && current_yaw.calibrated && !current_yaw.faults &&
+        !(arm.status().faults & (TransportError | TimingError)) &&
+        uint32_t(now - current_yaw.last_feedback_ms) <= kArmConfig.feedback_timeout_ms;
     if (yaw_direct) {
         const auto &limits = arm.yaw_limits();
         float min_deg = limits.min_deg, max_deg = limits.max_deg;
