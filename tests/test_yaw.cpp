@@ -101,6 +101,8 @@ int test_yaw() {
     { // Detached-motor tuning can disable the wire range for modes 5/6.
         Config c = config();
         c.joint[Yaw].fixed_zero_encoder = 6352;
+        c.joint[Yaw].min_deg = -85; // Keep this block independent of the live wire range.
+        c.joint[Yaw].max_deg = 85;
         ArmControl a(c);
         CHECK(feed(a, 0, 1184)); // +132.9 deg from the fixed zero.
         CHECK(a.status().joint[Yaw].calibrated);
@@ -138,19 +140,126 @@ int test_yaw() {
         c.joint[Yaw].max_effort = 5000;
         ArmControl a(c);
         Frame frames[kJointCount]{};
+        auto yaw_raw = [&](unsigned n) {
+            for (unsigned k = 0; k < n; ++k)
+                if (frames[k].id == 0x1ff)
+                    return int(int16_t((frames[k].data[0] << 8) | frames[k].data[1]));
+            return 0;
+        };
         CHECK(feed(a, 0));
         CHECK(a.capture_zero(1, 0) == Result::Ok);
         CHECK(a.enable(1, 0) == Result::Ok);
         a.set_yaw_friction_feedforward(500);
         CHECK(a.set_yaw_test_speed(5, 0) == Result::Ok);
-        a.step(0, frames);
+        unsigned n = a.step(0, frames);
         CHECK(a.status().joint[Yaw].effort == 500);
+        CHECK(a.yaw_friction_feedforward_applied() == 500);
+        CHECK(yaw_raw(n) == 500);
         CHECK(a.set_yaw_test_speed(-5, 0) == Result::Ok);
-        a.step(4, frames);
+        n = a.step(4, frames);
         CHECK(a.status().joint[Yaw].effort == -500);
+        CHECK(a.yaw_friction_feedforward_applied() == -500);
+        CHECK(yaw_raw(n) == -500);
         CHECK(a.set_yaw_test_speed(0, 4) == Result::Ok);
+        CHECK(feed(a, 4, 1000, 0)); // Avoid the non-fixed-zero unwrap gap.
         a.step(8, frames);
         CHECK(a.status().joint[Yaw].effort == 0);
+        CHECK(a.yaw_friction_feedforward_applied() == 0);
+        // The target direction wins; actual direction is only a zero-target fallback.
+        CHECK(a.status().joint[Yaw].enabled);
+        CHECK(a.set_yaw_test_speed(5, 8) == Result::Ok);
+        CHECK(feed(a, 8, 1000, 1)); // +6 deg/s actual, +5 target.
+        a.step(12, frames);
+        CHECK(a.yaw_friction_feedforward_applied() == 500);
+        CHECK(a.set_yaw_test_speed(0, 12) == Result::Ok);
+        CHECK(feed(a, 12, 1000, 1)); // Hand motion with zero speed target.
+        a.step(16, frames);
+        CHECK(a.yaw_friction_feedforward_applied() == 0);
+        CHECK(a.set_yaw_test_speed(5, 16) == Result::Ok);
+        CHECK(feed(a, 16, 1000, -1)); // Actual direction opposes the target.
+        a.step(20, frames);
+        CHECK(a.yaw_friction_feedforward_applied() == 500);
+        CHECK(a.set_yaw_test_speed(-5, 20) == Result::Ok);
+        CHECK(feed(a, 20, 1000, 1)); // Axis still coasts +, target is now -.
+        a.step(24, frames);
+        CHECK(a.yaw_friction_feedforward_applied() == -500);
+    }
+    { // Position control: no feedforward for a hand disturbance, but keep it
+      // during an intentional reference move, scaled by the reference speed.
+        Config c = config();
+        c.joint[Yaw].velocity_kp = 0;
+        c.joint[Yaw].velocity_ki = 0;
+        c.joint[Yaw].max_effort = 5000;
+        ArmControl a(c);
+        Frame frames[kJointCount]{};
+        CHECK(feed(a, 0));
+        CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        a.set_yaw_friction_feedforward(500);
+        a.step(0, frames);
+        CHECK(feed(a, 4, 800)); // Hand disturbance: -8.8 deg, target still 0.
+        a.step(4, frames);
+        CHECK(a.yaw_friction_feedforward_applied() == 0);
+        float q[kJointCount]{};
+        q[Yaw] = 5;
+        CHECK(a.set_targets(1, q, 4) == Result::Ok);
+        for (uint32_t t = 8; t <= 36; t += 4) {
+            CHECK(feed(a, t, 800));
+            a.step(t, frames);
+        }
+        CHECK(a.yaw_friction_feedforward_applied() > 0);
+        CHECK(a.yaw_friction_feedforward_applied() <= 500);
+    }
+    { // Mode-6-style position move from +14.7 to 0 must go toward the target,
+      // and the position-mode feedforward must never push the other way.
+        Config c = config();
+        c.joint[Yaw].fixed_zero_encoder = 6352;
+        c.joint[Yaw].position_kp = 0.1f;
+        c.joint[Yaw].velocity_kp = 30;
+        c.joint[Yaw].velocity_ki = 10;
+        c.joint[Yaw].max_effort = 25000;
+        ArmControl a(c);
+        Frame frames[kJointCount]{};
+        CHECK(feed(a, 0, 6686)); // +14.7 deg from the fixed zero.
+        a.set_yaw_tuning_limits(false);
+        CHECK(a.enable(1, 0, true) == Result::Ok);
+        a.bypass_yaw_homing_for_tuning();
+        a.set_yaw_friction_feedforward(5200);
+        float q[kJointCount]{};
+        q[Yaw] = 0;
+        CHECK(a.set_targets(1, q, 0) == Result::Ok);
+        for (uint32_t t = 4; t <= 40; t += 4) {
+            CHECK(feed(a, t, 6686));
+            a.step(t, frames);
+        }
+        CHECK(a.status().joint[Yaw].target_deg == 0);
+        CHECK(a.status().joint[Yaw].reference_deg < a.status().joint[Yaw].position_deg);
+        CHECK(a.yaw_friction_feedforward_applied() <= 0);
+    }
+    { // Reversing/zeroing the target drops the old velocity-PI integral.
+        Config c = config();
+        c.joint[Yaw].velocity_kp = 0;
+        c.joint[Yaw].velocity_ki = 10000;
+        c.joint[Yaw].max_effort = 5000;
+        c.joint[Yaw].fixed_zero_encoder = 6352;
+        ArmControl a(c);
+        Frame frames[kJointCount]{};
+        CHECK(feed(a, 0, 6352));
+        CHECK(a.enable(1, 0) == Result::Ok);
+        a.set_yaw_friction_feedforward(500);
+        CHECK(a.set_yaw_test_speed(5, 0) == Result::Ok);
+        uint32_t t = 0;
+        for (unsigned i = 0; i < 50; ++i) {
+            t += 4;
+            CHECK(feed(a, t, 6352, 0));
+            a.step(t, frames);
+        }
+        CHECK(a.status().joint[Yaw].effort > 0);
+        CHECK(a.set_yaw_test_speed(-5, t) == Result::Ok);
+        CHECK(feed(a, t + 4, 6352, 0));
+        a.step(t + 4, frames);
+        CHECK(a.yaw_friction_feedforward_applied() == -500);
+        CHECK(a.status().joint[Yaw].effort < 0);
     }
     { // Live PID/limit edits keep the Yaw speed target and motion reference.
         ArmControl a(config());
@@ -220,7 +329,7 @@ int test_yaw() {
         CHECK(a.capture_zero(1, 0) == Result::Ok);
         CHECK(a.set_yaw_limits(l, 0) == Result::Ok);
         CHECK(a.yaw_limits().version == 1 && a.yaw_limits().max_deg == 10);
-        l.max_deg = 100;
+        l.max_deg = 400; // Outside the configured wire range (currently +/-360).
         CHECK(a.set_yaw_limits(l, 0) == Result::InvalidArgument);
         l = limits();
         l.braking_margin_deg = 10;

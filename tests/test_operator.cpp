@@ -162,7 +162,7 @@ int test_operator() {
         o = r.tick();
         CHECK(o.mode == RobotMode::Grab && o.stop_chassis);
         CHECK(o.target_deg[BigPitch] > 0 && o.target_deg[Roll] > 0);
-        CHECK(o.target_deg[SmallPitch] < 0 && o.target_deg[Yaw] < 0);
+        CHECK(o.target_deg[SmallPitch] < 0 && o.target_deg[Yaw] > 0);
         CHECK(o.turn_rate_request == 0 && o.longitudinal_speed_request == 0);
         const float pitch = o.target_deg[BigPitch];
         r.neutral();
@@ -175,7 +175,7 @@ int test_operator() {
         CHECK(r.start().active);
         r.rc.frame.channel[2] = 660;
         auto o = r.tick();
-        CHECK(near(o.target_deg[Yaw], 0.008f));
+        CHECK(near(o.target_deg[Yaw], -0.008f));
         CHECK(o.turn_rate_request == 0 && o.longitudinal_speed_request == 0);
         CHECK(o.target_deg[Roll] == 0 && o.target_deg[BigPitch] == 0 &&
               o.target_deg[SmallPitch] == 0);
@@ -191,7 +191,7 @@ int test_operator() {
         o = r.tick();
         CHECK(o.longitudinal_speed_request == 1 && o.turn_rate_request == -1 &&
               !o.longitudinal_brake);
-        CHECK(o.target_deg[Yaw] > yaw && o.target_deg[SmallPitch] == 0);
+        CHECK(o.target_deg[Yaw] < yaw && o.target_deg[SmallPitch] == 0);
         CHECK(!o.reset_chassis_motion);
         r.rc.frame.channel[3] = -660;
         o = r.tick();
@@ -376,12 +376,14 @@ int test_operator() {
         CHECK(r.start().active);
         r.rc.frame.channel[2] = 660;
         auto o = r.tick();
-        CHECK(near(o.target_deg[Yaw], 20));
+        CHECK(o.target_deg[Yaw] < 20 && o.target_deg[Yaw] > 19.9f);
+        const float yaw_after_positive_lx = o.target_deg[Yaw];
         o = r.tick();
-        CHECK(near(o.target_deg[Yaw], 20));
+        CHECK(o.target_deg[Yaw] < yaw_after_positive_lx);
+        const float yaw_before_reverse = o.target_deg[Yaw];
         r.rc.frame.channel[2] = -660;
         o = r.tick();
-        CHECK(near(o.target_deg[Yaw], 19.992f));
+        CHECK(o.target_deg[Yaw] > yaw_before_reverse);
         r.locks.drive_yaw_allowed = false;
         r.arm.joint[Yaw].position_deg = 18;
         r.rc.frame.channel[0] = 660;
@@ -514,7 +516,7 @@ int test_operator() {
             if (bad == 4)
                 r.locks.drive_yaw_min_deg = 25;
             if (bad == 5)
-                r.locks.drive_yaw_max_deg = 91;
+                r.locks.drive_yaw_max_deg = 400;
             const auto o = r.tick();
             CHECK(o.disable_arm && o.emergency_stop && o.stop_chassis && !o.active);
             CHECK(o.block == OperatorBlock::InvalidInterlock && o.turn_rate_request == 0);

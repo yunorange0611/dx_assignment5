@@ -8,6 +8,10 @@ constexpr float kRadToDeg = 57.29577951308232f;
 // Below this speed target the Yaw friction feedforward is disabled, so a hold
 // command near zero does not buzz against static friction.
 constexpr float kYawFrictionDeadbandDegS = 0.5f;
+// Position/normal control scales the friction assist in over this planned
+// reference speed. Holding still has zero reference velocity, so a hand push
+// does not get a full sign-step feedforward.
+constexpr float kYawFrictionFullSpeedDegS = 1.0f;
 float clamp(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
@@ -502,6 +506,14 @@ Result ArmControl::set_yaw_test_speed(float speed, uint32_t now) {
     if (!selected(Yaw) || !(status_.enabled_mask & (1u << Yaw)) || !finite(speed) ||
         std::fabs(speed) > 100.0f)
         return status_.last_result = Result::InvalidArgument;
+    // A run of the old sign must not keep pushing after the operator reverses
+    // or zeroes the speed target. Drop the velocity-PI history once on that
+    // transition; the feedforward itself follows the new target sign.
+    const bool reversing = (speed > 0 && yaw_test_speed_ < 0) ||
+                           (speed < 0 && yaw_test_speed_ > 0);
+    const bool stopping = speed == 0 && yaw_test_speed_ != 0;
+    if (reversing || stopping)
+        runtime_[Yaw].integral = 0;
     // Speed-loop tuning explicitly takes ownership instead of startup homing.
     status_.joint[Yaw].homing = false;
     yaw_test_active_ = true;
@@ -828,6 +840,7 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
 }
 
 unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
+    yaw_friction_ff_applied_ = 0;
     if (!status_.configuration_valid || !out)
         return 0;
     const uint32_t elapsed = have_step_ ? uint32_t(now - last_step_ms_) : config_.control_period_ms;
@@ -883,7 +896,9 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                 r.reference_velocity = limit_yaw_speed(r.reference_velocity, dt);
             s.reference_deg =
                 clamp(s.reference_deg + r.reference_velocity * dt, drive_min(i), drive_max(i));
-            if (i == Yaw)
+            // Modes 5/6 own the full single-turn range; the normal 5-degree
+            // reference lead would otherwise stop a far position target short.
+            if (i == Yaw && !yaw_tuning_unlimited_)
                 s.reference_deg = clamp(
                     s.reference_deg,
                     std::fmax(drive_min(i), s.position_deg - yaw_limits_.max_target_lead_deg),
@@ -926,9 +941,27 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             const float limit = std::fmin(r.effort_limit, tuning_effort_limit_[i]);
             const float next_i = clamp(r.integral + c.velocity_ki * e * dt, -limit, limit);
             float feedforward = 0;
-            if (i == Yaw && c.motor == Motor::Gm6020Voltage &&
-                std::fabs(speed_target) > kYawFrictionDeadbandDegS)
-                feedforward = (speed_target > 0 ? 1.0f : -1.0f) * yaw_friction_ff_raw_;
+            if (i == Yaw && c.motor == Motor::Gm6020Voltage) {
+                if (yaw_test_active_) {
+                    // Speed test: full assist in the commanded direction.
+                    if (std::fabs(speed_target) > kYawFrictionDeadbandDegS)
+                        feedforward = (speed_target > 0 ? 1.0f : -1.0f) * yaw_friction_ff_raw_;
+                } else if (std::fabs(r.reference_velocity) > kYawFrictionDeadbandDegS) {
+                    // Position/normal control: only intentional reference motion,
+                    // and only when that motion is actually toward the position
+                    // target. A stale/one-sided reference must never push away.
+                    const float position_error = s.target_deg - s.position_deg;
+                    const bool toward_target =
+                        (r.reference_velocity > 0) == (position_error > 0);
+                    if (toward_target) {
+                        const float scale = std::fmin(
+                            1.0f, std::fabs(r.reference_velocity) / kYawFrictionFullSpeedDegS);
+                        feedforward = (r.reference_velocity > 0 ? 1.0f : -1.0f) *
+                                      yaw_friction_ff_raw_ * scale;
+                    }
+                }
+                yaw_friction_ff_applied_ = feedforward;
+            }
             const float u = c.velocity_kp * e + next_i + feedforward;
             float final = clamp(u, -limit, limit);
             if ((s.drive_position_deg <= drive_min(i) && final < 0) ||

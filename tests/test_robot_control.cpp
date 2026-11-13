@@ -175,7 +175,7 @@ int test_robot_control() {
         if (bad == 4)
             invalid.drive_yaw_min_deg = std::numeric_limits<float>::quiet_NaN();
         if (bad == 5)
-            invalid.drive_yaw_max_deg = 100;
+            invalid.drive_yaw_max_deg = 400;
         if (bad == 6)
             invalid.drive_yaw_max_speed_deg_s = 0;
         if (bad == 7)
@@ -559,6 +559,7 @@ int test_robot_control() {
         auto local = cfg;
         local.hardware_confirmed = true;
         local.pitch.mapping_confirmed = true;
+        local.joint[Yaw].fixed_zero_encoder = -1; // Manual capture in this block.
         ArmControl yaw_direct(local);
         now += 4;
         fresh_inputs(now);
@@ -590,8 +591,9 @@ int test_robot_control() {
         CHECK(s.independent_armed && s.yaw_direct_active);
         now += 4;
         yaw_run(now, 660);
-        CHECK(s.yaw_direct_active && s.yaw_direct_target_deg > 0);
-        CHECK(yaw_direct.status().joint[Yaw].target_deg > 0);
+        CHECK(s.yaw_direct_active);
+        CHECK(s.yaw_direct_target_deg < 0); // Current direct-Yaw sign is -stick.
+        CHECK(yaw_direct.status().joint[Yaw].target_deg < 0);
 
         // Fixed-zero yaw joins the drive switch without command 5 or whole-arm confirmation.
         local.hardware_confirmed = false;
@@ -613,7 +615,7 @@ int test_robot_control() {
         CHECK(automatic.status().joint[Yaw].enabled);
         CHECK(automatic.status().enabled_mask == (1u << Yaw));
         auto_run(DR16_SWITCH_UP, 660);
-        CHECK(automatic.status().joint[Yaw].target_deg > 0);
+        CHECK(automatic.status().joint[Yaw].target_deg < 0);
         auto_run(DR16_SWITCH_DOWN);
         CHECK(!automatic.status().joint[Yaw].enabled && !s.yaw_direct_active);
     }

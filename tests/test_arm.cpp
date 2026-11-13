@@ -162,7 +162,7 @@ void run() {
         q[0] = std::numeric_limits<float>::quiet_NaN();
         CHECK(a.set_targets(1, q, 0) == Result::InvalidArgument);
         CHECK(a.status().joint[Yaw].target_deg == 10);
-        q[0] = 91;
+        q[0] = 400;
         CHECK(a.set_targets(1, q, 0) == Result::OutOfRange);
         for (unsigned t = 0; t <= 251; ++t) {
             all(a, t);

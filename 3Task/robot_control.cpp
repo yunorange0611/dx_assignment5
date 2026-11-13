@@ -27,7 +27,7 @@ volatile float tune_wheel_kp = engineer::kChassisConfig.velocity_kp,
 volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
     tune_yaw_velocity_ki = 10, tune_yaw_voltage_limit_raw = 25000,
-    tune_yaw_friction_ff_raw = 0, tune_yaw_half_range_deg = 0;
+    tune_yaw_friction_ff_raw = 5200, tune_yaw_half_range_deg = 0;
 RobotTuneStatus g_robot_tune_status{};
 }
 namespace {
@@ -647,7 +647,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         uint32_t(now - yaw_joint.last_feedback_ms) <= kArmConfig.feedback_timeout_ms &&
         yaw_joint.temperature_c < kArmConfig.joint[Yaw].max_temperature_c;
     // 临时只调底盘：恢复true即可重新接入行驶档Yaw自动使能/回零/摇杆控制。
-    constexpr bool drive_yaw_enabled = false;
+    constexpr bool drive_yaw_enabled = true; // 恢复行驶档Yaw控制
     const bool yaw_drive_requested = drive_yaw_enabled && kChassisIndependent && robot_tune_mode == 0 &&
         drive_switch && drive_armed && !global_stop && !chassis_stop_latched &&
         !tipover && !power_stop && remote_ok && debug_command != ROBOT_DEBUG_DISABLE_YAW;
@@ -715,7 +715,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
                                               kOperatorConfig.axis_direction[1],
                                               kOperatorConfig.deadband);
         yaw_direct_target_deg = std::fmax(
-            min_deg, std::fmin(max_deg, yaw_direct_target_deg + (yaw_joint.homing ? 0.0f : stick * speed * dt)));
+            min_deg, std::fmin(max_deg, yaw_direct_target_deg + (yaw_joint.homing ? 0.0f : -stick * speed * dt)));
         float targets[kJointCount]{};
         targets[Yaw] = yaw_direct_target_deg;
         if (arm.set_targets(1u << Yaw, targets, now) == Result::Ok)

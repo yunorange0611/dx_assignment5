@@ -106,6 +106,7 @@ void publish(const ArmControl &arm, uint32_t now) {
     next.updated_ms = now;
     next.yaw_limit_version = arm.yaw_limits().version;
     next.last_result = uint8_t(s.last_result);
+    next.yaw_friction_ff_applied = arm.yaw_friction_feedforward_applied();
     next.ready = 1;
     next.configuration_valid = s.configuration_valid;
     next.rx_dropped = dropped_rx;

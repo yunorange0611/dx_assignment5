@@ -189,18 +189,19 @@ YAW_ZERO = [
     V('g_arm_status.joint[0].fixed_zero_encoder', 'Yaw已配置固定零点 -1未填写'),
     V('g_arm_status.joint[0].homing', 'Yaw开控回零中'),
 ]
-YAW_LIMIT = YAW_ZERO + [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',True,2.001,85,
+YAW_LIMIT = YAW_ZERO + [V('tune_yaw_half_range_deg','Yaw软限位半幅','deg',True,2.001,360,
               note='实物确认的线束半幅；直接填写，owner检查后生效。看result与active_half_range_deg，不写旧限位序号。')] + variables('g_yaw_limit_status',
               [('result','限位结果 0成功',''),('ready','在线限位就绪',''),('active_half_range_deg','生效半幅','deg'),
                ('min_deg','生效最小角','deg'),('max_deg','生效最大角','deg'),('max_speed_deg_s','限位基础速度上限','deg/s')])
 YAW_SPEED = [V('tune_yaw_speed_deg_s','Yaw速度内环目标','deg/s',True,-100,100)]
-YAW_POSITION = [V('tune_yaw_target_deg','Yaw位置双环目标','deg',True,-85,85,
+YAW_POSITION = [V('tune_yaw_target_deg','Yaw位置双环目标','deg',True,-360,360,
                  note='切6档时自动对齐当前角。目标必须在已生效线束软限位内，先测1到2度小动作。')]
 YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
             V('tune_yaw_velocity_kp','Yaw速度P','raw/(deg/s)',True,0,1000000),
             V('tune_yaw_velocity_ki','Yaw速度I','raw/deg',True,0,1000000),
             V('tune_yaw_voltage_limit_raw','Yaw测试输出上限 电压原码','raw',True,0,25000),
-            V('tune_yaw_friction_ff_raw','Yaw静摩擦前馈 电压原码','raw',True,0,25000)] + variables('g_robot_tune_status',
+            V('tune_yaw_friction_ff_raw','Yaw静摩擦前馈 电压原码','raw',True,0,25000),
+            V('g_arm_status.yaw_friction_ff_applied','Yaw实际叠加静摩擦前馈','raw')] + variables('g_robot_tune_status',
             [('yaw_parameter_result','Yaw参数结果 0成功',''),('yaw_position_kp','Yaw生效位置P','1/s'),
              ('yaw_velocity_kp','Yaw生效速度P',''),('yaw_velocity_ki','Yaw生效速度I',''),
              ('yaw_voltage_limit_raw','Yaw生效输出上限 电压原码','raw')])
@@ -279,7 +280,7 @@ def groups():
     currents = [V(f'g_chassis_status.current_ma[{i}]', '轮组提交电流', 'mA') for i in range(2)]
     tune_gate = [V('g_robot_tune_status.ready', '调参已就绪'),
                  V('g_robot_tune_status.blocked', '调参锁禁')]
-    half_range = [V('tune_yaw_half_range_deg', 'Yaw软限位半幅', 'deg', True, 2.001, 90,
+    half_range = [V('tune_yaw_half_range_deg', 'Yaw软限位半幅', 'deg', True, 2.001, 360,
                     note='直接填写；看result与active_half_range_deg。')]
     tune = [
         # 0档底盘直驱：只依赖共用遥控解析和两轮反馈，不绑机械臂/Yaw/IMU/功率。

@@ -28,6 +28,7 @@ typedef struct {
     uint32_t updated_ms, yaw_limit_version;
     uint8_t enabled_mask, configuration_valid, ready;
     uint8_t last_result; // engineer::Result数值；提交成功只表示入队成功
+    float yaw_friction_ff_applied; // 上一控制周期实际叠加到Yaw速度环的前馈，raw
 } ArmStatus;
 
 // 原共享快照的稳定调试符号，外部只读；任务间仍用Arm_GetStatus原子复制。

@@ -291,7 +291,7 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         o.turn_rate_request = -rx;      // 右推=顺时针；CCW正，不乘纵向输入或倒车符号。
         o.stop_chassis = ly == 0 && rx == 0;
         if (in.drive_yaw_allowed) {
-            targets_[Yaw] = clamp(targets_[Yaw] + lx * in.drive_yaw_max_speed_deg_s * dt,
+            targets_[Yaw] = clamp(targets_[Yaw] - lx * in.drive_yaw_max_speed_deg_s * dt,
                                   in.drive_yaw_min_deg, in.drive_yaw_max_deg);
             yaw_was_allowed_ = true;
         } else {
@@ -322,7 +322,7 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         targets_[SmallPitch] += ds * scale;
         integrate(Roll, lx);
         if (!bench) {
-            integrate(Yaw, rx);
+            integrate(Yaw, -rx); // 遥控Yaw左右反向；不改变电机反馈/输出坐标
             constrain_yaw_target();
         }
         if (right != last_right_) {
