@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include "Arm/yaw_pid.h"
 
 // 上层使用关节端deg/deg/s：BigPitch=肩角增量，SmallPitch=肘相对角增量。
 // 两DM的驱动坐标为a1=q肩、a2=q肩+q肘；电机闭环和effort仍属于驱动坐标。
@@ -112,6 +113,15 @@ struct JointTuning {
     float position_kp, velocity_kp, velocity_ki, effort_limit;
 };
 
+// Read-only diagnostics for the Yaw-only PID pair.
+struct YawPidSnapshot {
+    float dt_s = 0;
+    float position_p = 0, position_i = 0, position_d = 0;
+    float position_sigma = 0, position_output = 0;
+    float velocity_p = 0, velocity_i = 0, velocity_d = 0;
+    float velocity_sigma = 0, velocity_prelimit = 0, velocity_output = 0;
+};
+
 // 纯控制逻辑，无HAL依赖；由一个任务拥有，禁止从ISR直接调用。
 class ArmControl {
   public:
@@ -143,6 +153,10 @@ class ArmControl {
     // to break static friction; zero disables. Invalid writes keep the old value.
     void set_yaw_friction_feedforward(float raw);
     float yaw_friction_feedforward_applied() const { return yaw_friction_ff_applied_; }
+    // Actual Yaw PID timestep measured by the task layer. Invalid values are ignored.
+    void set_yaw_control_dt(float dt_s);
+    float yaw_control_dt_s() const { return yaw_control_dt_s_; }
+    YawPidSnapshot yaw_pid_snapshot() const;
     // Called only after the tuning owner has enabled and validated Yaw.
     void bypass_yaw_homing_for_tuning() { status_.joint[Yaw].homing = false; }
     const YawRuntimeLimits &yaw_limits() const {
@@ -182,7 +196,11 @@ class ArmControl {
     float yaw_motion_min_ = 0, yaw_motion_max_ = 0, yaw_motion_speed_ = 0, yaw_test_speed_ = 0;
     float yaw_friction_ff_raw_ = 0;
     float yaw_friction_ff_applied_ = 0;
+    float yaw_control_dt_s_ = 0.004f;
+    YawPid yaw_position_pid_{}, yaw_velocity_pid_{};
+    void reset_yaw_pid();
     float yaw_position_ff_ = 0;
+    float yaw_speed_ff_ = 0;
     bool yaw_test_active_ = false;
     float limit_yaw_speed(float requested, float dt) const;
     void refresh(uint32_t now_ms);

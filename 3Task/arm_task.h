@@ -35,6 +35,8 @@ typedef struct {
 
 // 原共享快照的稳定调试符号，外部只读；任务间仍用Arm_GetStatus原子复制。
 extern ArmStatus g_arm_status;
+extern volatile uint32_t g_arm_stack_free_bytes, g_stack_overflow_latched;
+extern char g_stack_overflow_task[16];
 
 // Read-only Yaw CAN feedback diagnosis; averages use reception timestamps.
 typedef struct {
@@ -46,6 +48,11 @@ typedef struct {
     float encoder_speed_deg_s, rpm_mean_deg_s, rpm_min_deg_s, rpm_max_deg_s;
     float zero_rpm_fraction, parsed_speed_deg_s, parsed_position_deg;
     float velocity_kp, velocity_ki, position_kp;
+    // Yaw-only PID diagnostics; other axes keep the legacy PI implementation.
+    float yaw_pid_dt_s;
+    float yaw_pos_p_term, yaw_pos_i_term, yaw_pos_d_term, yaw_pos_sigma, yaw_pos_output;
+    float yaw_spd_p_term, yaw_spd_i_term, yaw_spd_d_term, yaw_spd_sigma;
+    float yaw_spd_prelimit, yaw_spd_output;
 } YawFeedbackDiag;
 extern YawFeedbackDiag g_yaw_feedback_diag;
 

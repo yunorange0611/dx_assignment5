@@ -761,8 +761,25 @@ def main():
         ('velocity_deg_s','当前闭环采用速度','deg/s'),
         ('velocity_target_deg_s','闭环目标速度','deg/s'),
         ('velocity_window_ms','编码器测速窗口','ms')])
+    feedback_diag += [V('g_arm_stack_free_bytes','Arm历史最小剩余栈','byte'), V('g_stack_overflow_latched','任务栈溢出锁存 0正常')]
     tune.append(G('Yaw反馈诊断（只读500ms同窗）', feedback_diag))
     diagnostic.append(G('Yaw反馈诊断（只读500ms同窗）', feedback_diag))
+    yaw_pid_fields = variables('g_yaw_feedback_diag', [
+        ('yaw_pid_dt_s','Yaw PID实际dt','s'),
+        ('yaw_pos_p_term','Yaw位置P项','deg/s'),
+        ('yaw_pos_i_term','Yaw位置I项','deg/s'),
+        ('yaw_pos_d_term','Yaw位置D项','deg/s'),
+        ('yaw_pos_sigma','Yaw位置误差积分','deg*s'),
+        ('yaw_pos_output','Yaw位置PID输出速度','deg/s'),
+        ('yaw_spd_p_term','Yaw速度P项','raw'),
+        ('yaw_spd_i_term','Yaw速度I项','raw'),
+        ('yaw_spd_d_term','Yaw速度D项','raw'),
+        ('yaw_spd_sigma','Yaw速度误差积分','deg'),
+        ('yaw_spd_prelimit','Yaw速度PID限幅前','raw'),
+        ('yaw_spd_output','Yaw速度PID输出','raw')])
+    yaw_pid_fields += [V('g_arm_status.yaw_friction_ff_applied','Yaw实际摩擦前馈','raw')]
+    tune.append(G('Yaw新PID（只读）', yaw_pid_fields))
+    diagnostic.append(G('Yaw新PID（只读）', yaw_pid_fields))
     records=[create(OUTPUT/'底盘调参.pmpx','底盘与Yaw分批调参',tune,not args.no_backup,
                     root_expressions=[spec['expr'] for spec in CH_MOTION]),
              create(OUTPUT/'底盘排障.pmpx','底盘与Yaw排障',diagnostic,not args.no_backup),

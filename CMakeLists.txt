@@ -56,6 +56,7 @@ set(BSP_SOURCES
 )
 set(CONTROL_SOURCES
     2User_Driver/Arm/arm_control.cpp
+    2User_Driver/Arm/yaw_pid.cpp
     2User_Driver/Arm/arm_config.cpp
     2User_Driver/Arm/dm_id_config.cpp
     2User_Driver/Remote/operator_control.cpp

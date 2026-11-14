@@ -1,0 +1,22 @@
+{
+  "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\Debug\\dx_assignment5_freertos.elf",
+  "sha256": "6fcdccb89b8e59721624e146afeb26ad85e12c6cf81fc471be603a33f8301728",
+  "files": [
+    {
+      "file": "Yaw调参.pmpx",
+      "variables": 54
+    },
+    {
+      "file": "底盘排障.pmpx",
+      "variables": 224
+    },
+    {
+      "file": "底盘调参.pmpx",
+      "variables": 180
+    },
+    {
+      "file": "机械臂简易调参与排障.pmpx",
+      "variables": 59
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 #include "Arm/arm_control.h"
+#include "Arm/yaw_pid.h"
 #include "arm_task.h"
 #include "Remote/operator_control.h"
 #include "Arm/yaw_bench.h"
@@ -71,6 +72,34 @@ bool yaw_zero(const Frame *f, unsigned n) {
 }
 } // namespace
 int test_yaw() {
+    { // Yaw-only PID: dt-scaled integral, reverse integration, saturation.
+        YawPid pid{};
+        YawPidConfig c{};
+        c.ki = 1.0f;
+        c.max_i_error = 10.0f;
+        c.max_sigma = 100.0f;
+        c.max_output = 1000.0f;
+        YawPid_Init(pid, c);
+        YawPid_Calculate(pid, 1.0f, 0.0f, 0.004f, 0.0f, 1000.0f);
+        const float sigma_4ms = pid.sigma_error;
+        YawPid_Reset(pid);
+        YawPid_Calculate(pid, 1.0f, 0.0f, 0.008f, 0.0f, 1000.0f);
+        CHECK(std::fabs(pid.sigma_error - 2.0f * sigma_4ms) < 0.0001f);
+        pid.sigma_error = 5.0f;
+        YawPid_Calculate(pid, -1.0f, 0.0f, 0.004f, 0.0f, 1000.0f);
+        CHECK(pid.sigma_error < 5.0f);
+        YawPidConfig sat{};
+        sat.kp = 100.0f;
+        sat.ki = 10.0f;
+        sat.max_i_error = 100.0f;
+        sat.max_sigma = 100.0f;
+        sat.max_output = 50.0f;
+        YawPid_Init(pid, sat);
+        const float out = YawPid_Calculate(pid, 10.0f, 0.0f, 0.004f, 100.0f, 50.0f);
+        CHECK(out == 50.0f);
+        CHECK(pid.sigma_error == 0.0f);
+        CHECK(pid.d_lpf == 0.0f);
+    }
     { // Encoder speed uses wrapped angle/time, independently of bogus CAN rpm.
         Config c = config(); c.joint[Yaw].encoder_velocity = true;
         ArmControl a(c);
@@ -244,57 +273,30 @@ int test_yaw() {
         CHECK(a.status().joint[Yaw].enabled);
         CHECK(a.enable(kAllJoints, 60) == Result::FaultLatched);
     }
-    { // Voltage-mode Yaw static-friction feedforward follows the speed target sign.
+    { // Mode5: 300ms 0-to-full, symmetric reversal, immediate zero target stop.
         Config c = config();
-        c.joint[Yaw].velocity_kp = 0;
-        c.joint[Yaw].velocity_ki = 0;
-        c.joint[Yaw].max_effort = 5000;
-        c.joint[Yaw].position_kp = .1f;
+        c.joint[Yaw].velocity_kp = c.joint[Yaw].velocity_ki = 0;
         ArmControl a(c);
         Frame frames[kJointCount]{};
-        auto yaw_raw = [&](unsigned n) {
-            for (unsigned k = 0; k < n; ++k)
-                if (frames[k].id == 0x1ff)
-                    return int(int16_t((frames[k].data[0] << 8) | frames[k].data[1]));
-            return 0;
-        };
-        CHECK(feed(a, 0));
-        CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(feed(a, 0)); CHECK(a.capture_zero(1, 0) == Result::Ok);
         CHECK(a.enable(1, 0) == Result::Ok);
         a.set_yaw_friction_feedforward(500);
-        CHECK(a.set_yaw_test_speed(5, 0) == Result::Ok);
-        unsigned n = a.step(0, frames);
-        CHECK(a.status().joint[Yaw].effort == 500);
-        CHECK(a.yaw_friction_feedforward_applied() == 500);
-        CHECK(yaw_raw(n) == 500);
-        CHECK(a.set_yaw_test_speed(-5, 0) == Result::Ok);
-        n = a.step(4, frames);
-        CHECK(a.status().joint[Yaw].effort == -500);
-        CHECK(a.yaw_friction_feedforward_applied() == -500);
-        CHECK(yaw_raw(n) == -500);
-        CHECK(a.set_yaw_test_speed(0, 4) == Result::Ok);
-        CHECK(feed(a, 4, 1000, 0)); // Avoid the non-fixed-zero unwrap gap.
-        a.step(8, frames);
-        CHECK(a.status().joint[Yaw].effort == 0);
+        a.set_yaw_tuning_limits(false);
+        float previous = 0;
+        for (uint32_t t = 4; t <= 1000; t += 4) {
+            CHECK(feed(a, t));
+            CHECK(a.set_yaw_test_speed(t <= 400 ? 5 : -5, t) == Result::Ok);
+            a.step(t, frames);
+            const float ff = a.yaw_friction_feedforward_applied();
+            CHECK(std::fabs(ff - previous) <= 500 * .004f / .30f + .01f);
+            if (t == 300) CHECK(std::fabs(ff - 500) < .01f);
+            previous = ff;
+        }
+        CHECK(std::fabs(previous + 500) < .01f);
+        CHECK(feed(a, 1004));
+        CHECK(a.set_yaw_test_speed(0, 1004) == Result::Ok);
+        a.step(1004, frames);
         CHECK(a.yaw_friction_feedforward_applied() == 0);
-        // The target direction wins; actual direction is only a zero-target fallback.
-        CHECK(a.status().joint[Yaw].enabled);
-        CHECK(a.set_yaw_test_speed(5, 8) == Result::Ok);
-        CHECK(feed(a, 8, 1000, 1)); // +6 deg/s actual, +5 target.
-        a.step(12, frames);
-        CHECK(a.yaw_friction_feedforward_applied() == 500);
-        CHECK(a.set_yaw_test_speed(0, 12) == Result::Ok);
-        CHECK(feed(a, 12, 1000, 1)); // Hand motion with zero speed target.
-        a.step(16, frames);
-        CHECK(a.yaw_friction_feedforward_applied() == 0);
-        CHECK(a.set_yaw_test_speed(5, 16) == Result::Ok);
-        CHECK(feed(a, 16, 1000, -1)); // Actual direction opposes the target.
-        a.step(20, frames);
-        CHECK(a.yaw_friction_feedforward_applied() == 500);
-        CHECK(a.set_yaw_test_speed(-5, 20) == Result::Ok);
-        CHECK(feed(a, 20, 1000, 1)); // Axis still coasts +, target is now -.
-        a.step(24, frames);
-        CHECK(a.yaw_friction_feedforward_applied() == -500);
     }
     { // Position control: no feedforward for a hand disturbance, but keep it
       // during an intentional reference move, scaled by the reference speed.
@@ -373,7 +375,13 @@ int test_yaw() {
         CHECK(a.set_yaw_test_speed(-5, t) == Result::Ok);
         CHECK(feed(a, t + 4, 6352, 0));
         a.step(t + 4, frames);
-        CHECK(a.yaw_friction_feedforward_applied() == -500);
+        for (unsigned i = 0; i < 150; ++i) {
+            t += 4;
+            CHECK(feed(a, t + 4, 6352, 0));
+            CHECK(a.set_yaw_test_speed(-5, t + 4) == Result::Ok);
+            a.step(t + 4, frames);
+        }
+        CHECK(std::fabs(a.yaw_friction_feedforward_applied() + 500) < .01f);
         CHECK(a.status().joint[Yaw].effort < 0);
     }
     { // Live PID/limit edits keep the Yaw speed target and motion reference.

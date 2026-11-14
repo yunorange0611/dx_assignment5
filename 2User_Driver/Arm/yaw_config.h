@@ -21,9 +21,9 @@ inline constexpr JointConfig kYawConfig = {
     10,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
     30,     // max_accel_deg_s2：参考加速度上限
     25000.0f, // max_effort：电压原码上限；旧驱动满量程25000，手册可到30000
-    2.4f,     // position_kp：位置P
-    35.0f,   // velocity_kp：速度P，raw/(deg/s)
-    10.0f,    // velocity_ki：速度I，raw/deg
+    5.0f,     // position_kp：位置P
+    17.0f,   // velocity_kp：速度P，raw/(deg/s)
+    47.0f,    // velocity_ki：速度I，raw/deg
     0,
     0,
     0,
@@ -43,4 +43,5 @@ inline constexpr float kYawMaxTargetLeadDeg = 5.0f;
 // Position-loop friction assist: continuous zero crossing and 150ms 0-to-full ramp.
 inline constexpr float kYawPositionFfFullSpeedDegS = 3.0f;
 inline constexpr float kYawPositionFfRiseTimeS = 0.15f;
+inline constexpr float kYawSpeedFfRiseTimeS = 0.30f; // mode5: 0-to-full 300ms
 } // namespace engineer

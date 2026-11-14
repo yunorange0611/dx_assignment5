@@ -9,6 +9,11 @@ constexpr float kRadToDeg = 57.29577951308232f;
 // Below this speed target the Yaw friction feedforward is disabled, so a hold
 // command near zero does not buzz against static friction.
 constexpr float kYawFrictionDeadbandDegS = 0.5f;
+constexpr float kYawPidDerivativeTauS = 0.01f;
+// Project4 uses 5 rad/s; keep the reverse-integral behavior while limiting
+// windup in the much slower 4 ms loop. Units are the Yaw speed error in deg/s.
+constexpr float kYawVelocityIntegralBandDegS = 50.0f;
+constexpr float kYawVelocityIntegralOutputFraction = 0.8f;
 float clamp(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
@@ -61,6 +66,49 @@ ArmControl::ArmControl(const Config &c)
     yaw_motion_min_ = y.min_deg;
     yaw_motion_max_ = y.max_deg;
     yaw_motion_speed_ = y.max_speed_deg_s;
+    yaw_control_dt_s_ = c.control_period_ms ? float(c.control_period_ms) * 0.001f : 0.004f;
+    YawPidConfig pos{};
+    pos.kp = y.position_kp;
+    pos.max_output = y.max_speed_deg_s;
+    pos.d_tau = kYawPidDerivativeTauS;
+    YawPid_Init(yaw_position_pid_, pos);
+    YawPidConfig vel{};
+    vel.kp = y.velocity_kp;
+    vel.ki = y.velocity_ki;
+    vel.max_i_error = kYawVelocityIntegralBandDegS;
+    vel.max_sigma = vel.ki > 0
+                        ? kYawVelocityIntegralOutputFraction * y.max_effort / vel.ki
+                        : 0;
+    vel.max_output = y.max_effort;
+    vel.d_tau = kYawPidDerivativeTauS;
+    YawPid_Init(yaw_velocity_pid_, vel);
+}
+
+void ArmControl::reset_yaw_pid() {
+    YawPid_Reset(yaw_position_pid_);
+    YawPid_Reset(yaw_velocity_pid_);
+}
+
+void ArmControl::set_yaw_control_dt(float dt_s) {
+    if (finite(dt_s) && dt_s > 0.0001f && dt_s <= 0.02f)
+        yaw_control_dt_s_ = dt_s;
+}
+
+YawPidSnapshot ArmControl::yaw_pid_snapshot() const {
+    YawPidSnapshot s{};
+    s.dt_s = yaw_control_dt_s_;
+    s.position_p = yaw_position_pid_.kp * yaw_position_pid_.error;
+    s.position_i = yaw_position_pid_.ki * yaw_position_pid_.sigma_error;
+    s.position_d = yaw_position_pid_.kd * yaw_position_pid_.d_lpf;
+    s.position_sigma = yaw_position_pid_.sigma_error;
+    s.position_output = yaw_position_pid_.output;
+    s.velocity_p = yaw_velocity_pid_.kp * yaw_velocity_pid_.error;
+    s.velocity_i = yaw_velocity_pid_.ki * yaw_velocity_pid_.sigma_error;
+    s.velocity_d = yaw_velocity_pid_.kd * yaw_velocity_pid_.d_lpf;
+    s.velocity_sigma = yaw_velocity_pid_.sigma_error;
+    s.velocity_prelimit = yaw_velocity_pid_.output_prelimit;
+    s.velocity_output = yaw_velocity_pid_.output;
+    return s;
 }
 
 float ArmControl::drive_min(unsigned i) const {
@@ -400,6 +448,8 @@ void ArmControl::trip(uint32_t fault, unsigned i) {
     disable(); // 所选关节作为整体停机，禁止自动恢复
 }
 void ArmControl::disable() {
+    yaw_position_ff_ = 0;
+    yaw_speed_ff_ = 0;
     status_.enabled_mask = 0;
     for (unsigned i = 0; i < kJointCount; ++i) {
         auto &s = status_.joint[i];
@@ -415,6 +465,7 @@ void ArmControl::disable() {
     pitch_speed_ = 0;
     pitch_path_active_ = false;
     yaw_test_active_ = false;
+    reset_yaw_pid();
 }
 Result ArmControl::disable_joints(uint8_t mask) {
     if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
@@ -438,8 +489,11 @@ Result ArmControl::disable_joints(uint8_t mask) {
         pitch_path_active_ = false;
     }
     if (mask & (1u << Yaw)) {
+        yaw_position_ff_ = 0;
+        yaw_speed_ff_ = 0;
         yaw_test_active_ = false;
         yaw_test_speed_ = 0;
+        reset_yaw_pid();
     }
     return status_.last_result = Result::Ok;
 }
@@ -552,6 +606,10 @@ Result ArmControl::set_yaw_test_speed(float speed, uint32_t now) {
     const bool stopping = speed == 0 && yaw_test_speed_ != 0;
     if (reversing || stopping)
         runtime_[Yaw].integral = 0;
+    // Entering/leaving the speed test is a control-mode change: start the new
+    // Yaw PID pair from a clean state. Target changes inside a mode do not reset.
+    if (!yaw_test_active_)
+        reset_yaw_pid();
     // Speed-loop tuning explicitly takes ownership instead of startup homing.
     status_.joint[Yaw].homing = false;
     yaw_test_active_ = true;
@@ -567,6 +625,9 @@ void ArmControl::clear_yaw_test() {
         return;
     yaw_test_active_ = false;
     yaw_test_speed_ = 0;
+    yaw_position_ff_ = 0;
+    yaw_speed_ff_ = 0;
+    reset_yaw_pid();
     auto &s = status_.joint[Yaw];
     auto &r = runtime_[Yaw];
     s.target_deg = s.reference_deg = s.position_deg;
@@ -829,6 +890,8 @@ Result ArmControl::enable(uint8_t mask, uint32_t now, bool independent_yaw) {
         pitch_speed_ = 0;
         pitch_path_active_ = false;
     }
+    if (added & (1u << Yaw))
+        reset_yaw_pid();
     update_drive_references();
     return status_.last_result = Result::Ok;
 }
@@ -892,6 +955,7 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
     last_step_ms_ = now;
     have_step_ = true;
     const float dt = float(elapsed ? elapsed : 1) * 0.001f;
+    const float yaw_dt = yaw_control_dt_s_ > 0 ? yaw_control_dt_s_ : dt;
     refresh(now);
     // 先统一检查DM状态，任何故障都保证本轮全部输出归零。
     for (unsigned i = 0; i < kJointCount; ++i) {
@@ -971,55 +1035,98 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                            ((i != BigPitch && i != SmallPitch) || pitch_running);
         if (s.enabled && ready) {
             const float speed_limit = drive_speed_limit(i);
-            float speed_target =
-                clamp(r.reference_velocity +
-                          c.position_kp * (s.drive_reference_deg - s.drive_position_deg),
-                      -speed_limit, speed_limit);
-            if (i == Yaw) {
-                const float requested = yaw_test_active_ ? yaw_test_speed_ :
-                    clamp(c.position_kp * (s.target_deg - s.position_deg),
-                          -speed_limit, speed_limit);
-                speed_target = limit_yaw_speed(requested, dt);
-            }
-            s.velocity_target_deg_s = speed_target;
-            // 这里必须使用a2的驱动速度；不能把q肘速度送入第二DM的独立PI。
-            const float e = speed_target - s.drive_velocity_deg_s;
             const float limit = std::fmin(r.effort_limit, tuning_effort_limit_[i]);
-            const float next_i = clamp(r.integral + c.velocity_ki * e * dt, -limit, limit);
-            float feedforward = 0;
-            if (i == Yaw && c.motor == Motor::Gm6020Voltage) {
+            if (i == Yaw) {
+                float speed_target;
                 if (yaw_test_active_) {
-                    // Preserve the commissioned mode-5 speed-loop behavior.
-                    yaw_position_ff_ = 0;
-                    if (std::fabs(speed_target) > kYawFrictionDeadbandDegS)
-                        feedforward = (speed_target > 0 ? 1.0f : -1.0f) * yaw_friction_ff_raw_;
+                    speed_target = limit_yaw_speed(yaw_test_speed_, yaw_dt);
                 } else {
-                    const float requested_ff = yaw_friction_ff_raw_ *
-                        clamp(speed_target / kYawPositionFfFullSpeedDegS, -1.0f, 1.0f);
-                    const float max_delta = yaw_friction_ff_raw_ * dt / kYawPositionFfRiseTimeS;
-                    if (yaw_friction_ff_raw_ == 0)
-                        yaw_position_ff_ = 0;
-                    else
-                        yaw_position_ff_ += clamp(requested_ff - yaw_position_ff_, -max_delta, max_delta);
-                    // Ramp through zero on reversal; the brief old-sign tail is bounded.
-                    feedforward = yaw_position_ff_; // Continuous signed ramp, including reversal.
+                    // Position PID feeds the same speed PID used by mode 5.
+                    yaw_position_pid_.kp = c.position_kp;
+                    yaw_position_pid_.ki = 0;
+                    yaw_position_pid_.kd = 0;
+                    yaw_position_pid_.max_i_error = 0;
+                    yaw_position_pid_.max_sigma = 0;
+                    yaw_position_pid_.max_output = speed_limit;
+                    yaw_position_pid_.d_tau = kYawPidDerivativeTauS;
+                    const float position_command = YawPid_Calculate(
+                        yaw_position_pid_, s.target_deg, s.drive_position_deg, yaw_dt, 0,
+                        speed_limit);
+                    speed_target = limit_yaw_speed(position_command, yaw_dt);
                 }
-                yaw_friction_ff_applied_ = feedforward;
+                s.velocity_target_deg_s = speed_target;
+
+                float feedforward = 0;
+                if (c.motor == Motor::Gm6020Voltage) {
+                    if (yaw_test_active_) {
+                        yaw_position_ff_ = 0;
+                        const float requested_ff = std::fabs(speed_target) > kYawFrictionDeadbandDegS
+                            ? (speed_target > 0 ? yaw_friction_ff_raw_ : -yaw_friction_ff_raw_)
+                            : 0;
+                        const float max_delta = yaw_friction_ff_raw_ * yaw_dt / kYawSpeedFfRiseTimeS;
+                        if (requested_ff == 0)
+                            yaw_speed_ff_ = 0;
+                        else
+                            yaw_speed_ff_ += clamp(requested_ff - yaw_speed_ff_, -max_delta, max_delta);
+                        feedforward = yaw_speed_ff_;
+                    } else {
+                        yaw_speed_ff_ = 0;
+                        const float requested_ff = yaw_friction_ff_raw_ *
+                            clamp(speed_target / kYawPositionFfFullSpeedDegS, -1.0f, 1.0f);
+                        const float max_delta = yaw_friction_ff_raw_ * yaw_dt / kYawPositionFfRiseTimeS;
+                        if (yaw_friction_ff_raw_ == 0)
+                            yaw_position_ff_ = 0;
+                        else
+                            yaw_position_ff_ += clamp(requested_ff - yaw_position_ff_,
+                                                      -max_delta, max_delta);
+                        feedforward = yaw_position_ff_;
+                    }
+                    yaw_friction_ff_applied_ = feedforward;
+                }
+
+                yaw_velocity_pid_.kp = c.velocity_kp;
+                yaw_velocity_pid_.ki = c.velocity_ki;
+                yaw_velocity_pid_.kd = 0;
+                yaw_velocity_pid_.max_i_error = kYawVelocityIntegralBandDegS;
+                yaw_velocity_pid_.max_sigma =
+                    c.velocity_ki > 0
+                        ? kYawVelocityIntegralOutputFraction * limit / c.velocity_ki
+                        : 0;
+                yaw_velocity_pid_.max_output = limit;
+                yaw_velocity_pid_.d_tau = kYawPidDerivativeTauS;
+                float final = YawPid_Calculate(
+                    yaw_velocity_pid_, speed_target, s.drive_velocity_deg_s, yaw_dt,
+                    feedforward, limit);
+                if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
+                    (s.drive_position_deg >= drive_max(i) && final > 0))
+                    final = 0;
+                s.effort = final;
+            } else {
+                float speed_target =
+                    clamp(r.reference_velocity +
+                              c.position_kp * (s.drive_reference_deg - s.drive_position_deg),
+                          -speed_limit, speed_limit);
+                s.velocity_target_deg_s = speed_target;
+                // 这里必须使用a2的驱动速度；不能把q肘速度送入第二DM的独立PI。
+                const float e = speed_target - s.drive_velocity_deg_s;
+                const float next_i = clamp(r.integral + c.velocity_ki * e * dt, -limit, limit);
+                const float u = c.velocity_kp * e + next_i;
+                float final = clamp(u, -limit, limit);
+                if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
+                    (s.drive_position_deg >= drive_max(i) && final > 0))
+                    final = 0;
+                if ((u - final) * e <= 0)
+                    r.integral = next_i;
+                s.effort = final;
             }
-            const float u = c.velocity_kp * e + next_i + feedforward;
-            float final = clamp(u, -limit, limit);
-            if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
-                (s.drive_position_deg >= drive_max(i) && final > 0))
-                final = 0;
-            if ((u - final) * e <= 0)
-                r.integral = next_i;
-            s.effort = final;
         } else {
             s.effort = 0;
             r.integral = 0;
             s.velocity_target_deg_s = 0;
-            if (i == Yaw)
+            if (i == Yaw) {
                 yaw_position_ff_ = 0;
+                yaw_speed_ff_ = 0;
+            }
         }
 
         if (c.motor == Motor::Dm4310Mit) {

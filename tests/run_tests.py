@@ -32,6 +32,7 @@ cmd = ["arm-none-eabi-g++", "-std=c++17", "-O1", "-g", "-mcpu=cortex-m4", "-mthu
        "-ffunction-sections", "-fdata-sections", "-nostartfiles", "-Wl,--gc-sections",
        "-T", str(ROOT / "tests" / "test.ld"),
        str(ROOT / "tests" / "test_arm.cpp"), str(ROOT / "2User_Driver" / "Arm" / "arm_control.cpp"),
+       str(ROOT / "2User_Driver" / "Arm" / "yaw_pid.cpp"),
        str(ROOT / "2User_Driver" / "Arm" / "arm_config.cpp"),
        str(ROOT / "tests" / "test_can_tx.cpp"), str(ROOT / "1Bsp" / "CAN_bsp.cpp"),
        str(ROOT / "tests" / "test_operator.cpp"), str(ROOT / "tests" / "test_four_axis.cpp"),
@@ -79,7 +80,9 @@ with elf.open("rb") as stream:
     entry = obj["e_entry"]
 emu.reg_write(UC_ARM_REG_SP, 0x40f000)
 emu.hook_add(UC_HOOK_INTR, lambda uc, number, user: uc.emu_stop())
-emu.emu_start(entry | 1, 0, timeout=30_000_000, count=100_000_000)
+# The merged vehicle suite grew with the Yaw-only PID and feedback tests; keep
+# a bounded instruction budget that still catches non-terminating test firmware.
+emu.emu_start(entry | 1, 0, timeout=60_000_000, count=200_000_000)
 read = lambda name: struct.unpack("<I", emu.mem_read(symbols[name], 4))[0]
 checks, failed, done = read("test_checks"), read("test_failed_line"), read("test_done")
 if not done:

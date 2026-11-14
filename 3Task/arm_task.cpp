@@ -5,11 +5,15 @@
 #include "robot_control_internal.h"
 #include "robot_control.h"
 #include "task_ins.h"
+#include "bsp_dwt.h"
 #include <cstring>
 #include <optional>
 
 extern "C" {
 ArmStatus g_arm_status{};
+volatile uint32_t g_arm_stack_free_bytes = 0;
+volatile uint32_t g_stack_overflow_latched = 0;
+char g_stack_overflow_task[16]{};
 YawFeedbackDiag g_yaw_feedback_diag{};
 volatile uint32_t g_yaw_capture_command = 0;
 YawRawCapture g_yaw_raw_capture{};
@@ -234,6 +238,20 @@ void publish(const ArmControl &arm, uint32_t now) {
         d.encoder_velocity_deg_s = j.encoder_velocity_deg_s;
         d.velocity_window_ms = j.velocity_window_ms;
     }
+    const YawPidSnapshot yp = arm.yaw_pid_snapshot();
+    auto &yd = g_yaw_feedback_diag;
+    yd.yaw_pid_dt_s = yp.dt_s;
+    yd.yaw_pos_p_term = yp.position_p;
+    yd.yaw_pos_i_term = yp.position_i;
+    yd.yaw_pos_d_term = yp.position_d;
+    yd.yaw_pos_sigma = yp.position_sigma;
+    yd.yaw_pos_output = yp.position_output;
+    yd.yaw_spd_p_term = yp.velocity_p;
+    yd.yaw_spd_i_term = yp.velocity_i;
+    yd.yaw_spd_d_term = yp.velocity_d;
+    yd.yaw_spd_sigma = yp.velocity_sigma;
+    yd.yaw_spd_prelimit = yp.velocity_prelimit;
+    yd.yaw_spd_output = yp.velocity_output;
     taskENTER_CRITICAL();
     g_arm_status = next;
     taskEXIT_CRITICAL();
@@ -271,7 +289,7 @@ extern "C" void arm_control_task(void *argument) {
     feedback = osMessageQueueNew(64, sizeof(Received), nullptr);
     if (!commands || !feedback || osKernelGetTickFreq() != 1000)
         Error_Handler();
-    ArmControl arm(kArmConfig);
+    static ArmControl arm(kArmConfig); // Single owner; large history must not live on task stack.
     const unsigned initial_joint = (kArmConfig.joint_mask & (1u << Yaw)) ? Yaw : BigPitch;
     JointTuning initial_tuning{};
     if (arm.get_tuning(initial_joint, initial_tuning)) {
@@ -369,6 +387,16 @@ extern "C" void arm_control_task(void *argument) {
             // This cancels stale Yaw commands without changing arm hold targets.
             can_cancel_pending(owned_buses);
         now = HAL_GetTick();
+        static uint32_t last_yaw_cycles = 0;
+        static bool have_yaw_cycles = false;
+        const uint32_t yaw_cycles = BSP_DWT_Cycles();
+        const float yaw_dt_s = have_yaw_cycles
+            ? BSP_DWT_ElapsedSeconds(yaw_cycles, last_yaw_cycles)
+            : (kArmConfig.control_period_ms ? float(kArmConfig.control_period_ms) * 0.001f
+                                            : 0.004f);
+        last_yaw_cycles = yaw_cycles;
+        have_yaw_cycles = true;
+        arm.set_yaw_control_dt(yaw_dt_s);
         Frame frames[kJointCount]{};
         const unsigned count = arm.step(now, frames);
         if (previous_enabled && !arm.status().enabled_mask)
@@ -384,9 +412,28 @@ extern "C" void arm_control_task(void *argument) {
         }
         Robot_ReportArmState(arm.status());
         publish(arm, now);
+        // FreeRTOS returns the historical minimum free stack in words.
+        static uint32_t stack_check_ms = 0;
+        if (uint32_t(now - stack_check_ms) >= 250) {
+            g_arm_stack_free_bytes = uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t);
+            stack_check_ms = now;
+        }
         // 迟到后从当前tick重新排程，禁止连续补跑同一毫秒的控制环。
         const uint32_t current = osKernelGetTickCount();
         tick = int32_t(current - tick) > 0 ? current + period : tick + period;
         osDelayUntil(tick);
     }
+}
+
+// Stack corruption is terminal: do not try to run motor logic on a damaged stack.
+// External power isolation / drive-side command timeout remains the safety backstop.
+extern "C" void vApplicationStackOverflowHook(TaskHandle_t, char *name) {
+    g_stack_overflow_latched = 1;
+    for (unsigned i = 0; i < 15; ++i) {
+        g_stack_overflow_task[i] = name ? name[i] : 0;
+        if (!g_stack_overflow_task[i]) break;
+    }
+    g_stack_overflow_task[15] = 0;
+    taskDISABLE_INTERRUPTS();
+    for (;;) {}
 }
