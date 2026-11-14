@@ -702,12 +702,46 @@ int test_robot_control() {
         now += 4; fresh_inputs(now); CHECK(feed_all(safety_arm, now));
         Robot_Execute(safety_arm, now, false);
         CHECK(!g_imu_stop_latched);
-        now += 4; fresh_inputs(now); test_imu.valid = 0;
+        // A confirmed IMU is a runtime safety sensor: invalid samples latch and
+        // no explicit request may release it while the fault persists.
+        now += 4; fresh_inputs(now); test_imu.confirmed = 1; test_imu.valid = 0;
         g_robot_debug_command = ROBOT_DEBUG_REQUEST_CONTROL;
         Robot_Execute(safety_arm, now, false);
         CHECK((g_imu_stop_latched & PROTECT_IMU) && !safety_arm.status().enabled_mask);
         now += 4; fresh_inputs(now); Robot_RequestControl();
         CHECK(feed_all(safety_arm, now)); Robot_Execute(safety_arm, now, false);
+        CHECK(!g_imu_stop_latched);
+        // The same invalid snapshot is NOT a runtime sensor while the
+        // installation/threshold confirmation is still absent; otherwise the
+        // independent chassis could never be used before commissioning.
+        now += 4; fresh_inputs(now); test_imu.valid = 0;
+        Robot_RequestControl();
+        CHECK(feed_all(safety_arm, now)); Robot_Execute(safety_arm, now, false);
+        CHECK(!g_imu_stop_latched && g_imu_stop_current == 0);
+        // A deliberate remote off→on releases the latch only after the cause is
+        // gone; reacquisition while still tipped must not rearm.
+        now += 4; fresh_inputs(now); test_imu.tipped = 1;
+        Robot_Execute(safety_arm, now, false);
+        CHECK(g_imu_stop_latched & PROTECT_TIPPED);
+        g_dr16_status.valid = 0;
+        now += 4; test_hal_tick = now; Robot_Execute(safety_arm, now, false); // offline edge
+        now += 1200; test_hal_tick = now; Robot_Execute(safety_arm, now, false);
+        CHECK(g_imu_stop_latched & PROTECT_TIPPED);
+        g_dr16_status.valid = 1; g_dr16_status.consecutive_frames = 3;
+        g_dr16_status.received_ms = now;
+        test_imu.updated_ms = test_imu.received_ms = now;
+        now += 4; test_hal_tick = now; Robot_Execute(safety_arm, now, false);
+        CHECK(g_imu_stop_latched & PROTECT_TIPPED); // tipped is still current
+        test_imu.tipped = 0;
+        now += 4; test_hal_tick = now; Robot_Execute(safety_arm, now, false);
+        CHECK(g_imu_stop_latched & PROTECT_TIPPED); // no gesture, no release
+        g_dr16_status.valid = 0;
+        now += 4; test_hal_tick = now; Robot_Execute(safety_arm, now, false); // offline edge
+        now += 1200; test_hal_tick = now; Robot_Execute(safety_arm, now, false);
+        g_dr16_status.valid = 1; g_dr16_status.consecutive_frames = 3;
+        g_dr16_status.received_ms = now;
+        test_imu.updated_ms = test_imu.received_ms = now;
+        now += 4; test_hal_tick = now; Robot_Execute(safety_arm, now, false);
         CHECK(!g_imu_stop_latched);
         robot_tune_mode = 0;
     }

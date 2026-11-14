@@ -49,6 +49,15 @@ bool tune_exit_wait = false;
 uint8_t tune_added_mask = 0;
 uint32_t neutral_since_ms = 0;
 bool neutral_tracking = false;
+// The IMU is a runtime safety sensor only after both installation and threshold
+// confirmation are real. Before that the estimator necessarily reports
+// AttitudeUnconfirmed and valid=0, so gating on validity would latch forever.
+// The published snapshot can also request the gate once it reports confirmed.
+bool imu_safety_required(const InsStatus &imu) {
+    return imu.confirmed ||
+           (engineer::kAttitudeConfig.installation_confirmed &&
+            engineer::kAttitudeConfig.thresholds_confirmed);
+}
 void zero_tune_targets(float yaw) {
     taskENTER_CRITICAL();
     tune_current_ma = tune_speed_rpm = tune_yaw_speed_deg_s = 0;
@@ -166,8 +175,7 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     INS_GetStatus(&imu);
     // Until IMU is physically confirmed, limited bench modes do not claim
     // whole-vehicle readiness. Once confirmed, stale/invalid/tipped always stops.
-    const bool imu_required = kAttitudeConfig.installation_confirmed &&
-                              kAttitudeConfig.thresholds_confirmed;
+    const bool imu_required = imu_safety_required(imu);
     const bool imu_ok = !imu_required ||
         (imu.ready && imu.valid && !imu.tipped &&
          uint32_t(now - imu.updated_ms) <= 40 &&
@@ -492,18 +500,51 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     DR16Status rx{};
     DR16_GetStatus(&rx);
     now = HAL_GetTick();
+    // A deliberate remote power-cycle (link lost, then back) is the user's
+    // explicit rearm gesture. Boot acquisition is not: the link must have been
+    // established at least once. Require 1s offline so an RF dropout during
+    // normal driving is not mistaken for a deliberate off→on.
+    static bool remote_was_ok = false;
+    static bool remote_had_link = false;
+    static uint32_t remote_off_since_ms = 0;
+    constexpr uint32_t kRemoteRearmOffMs = 1000;
+    const bool remote_now_ok =
+        rx.valid && rx.consecutive_frames >= 3 &&
+        uint32_t(now - rx.received_ms) <= kOperatorConfig.remote_timeout_ms;
+    bool remote_rearm = false;
+    if (remote_now_ok) {
+        if (!remote_was_ok && remote_had_link && remote_off_since_ms != 0 &&
+            uint32_t(now - remote_off_since_ms) >= kRemoteRearmOffMs)
+            remote_rearm = true;
+        remote_was_ok = true;
+        remote_had_link = true;
+        remote_off_since_ms = 0;
+    } else {
+        if (remote_was_ok)
+            remote_off_since_ms = now;
+        remote_was_ok = false;
+    }
+    // Only releases the IMU latch; enabling still needs the normal explicit
+    // command/neutral sequence in the control path.
 #if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
     // Global IMU stop precedes ALL enables and tuning (including wheel modes).
+    // An unconfirmed IMU is not a valid runtime safety sensor: keep the
+    // independent/low-level path usable until installation and thresholds are
+    // actually confirmed. Once confirmed, every invalid/stale/faulted sample
+    // keeps the hard latch. Tipping always participates.
     InsStatus imu_stop{};
     INS_GetStatus(&imu_stop);
+    const bool imu_required = imu_safety_required(imu_stop);
     uint32_t imu_reason = 0;
-    if (!imu_stop.ready || !imu_stop.valid || imu_stop.faults ||
-        uint32_t(now - imu_stop.updated_ms) > 40 ||
-        uint32_t(now - imu_stop.received_ms) > kAttitudeConfig.max_sample_gap_ms)
+    if (imu_required &&
+        (!imu_stop.ready || !imu_stop.valid || imu_stop.faults ||
+         uint32_t(now - imu_stop.updated_ms) > 40 ||
+         uint32_t(now - imu_stop.received_ms) > kAttitudeConfig.max_sample_gap_ms))
         imu_reason |= PROTECT_IMU;
     if (imu_stop.tipped) imu_reason |= PROTECT_TIPPED;
     g_imu_stop_current = imu_reason;
-    const bool explicit_rearm = arm_request || debug_command == ROBOT_DEBUG_REQUEST_CONTROL;
+    const bool explicit_rearm =
+        arm_request || remote_rearm || debug_command == ROBOT_DEBUG_REQUEST_CONTROL;
     if (imu_reason) {
         if (!g_imu_stop_latched) {
             taskENTER_CRITICAL();
@@ -536,6 +577,8 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         observe_remote(next, {rx.frame, rx.received_ms, rx.valid != 0});
         next.ready = 1;
         next.updated_ms = now;
+        next.remote_online = remote_now_ok;
+        next.remote_age_ms = now - rx.received_ms;
         next.stop_epoch = stop_epoch;
         next.joint_mask = kArmConfig.joint_mask;
         next.emergency_stop = next.stop_chassis = next.longitudinal_brake = 1;

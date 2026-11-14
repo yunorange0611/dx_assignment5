@@ -400,8 +400,8 @@
 			<member name="name" type="string">g_chassis_status.enabled</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010afb</member>
-			<member name="last_addr" type="uint32">0x20010afb</member>
+			<member name="address" type="string">0x20010b03</member>
+			<member name="last_addr" type="uint32">0x20010b03</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.enabled；底盘出力使能；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2066,8 +2066,8 @@
 			<member name="name" type="string">g_chassis_status.measured_rpm[0]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010abc</member>
-			<member name="last_addr" type="uint32">0x20010abc</member>
+			<member name="address" type="string">0x20010ac4</member>
+			<member name="last_addr" type="uint32">0x20010ac4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.measured_rpm[0]；左ID1实测转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2115,8 +2115,8 @@
 			<member name="name" type="string">g_chassis_status.current_ma[0]</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010acc</member>
-			<member name="last_addr" type="uint32">0x20010acc</member>
+			<member name="address" type="string">0x20010ad4</member>
+			<member name="last_addr" type="uint32">0x20010ad4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.current_ma[0]；左ID1最终提交电流；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2164,8 +2164,8 @@
 			<member name="name" type="string">g_chassis_status.measured_rpm[1]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ac0</member>
-			<member name="last_addr" type="uint32">0x20010ac0</member>
+			<member name="address" type="string">0x20010ac8</member>
+			<member name="last_addr" type="uint32">0x20010ac8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.measured_rpm[1]；右ID2实测转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2213,8 +2213,8 @@
 			<member name="name" type="string">g_chassis_status.current_ma[1]</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ad0</member>
-			<member name="last_addr" type="uint32">0x20010ad0</member>
+			<member name="address" type="string">0x20010ad8</member>
+			<member name="last_addr" type="uint32">0x20010ad8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.current_ma[1]；右ID2最终提交电流；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2262,8 +2262,8 @@
 			<member name="name" type="string">g_chassis_status.target_rpm[0]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ac4</member>
-			<member name="last_addr" type="uint32">0x20010ac4</member>
+			<member name="address" type="string">0x20010acc</member>
+			<member name="last_addr" type="uint32">0x20010acc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.target_rpm[0]；左ID1目标转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2311,8 +2311,8 @@
 			<member name="name" type="string">g_chassis_status.target_rpm[1]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ac8</member>
-			<member name="last_addr" type="uint32">0x20010ac8</member>
+			<member name="address" type="string">0x20010ad0</member>
+			<member name="last_addr" type="uint32">0x20010ad0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.target_rpm[1]；右ID2目标转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />

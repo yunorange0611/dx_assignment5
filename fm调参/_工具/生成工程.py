@@ -101,7 +101,7 @@ TUNE_STATUS = variables('g_robot_tune_status', [('updated_ms','调参状态发�
 MODE = [V('robot_tune_mode','调参对象 0正常1左电流2右电流3左速度4右速度5Yaw速度6Yaw位置',write=True,low=0,high=6,
           note='只选对象；切档自动清旧目标。写非零电流/速度目标即开始本次测试，写0停止；位置档选档后保持在当前角。0档退出并保留已有机械臂保持。')]
 ENABLE = []  # No separate enable gate.
-COMMON = MODE + ENABLE + TUNE_STATUS + [V('g_imu_stop_current','整车IMU当前原因 512失效1024翻车'), V('g_imu_stop_latched','整车IMU关控锁存 命令4恢复'), V('uwTick', '系统毫秒计数', 'ms'), V('g_dr16_status.received_ms', '遥控最近接收时刻', 'ms'),
+COMMON = MODE + ENABLE + TUNE_STATUS + [V('g_imu_stop_current','整车IMU当前原因 512失效1024翻车'), V('g_imu_stop_latched','整车IMU关控锁存 命令4或遥控重上电恢复'), V('uwTick', '系统毫秒计数', 'ms'), V('g_dr16_status.received_ms', '遥控最近接收时刻', 'ms'),
           V('g_robot_status.updated_ms', '整车协调发布时间', 'ms'),
           V('g_robot_status.stop_epoch', '全局关控次数'),
           V('g_robot_status.remote_age_ms', '遥控接收年龄', 'ms'),
