@@ -7312,7 +7312,7 @@
 			<member name="address" type="string">0x20000034</member>
 			<member name="last_addr" type="uint32">0x20000034</member>
 			<member name="byte_size" type="sint32">4</member>
-			<member name="description" type="string">tune_yaw_remote_lead_deg；Yaw遥控目标最大领先；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
+			<member name="description" type="string">tune_yaw_remote_lead_deg；Yaw遥控目标最大领先 默认3；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
 			<member name="virtual" type="sint32">0</member>
 			<member name="virtual_default" type="string">0</member>

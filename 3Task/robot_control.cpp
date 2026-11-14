@@ -28,7 +28,7 @@ volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
     tune_yaw_velocity_ki = 10, tune_yaw_voltage_limit_raw = 25000,
     tune_yaw_friction_ff_raw = 5500, tune_yaw_half_range_deg = 0,
-    tune_yaw_remote_lead_deg = 15.0f;
+    tune_yaw_remote_lead_deg = 3.0f; // Remote target lead; runtime cap is also applied.
 RobotTuneStatus g_robot_tune_status{};
 }
 namespace {
@@ -725,7 +725,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         // increasing the target when it gets too far ahead of measured Yaw,
         // but allow a reverse stick to move the target back immediately.
         const float configured_lead =
-            std::isfinite(yaw_remote_lead) && yaw_remote_lead >= 2.0f ? yaw_remote_lead : 15.0f;
+            std::isfinite(yaw_remote_lead) && yaw_remote_lead >= 2.0f ? yaw_remote_lead : 3.0f;
         const float effective_lead =
             std::fmin(configured_lead, limits.max_target_lead_deg);
         if (delta > 0 && candidate - yaw_joint.position_deg > effective_lead)

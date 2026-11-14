@@ -96,7 +96,7 @@ class ArmOperator {
   private:
     Config arm_;
     YawRuntimeLimits yaw_limits_{};
-    float yaw_remote_lead_deg_ = 15.0f;
+    float yaw_remote_lead_deg_ = 3.0f;
     OperatorConfig config_;
     bool valid_ = false, active_ = false, waiting_ = true, neutral_tracking_ = false;
     bool have_step_ = false, safe_latched_ = true, permission_blocked_ = false;

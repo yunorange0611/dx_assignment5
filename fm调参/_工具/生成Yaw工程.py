@@ -105,7 +105,7 @@ def yaw_only():
     ])
 
     # 遥控跟随：目标由摇杆产生，不包含调参PID。
-    remote_vars = [V('tune_yaw_remote_lead_deg', 'Yaw遥控目标最大领先', 'deg', True, 2, 180)] + [
+    remote_vars = [V('tune_yaw_remote_lead_deg', 'Yaw遥控目标最大领先 默认3', 'deg', True, 2, 180)] + [
         V('g_robot_status.remote_axis[1]', '左横处理后输入'),
         V('g_robot_status.remote_online', '遥控在线'),
         V('g_robot_status.independent_armed', '独立底盘已解锁'),

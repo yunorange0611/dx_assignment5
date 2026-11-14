@@ -16,7 +16,7 @@ mode5/6 也已和整臂健康拆开：只要求 Yaw 自身在线、已校零、�
 
 ## 独立底盘左横直控
 
-当前 `kChassisIndependent=true` 时，0档解锁后（`independent_armed=1`、左拨杆上）左横直接积分 Yaw 目标：`yaw_direct_target_deg` 从当前角开始，按 `max_speed_deg_s` 增长，限制使用 `arm.yaw_limits()` 的线束软限位；未配置限位时退回 `kYawConfig` 的 -360..360°/10deg/s。该路径不使用正常行驶姿态包络，不能称为碰撞保护。遥控目标与实际角的领先量受 `tune_yaw_remote_lead_deg` 限制（默认15°，并与运行时max_target_lead取较小值）：达到后摇杆不再增加目标，等实际角追上；反向仍可立即减小目标。正常遥控的Yaw轴同样使用该限制。
+当前 `kChassisIndependent=true` 时，0档解锁后（`independent_armed=1`、左拨杆上）左横直接积分 Yaw 目标：`yaw_direct_target_deg` 从当前角开始，按 `max_speed_deg_s` 增长，限制使用 `arm.yaw_limits()` 的线束软限位；未配置限位时退回 `kYawConfig` 的 -360..360°/10deg/s。该路径不使用正常行驶姿态包络，不能称为碰撞保护。遥控目标与实际角的领先量受 `tune_yaw_remote_lead_deg` 限制（默认3°，并与运行时max_target_lead取较小值）：达到后摇杆不再增加目标，等实际角追上；反向仍可立即减小目标。正常遥控的Yaw轴同样使用该限制。
 
 Yaw 必须在线、已校零、已使能且无故障，直控才生效；固定零点轴首次开控会先回零（`homing=1`），回零期间左横不推进目标，回零完成后再接受直控。未使能时底盘照常驱动，Yaw 不动。只使能 Yaw 用 `g_robot_debug_command=5`，只失能用6，不影响其他关节。激活时目标从当前角开始；松开左横保持当前目标，不回中。关控、翻车、遥控失联、功率停车或离开上档会立即撤销直控，Yaw 按统一策略失能（通常不主动回中）；恢复要重新回中解锁并使能Yaw。
 
