@@ -50,7 +50,11 @@ typedef struct {
     float velocity_kp, velocity_ki, position_kp;
     // Yaw-only PID diagnostics; other axes keep the legacy PI implementation.
     float yaw_pid_dt_s;
+    float yaw_pos_kp, yaw_pos_ki, yaw_pos_kd, yaw_pos_error;
+    float yaw_pos_max_output, yaw_pos_max_i_error, yaw_pos_max_sigma;
     float yaw_pos_p_term, yaw_pos_i_term, yaw_pos_d_term, yaw_pos_sigma, yaw_pos_output;
+    float yaw_spd_kp, yaw_spd_ki, yaw_spd_kd, yaw_spd_error;
+    float yaw_spd_max_output, yaw_spd_max_i_error, yaw_spd_max_sigma;
     float yaw_spd_p_term, yaw_spd_i_term, yaw_spd_d_term, yaw_spd_sigma;
     float yaw_spd_prelimit, yaw_spd_output;
 } YawFeedbackDiag;

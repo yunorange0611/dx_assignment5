@@ -72,6 +72,22 @@ bool yaw_zero(const Frame *f, unsigned n) {
 }
 } // namespace
 int test_yaw() {
+    { // Explicit separation, reverse unwinding and final directional saturation.
+        YawPid pid;
+        YawPid_Init(pid, {0, 2, 0, 5, 100, 100, .01f});
+        YawPid_Calculate(pid, 10, 0, .1f, 0, 100);
+        CHECK(pid.sigma_error == 0);
+        YawPid_Calculate(pid, 2, 0, .1f, 0, 100);
+        CHECK(std::fabs(pid.sigma_error - .2f) < .0001f);
+        YawPid_Calculate(pid, -10, 0, .1f, 0, 100);
+        CHECK(pid.sigma_error == 0); // No reverse accumulation outside the band.
+        YawPid_Calculate(pid, 2, 0, .1f, 0, 100, false, true);
+        CHECK(pid.sigma_error == 0 && pid.output == 0);
+        CHECK(pid.output_prelimit == pid.ki * pid.sigma_error);
+        YawPid_Calculate(pid, -2, 0, .1f, 0, 100, false, true);
+        CHECK(pid.sigma_error < 0 && pid.output < 0);
+    }
+
     { // Yaw-only PID: dt-scaled integral, reverse integration, saturation.
         YawPid pid{};
         YawPidConfig c{};

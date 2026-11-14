@@ -241,11 +241,25 @@ void publish(const ArmControl &arm, uint32_t now) {
     const YawPidSnapshot yp = arm.yaw_pid_snapshot();
     auto &yd = g_yaw_feedback_diag;
     yd.yaw_pid_dt_s = yp.dt_s;
+    yd.yaw_pos_kp = yp.position_kp;
+    yd.yaw_pos_ki = yp.position_ki;
+    yd.yaw_pos_kd = yp.position_kd;
+    yd.yaw_pos_error = yp.position_error;
+    yd.yaw_pos_max_output = yp.position_max_output;
+    yd.yaw_pos_max_i_error = yp.position_max_i_error;
+    yd.yaw_pos_max_sigma = yp.position_max_sigma;
     yd.yaw_pos_p_term = yp.position_p;
     yd.yaw_pos_i_term = yp.position_i;
     yd.yaw_pos_d_term = yp.position_d;
     yd.yaw_pos_sigma = yp.position_sigma;
     yd.yaw_pos_output = yp.position_output;
+    yd.yaw_spd_kp = yp.velocity_kp;
+    yd.yaw_spd_ki = yp.velocity_ki;
+    yd.yaw_spd_kd = yp.velocity_kd;
+    yd.yaw_spd_error = yp.velocity_error;
+    yd.yaw_spd_max_output = yp.velocity_max_output;
+    yd.yaw_spd_max_i_error = yp.velocity_max_i_error;
+    yd.yaw_spd_max_sigma = yp.velocity_max_sigma;
     yd.yaw_spd_p_term = yp.velocity_p;
     yd.yaw_spd_i_term = yp.velocity_i;
     yd.yaw_spd_d_term = yp.velocity_d;
@@ -288,6 +302,8 @@ extern "C" void arm_control_task(void *argument) {
     commands = osMessageQueueNew(16, sizeof(Command), nullptr);
     feedback = osMessageQueueNew(64, sizeof(Received), nullptr);
     if (!commands || !feedback || osKernelGetTickFreq() != 1000)
+        Error_Handler();
+    if (!BSP_DWT_Init(HAL_RCC_GetHCLKFreq()))
         Error_Handler();
     static ArmControl arm(kArmConfig); // Single owner; large history must not live on task stack.
     const unsigned initial_joint = (kArmConfig.joint_mask & (1u << Yaw)) ? Yaw : BigPitch;

@@ -130,6 +130,8 @@ if(FREEMASTER_AUTO_REFRESH AND CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT DM_ID_C
     find_program(FREEMASTER_PYTHON NAMES python python3 REQUIRED)
     add_custom_target(freemaster_refresh ALL
         COMMAND "${FREEMASTER_PYTHON}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/fm调参/_工具/生成Yaw工程.py" --no-backup
+        COMMAND "${FREEMASTER_PYTHON}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/fm调参/_工具/刷新绑定.py"
                 --elf "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>"
         DEPENDS ${CMAKE_PROJECT_NAME}

@@ -28,6 +28,7 @@ void YawPid_Reset(YawPid &pid);
 // The integral is committed only when the final (feedforward-inclusive) output
 // is not saturated in the direction of the current error.
 float YawPid_Calculate(YawPid &pid, float target, float feedback, float dt,
-                       float feedforward, float final_output_limit);
+                       float feedforward, float final_output_limit, bool allow_positive = true,
+                       bool allow_negative = true);
 
 } // namespace engineer

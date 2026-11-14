@@ -116,8 +116,12 @@ struct JointTuning {
 // Read-only diagnostics for the Yaw-only PID pair.
 struct YawPidSnapshot {
     float dt_s = 0;
+    float position_kp = 0, position_ki = 0, position_kd = 0, position_error = 0;
+    float position_max_output = 0, position_max_i_error = 0, position_max_sigma = 0;
     float position_p = 0, position_i = 0, position_d = 0;
     float position_sigma = 0, position_output = 0;
+    float velocity_kp = 0, velocity_ki = 0, velocity_kd = 0, velocity_error = 0;
+    float velocity_max_output = 0, velocity_max_i_error = 0, velocity_max_sigma = 0;
     float velocity_p = 0, velocity_i = 0, velocity_d = 0;
     float velocity_sigma = 0, velocity_prelimit = 0, velocity_output = 0;
 };
@@ -196,6 +200,7 @@ class ArmControl {
     float yaw_motion_min_ = 0, yaw_motion_max_ = 0, yaw_motion_speed_ = 0, yaw_test_speed_ = 0;
     float yaw_friction_ff_raw_ = 0;
     float yaw_friction_ff_applied_ = 0;
+    bool yaw_dt_valid_ = true;
     float yaw_control_dt_s_ = 0.004f;
     YawPid yaw_position_pid_{}, yaw_velocity_pid_{};
     void reset_yaw_pid();

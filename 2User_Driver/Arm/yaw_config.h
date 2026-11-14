@@ -35,6 +35,9 @@ inline constexpr JointConfig kYawConfig = {
 };
 // These values are placeholders until the wire routing and stopping distance are
 // measured. Confirmation is separate from joint PID/protocol configuration.
+// Speed error threshold for integration; opposite error may unwind existing I.
+inline constexpr float kYawVelocityIntegralBandDegS = 50.0f;
+inline constexpr float kYawVelocityIntegralOutputFraction = 0.8f;
 inline constexpr bool kYawSafetyConfirmed = false;
 inline constexpr float kYawAbsoluteHalfRangeDeg = 360.0f; // 用户指定±一整圈；线束行程尚未实测验证
 inline constexpr float kYawBrakingMarginDeg = 2.0f;

@@ -12,8 +12,6 @@ constexpr float kYawFrictionDeadbandDegS = 0.5f;
 constexpr float kYawPidDerivativeTauS = 0.01f;
 // Project4 uses 5 rad/s; keep the reverse-integral behavior while limiting
 // windup in the much slower 4 ms loop. Units are the Yaw speed error in deg/s.
-constexpr float kYawVelocityIntegralBandDegS = 50.0f;
-constexpr float kYawVelocityIntegralOutputFraction = 0.8f;
 float clamp(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
@@ -90,18 +88,33 @@ void ArmControl::reset_yaw_pid() {
 }
 
 void ArmControl::set_yaw_control_dt(float dt_s) {
-    if (finite(dt_s) && dt_s > 0.0001f && dt_s <= 0.02f)
+    yaw_dt_valid_ = finite(dt_s) && dt_s > 0.0001f && dt_s <= 0.02f;
+    if (yaw_dt_valid_)
         yaw_control_dt_s_ = dt_s;
 }
 
 YawPidSnapshot ArmControl::yaw_pid_snapshot() const {
     YawPidSnapshot s{};
     s.dt_s = yaw_control_dt_s_;
+    s.position_kp = yaw_position_pid_.kp;
+    s.position_ki = yaw_position_pid_.ki;
+    s.position_kd = yaw_position_pid_.kd;
+    s.position_error = yaw_position_pid_.error;
+    s.position_max_output = yaw_position_pid_.max_output;
+    s.position_max_i_error = yaw_position_pid_.max_i_error;
+    s.position_max_sigma = yaw_position_pid_.max_sigma;
     s.position_p = yaw_position_pid_.kp * yaw_position_pid_.error;
     s.position_i = yaw_position_pid_.ki * yaw_position_pid_.sigma_error;
     s.position_d = yaw_position_pid_.kd * yaw_position_pid_.d_lpf;
     s.position_sigma = yaw_position_pid_.sigma_error;
     s.position_output = yaw_position_pid_.output;
+    s.velocity_kp = yaw_velocity_pid_.kp;
+    s.velocity_ki = yaw_velocity_pid_.ki;
+    s.velocity_kd = yaw_velocity_pid_.kd;
+    s.velocity_error = yaw_velocity_pid_.error;
+    s.velocity_max_output = yaw_velocity_pid_.max_output;
+    s.velocity_max_i_error = yaw_velocity_pid_.max_i_error;
+    s.velocity_max_sigma = yaw_velocity_pid_.max_sigma;
     s.velocity_p = yaw_velocity_pid_.kp * yaw_velocity_pid_.error;
     s.velocity_i = yaw_velocity_pid_.ki * yaw_velocity_pid_.sigma_error;
     s.velocity_d = yaw_velocity_pid_.kd * yaw_velocity_pid_.d_lpf;
@@ -724,6 +737,13 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
     }
     // Commit only after every field and both pitch drives have passed validation.
     auto &c = config_.joint[i];
+    if (i == Yaw) {
+        const float previous_i = yaw_velocity_pid_.ki * yaw_velocity_pid_.sigma_error;
+        const float max_i = kYawVelocityIntegralOutputFraction * tuning.effort_limit;
+        yaw_velocity_pid_.sigma_error = tuning.velocity_ki > 0
+            ? clamp(previous_i, -max_i, max_i) / tuning.velocity_ki : 0;
+        yaw_velocity_pid_.ki = tuning.velocity_ki;
+    }
     c.position_kp = tuning.position_kp;
     c.velocity_kp = tuning.velocity_kp;
     c.velocity_ki = tuning.velocity_ki;
@@ -956,6 +976,8 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
     have_step_ = true;
     const float dt = float(elapsed ? elapsed : 1) * 0.001f;
     const float yaw_dt = yaw_control_dt_s_ > 0 ? yaw_control_dt_s_ : dt;
+    if (!yaw_dt_valid_ && status_.joint[Yaw].enabled)
+        trip(TimingError, Yaw);
     refresh(now);
     // 先统一检查DM状态，任何故障都保证本轮全部输出归零。
     for (unsigned i = 0; i < kJointCount; ++i) {
@@ -1096,7 +1118,9 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                 yaw_velocity_pid_.d_tau = kYawPidDerivativeTauS;
                 float final = YawPid_Calculate(
                     yaw_velocity_pid_, speed_target, s.drive_velocity_deg_s, yaw_dt,
-                    feedforward, limit);
+                    feedforward, limit,
+                    s.drive_position_deg < drive_max(i),
+                    s.drive_position_deg > drive_min(i));
                 if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
                     (s.drive_position_deg >= drive_max(i) && final > 0))
                     final = 0;

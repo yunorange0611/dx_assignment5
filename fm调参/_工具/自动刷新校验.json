@@ -1,10 +1,10 @@
 {
   "elf": "C:\\Users\\admin\\Desktop\\电控所有文件\\机甲小师所有东西\\robosister-codex-initial-import\\build\\Debug\\dx_assignment5_freertos.elf",
-  "sha256": "6fcdccb89b8e59721624e146afeb26ad85e12c6cf81fc471be603a33f8301728",
+  "sha256": "a2f4b7707a2c8d94b0635756ae596aa5e1ce59458328ce1b021fa290010a3d65",
   "files": [
     {
       "file": "Yaw调参.pmpx",
-      "variables": 54
+      "variables": 93
     },
     {
       "file": "底盘排障.pmpx",

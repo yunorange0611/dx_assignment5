@@ -30,7 +30,8 @@ void YawPid_Reset(YawPid &pid) {
 }
 
 float YawPid_Calculate(YawPid &pid, float target, float feedback, float dt,
-                       float feedforward, float final_output_limit) {
+                       float feedforward, float final_output_limit, bool allow_positive,
+                       bool allow_negative) {
     if (!finite(target) || !finite(feedback) || !finite(dt) || dt <= 0 ||
         !finite(feedforward) || !finite(final_output_limit) || final_output_limit < 0)
         return pid.output;
@@ -53,24 +54,35 @@ float YawPid_Calculate(YawPid &pid, float target, float feedback, float dt,
     float new_sigma = pid.sigma_error;
     // Integral separation: stop integrating far from the target, but always
     // allow a reverse error to unwind the existing integral.
-    if (pid.max_i_error <= 0 || std::fabs(pid.error) < pid.max_i_error ||
-        pid.error * pid.sigma_error < 0)
+    const bool unwinding = pid.error * pid.sigma_error < 0;
+    if (std::fabs(pid.error) < pid.max_i_error || unwinding) {
         new_sigma += pid.error * dt;
+        // Outside the separation band, unwind only as far as zero.
+        if (unwinding && std::fabs(pid.error) >= pid.max_i_error &&
+            new_sigma * pid.sigma_error < 0)
+            new_sigma = 0;
+    }
     if (pid.max_sigma > 0)
         new_sigma = clampf(new_sigma, -pid.max_sigma, pid.max_sigma);
     else
         new_sigma = 0;
 
     const float p_out = pid.kp * pid.error;
-    const float i_out = pid.ki * new_sigma;
+    float i_out = pid.ki * new_sigma;
     const float d_out = pid.kd * pid.d_lpf;
     float total = p_out + i_out + d_out + feedforward;
-    float final = clampf(total, -final_output_limit, final_output_limit);
+    const float lo = allow_negative ? -final_output_limit : 0;
+    const float hi = allow_positive ? final_output_limit : 0;
+    float final = clampf(total, lo, hi);
 
     // Conditional integration: do not accumulate while the final command is
     // saturated in the same direction as the error.
-    if (total != final && pid.error * (total - final) > 0)
+    if (total != final && pid.error * (total - final) > 0 && !unwinding) {
         new_sigma = pid.sigma_error;
+        i_out = pid.ki * new_sigma;
+        total = p_out + i_out + d_out + feedforward;
+        final = clampf(total, lo, hi);
+    }
 
     pid.sigma_error = new_sigma;
     pid.last_error = pid.error;
