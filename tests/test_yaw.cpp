@@ -141,6 +141,28 @@ float Project4Reference(YawPid *pid, float target, float feedback, float dt)
 }
 } // namespace
 int test_yaw() {
+    { // Low-speed position request still receives full fixed friction compensation.
+        Config c = config(); c.joint[Yaw].position_kp = .01f;
+        ArmControl a(c); Frame frames[kJointCount]{};
+        CHECK(feed(a, 0)); CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        a.set_yaw_tuning_limits(false);
+        a.set_yaw_friction_feedforward(500);
+        float q[kJointCount]{}; q[Yaw] = 1;
+        for (unsigned t = 4; t <= 200; t += 4) {
+            CHECK(feed(a, t)); CHECK(a.set_targets(1, q, t) == Result::Ok);
+            a.step(t, frames);
+        }
+        CHECK(std::fabs(a.yaw_friction_feedforward_applied() - 500) < .01f);
+        CHECK(a.status().joint[Yaw].velocity_target_deg_s < .1f);
+        q[Yaw] = .05f;
+        for (unsigned t = 204; t <= 400; t += 4) {
+            CHECK(feed(a, t)); CHECK(a.set_targets(1, q, t) == Result::Ok);
+            a.step(t, frames);
+        }
+        CHECK(std::fabs(a.yaw_friction_feedforward_applied()) < .01f);
+    }
+
     { // Exact project4 numerical equivalence over dt, sign, separation and saturation.
         YawPid actual, reference;
         YawPidConfig config{17, 47, .2f, 5, 3, 100, .01f};

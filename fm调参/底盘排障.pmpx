@@ -8,8 +8,8 @@
 			<member name="name" type="string">robot_tune_mode</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001078c</member>
-			<member name="last_addr" type="uint32">0x2001078c</member>
+			<member name="address" type="string">0x20010794</member>
+			<member name="last_addr" type="uint32">0x20010794</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">robot_tune_mode；调参对象 0正常1左电流2右电流3左速度4右速度5Yaw速度6Yaw位置；只选对象；切档自动清旧目标。写非零电流/速度目标即开始本次测试，写0停止；位置档选档后保持在当前角。0档退出并保留已有机械臂保持。</member>
 			<member name="comment" type="string" />
@@ -106,8 +106,8 @@
 			<member name="name" type="string">g_robot_status.updated_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010728</member>
-			<member name="last_addr" type="uint32">0x20010728</member>
+			<member name="address" type="string">0x20010730</member>
+			<member name="last_addr" type="uint32">0x20010730</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.updated_ms；整车协调发布时间；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -155,8 +155,8 @@
 			<member name="name" type="string">g_robot_status.mode</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010711</member>
-			<member name="last_addr" type="uint32">0x20010711</member>
+			<member name="address" type="string">0x20010719</member>
+			<member name="last_addr" type="uint32">0x20010719</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.mode；模式 0安全1行驶2夹取3待机；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -204,8 +204,8 @@
 			<member name="name" type="string">g_robot_status.active</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010713</member>
-			<member name="last_addr" type="uint32">0x20010713</member>
+			<member name="address" type="string">0x2001071b</member>
+			<member name="last_addr" type="uint32">0x2001071b</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.active；机械臂协调开控；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -253,8 +253,8 @@
 			<member name="name" type="string">g_robot_status.protection_current_reasons</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010738</member>
-			<member name="last_addr" type="uint32">0x20010738</member>
+			<member name="address" type="string">0x20010740</member>
+			<member name="last_addr" type="uint32">0x20010740</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.protection_current_reasons；当前保护原因位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -302,8 +302,8 @@
 			<member name="name" type="string">g_robot_status.protection_latched_reasons</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001073c</member>
-			<member name="last_addr" type="uint32">0x2001073c</member>
+			<member name="address" type="string">0x20010744</member>
+			<member name="last_addr" type="uint32">0x20010744</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.protection_latched_reasons；历史锁存原因位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -400,8 +400,8 @@
 			<member name="name" type="string">g_chassis_status.enabled</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010afb</member>
-			<member name="last_addr" type="uint32">0x20010afb</member>
+			<member name="address" type="string">0x20010b03</member>
+			<member name="last_addr" type="uint32">0x20010b03</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.enabled；底盘出力使能；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -449,8 +449,8 @@
 			<member name="name" type="string">g_chassis_status.faults</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a94</member>
-			<member name="last_addr" type="uint32">0x20010a94</member>
+			<member name="address" type="string">0x20010a9c</member>
+			<member name="last_addr" type="uint32">0x20010a9c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.faults；底盘故障位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -498,8 +498,8 @@
 			<member name="name" type="string">g_ins_status.faults</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b68</member>
-			<member name="last_addr" type="uint32">0x20010b68</member>
+			<member name="address" type="string">0x20010b70</member>
+			<member name="last_addr" type="uint32">0x20010b70</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_ins_status.faults；IMU故障位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -547,8 +547,8 @@
 			<member name="name" type="string">g_vehicle_health.reasons</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bcc</member>
-			<member name="last_addr" type="uint32">0x20010bcc</member>
+			<member name="address" type="string">0x20010bd4</member>
+			<member name="last_addr" type="uint32">0x20010bd4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_vehicle_health.reasons；整车不放行原因位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -596,8 +596,8 @@
 			<member name="name" type="string">g_robot_tune_status.updated_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107ac</member>
-			<member name="last_addr" type="uint32">0x200107ac</member>
+			<member name="address" type="string">0x200107b4</member>
+			<member name="last_addr" type="uint32">0x200107b4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_tune_status.updated_ms；调参状态发布时间；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -645,8 +645,8 @@
 			<member name="name" type="string">g_robot_tune_status.reason</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107b8</member>
-			<member name="last_addr" type="uint32">0x200107b8</member>
+			<member name="address" type="string">0x200107c0</member>
+			<member name="last_addr" type="uint32">0x200107c0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_tune_status.reason；调参原因 0正常1就绪2未就绪3关控4非法5电流超时6保留7目标为0/未开始；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -694,8 +694,8 @@
 			<member name="name" type="string">g_robot_tune_status.ready</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107bc</member>
-			<member name="last_addr" type="uint32">0x200107bc</member>
+			<member name="address" type="string">0x200107c4</member>
+			<member name="last_addr" type="uint32">0x200107c4</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_tune_status.ready；调参已就绪；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -743,8 +743,8 @@
 			<member name="name" type="string">g_robot_tune_status.blocked</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107bd</member>
-			<member name="last_addr" type="uint32">0x200107bd</member>
+			<member name="address" type="string">0x200107c5</member>
+			<member name="last_addr" type="uint32">0x200107c5</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_tune_status.blocked；调参锁禁；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -792,8 +792,8 @@
 			<member name="name" type="string">g_robot_tune_status.held_mask</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107be</member>
-			<member name="last_addr" type="uint32">0x200107be</member>
+			<member name="address" type="string">0x200107c6</member>
+			<member name="last_addr" type="uint32">0x200107c6</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_tune_status.held_mask；保留保持的关节掩码；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -841,8 +841,8 @@
 			<member name="name" type="string">g_chassis_status.updated_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a90</member>
-			<member name="last_addr" type="uint32">0x20010a90</member>
+			<member name="address" type="string">0x20010a98</member>
+			<member name="last_addr" type="uint32">0x20010a98</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.updated_ms；底盘发布时间；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -890,8 +890,8 @@
 			<member name="name" type="string">g_chassis_status.ready</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010af8</member>
-			<member name="last_addr" type="uint32">0x20010af8</member>
+			<member name="address" type="string">0x20010b00</member>
+			<member name="last_addr" type="uint32">0x20010b00</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.ready；底盘任务就绪；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -939,8 +939,8 @@
 			<member name="name" type="string">g_chassis_status.configuration_valid</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010af9</member>
-			<member name="last_addr" type="uint32">0x20010af9</member>
+			<member name="address" type="string">0x20010b01</member>
+			<member name="last_addr" type="uint32">0x20010b01</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.configuration_valid；底盘配置合法；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -988,8 +988,8 @@
 			<member name="name" type="string">g_chassis_status.hardware_confirmed</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010afa</member>
-			<member name="last_addr" type="uint32">0x20010afa</member>
+			<member name="address" type="string">0x20010b02</member>
+			<member name="last_addr" type="uint32">0x20010b02</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.hardware_confirmed；底盘实测确认；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1037,8 +1037,8 @@
 			<member name="name" type="string">g_chassis_status.tune_mode</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b06</member>
-			<member name="last_addr" type="uint32">0x20010b06</member>
+			<member name="address" type="string">0x20010b0e</member>
+			<member name="last_addr" type="uint32">0x20010b0e</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.tune_mode；底盘实际调参档；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1086,8 +1086,8 @@
 			<member name="name" type="string">g_chassis_status.tune_blocked</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b07</member>
-			<member name="last_addr" type="uint32">0x20010b07</member>
+			<member name="address" type="string">0x20010b0f</member>
+			<member name="last_addr" type="uint32">0x20010b0f</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.tune_blocked；底盘调参锁禁；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1135,8 +1135,8 @@
 			<member name="name" type="string">g_chassis_status.tune_result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b0c</member>
-			<member name="last_addr" type="uint32">0x20010b0c</member>
+			<member name="address" type="string">0x20010b14</member>
+			<member name="last_addr" type="uint32">0x20010b14</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.tune_result；底盘参数处理结果；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1331,8 +1331,8 @@
 			<member name="name" type="string">g_ins_status.updated_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b5c</member>
-			<member name="last_addr" type="uint32">0x20010b5c</member>
+			<member name="address" type="string">0x20010b64</member>
+			<member name="last_addr" type="uint32">0x20010b64</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_ins_status.updated_ms；IMU发布时间；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1380,8 +1380,8 @@
 			<member name="name" type="string">g_ins_status.ready</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bb8</member>
-			<member name="last_addr" type="uint32">0x20010bb8</member>
+			<member name="address" type="string">0x20010bc0</member>
+			<member name="last_addr" type="uint32">0x20010bc0</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_ins_status.ready；IMU任务就绪；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1429,8 +1429,8 @@
 			<member name="name" type="string">g_ins_status.confirmed</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bba</member>
-			<member name="last_addr" type="uint32">0x20010bba</member>
+			<member name="address" type="string">0x20010bc2</member>
+			<member name="last_addr" type="uint32">0x20010bc2</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_ins_status.confirmed；IMU安装与阈值已确认；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1478,8 +1478,8 @@
 			<member name="name" type="string">g_ins_status.calibrated</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bbb</member>
-			<member name="last_addr" type="uint32">0x20010bbb</member>
+			<member name="address" type="string">0x20010bc3</member>
+			<member name="last_addr" type="uint32">0x20010bc3</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_ins_status.calibrated；IMU偏置校准完成；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1527,8 +1527,8 @@
 			<member name="name" type="string">g_ins_status.valid</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bbc</member>
-			<member name="last_addr" type="uint32">0x20010bbc</member>
+			<member name="address" type="string">0x20010bc4</member>
+			<member name="last_addr" type="uint32">0x20010bc4</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_ins_status.valid；IMU有效；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2752,8 +2752,8 @@
 			<member name="name" type="string">g_robot_status.remote_online</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010715</member>
-			<member name="last_addr" type="uint32">0x20010715</member>
+			<member name="address" type="string">0x2001071d</member>
+			<member name="last_addr" type="uint32">0x2001071d</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.remote_online；遥控在线；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2801,8 +2801,8 @@
 			<member name="name" type="string">g_robot_status.remote_age_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010730</member>
-			<member name="last_addr" type="uint32">0x20010730</member>
+			<member name="address" type="string">0x20010738</member>
+			<member name="last_addr" type="uint32">0x20010738</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_age_ms；遥控接收年龄；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2850,8 +2850,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001076c</member>
-			<member name="last_addr" type="uint32">0x2001076c</member>
+			<member name="address" type="string">0x20010774</member>
+			<member name="last_addr" type="uint32">0x20010774</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[0]；左竖Y 处理后；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2899,8 +2899,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010770</member>
-			<member name="last_addr" type="uint32">0x20010770</member>
+			<member name="address" type="string">0x20010778</member>
+			<member name="last_addr" type="uint32">0x20010778</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[1]；左横X 处理后；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2948,8 +2948,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[2]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010774</member>
-			<member name="last_addr" type="uint32">0x20010774</member>
+			<member name="address" type="string">0x2001077c</member>
+			<member name="last_addr" type="uint32">0x2001077c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[2]；右竖Y 处理后；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2997,8 +2997,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[3]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010778</member>
-			<member name="last_addr" type="uint32">0x20010778</member>
+			<member name="address" type="string">0x20010780</member>
+			<member name="last_addr" type="uint32">0x20010780</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[3]；右横X 处理后；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3046,8 +3046,8 @@
 			<member name="name" type="string">g_robot_status.remote_switch[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001077c</member>
-			<member name="last_addr" type="uint32">0x2001077c</member>
+			<member name="address" type="string">0x20010784</member>
+			<member name="last_addr" type="uint32">0x20010784</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.remote_switch[0]；处理后左拨杆；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3095,8 +3095,8 @@
 			<member name="name" type="string">g_robot_status.remote_switch[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001077d</member>
-			<member name="last_addr" type="uint32">0x2001077d</member>
+			<member name="address" type="string">0x20010785</member>
+			<member name="last_addr" type="uint32">0x20010785</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.remote_switch[1]；处理后右拨杆；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4663,8 +4663,8 @@
 			<member name="name" type="string">g_chassis_status.tune_current_limit_ma</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b10</member>
-			<member name="last_addr" type="uint32">0x20010b10</member>
+			<member name="address" type="string">0x20010b18</member>
+			<member name="last_addr" type="uint32">0x20010b18</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.tune_current_limit_ma；底盘测试生效限流；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5055,8 +5055,8 @@
 			<member name="name" type="string">g_chassis_status.feedback_ms[0]</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010aa0</member>
-			<member name="last_addr" type="uint32">0x20010aa0</member>
+			<member name="address" type="string">0x20010aa8</member>
+			<member name="last_addr" type="uint32">0x20010aa8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.feedback_ms[0]；左ID1最近反馈时刻；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5104,8 +5104,8 @@
 			<member name="name" type="string">g_chassis_status.measured_rpm[0]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010abc</member>
-			<member name="last_addr" type="uint32">0x20010abc</member>
+			<member name="address" type="string">0x20010ac4</member>
+			<member name="last_addr" type="uint32">0x20010ac4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.measured_rpm[0]；左ID1实测转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5153,8 +5153,8 @@
 			<member name="name" type="string">g_chassis_status.current_ma[0]</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010acc</member>
-			<member name="last_addr" type="uint32">0x20010acc</member>
+			<member name="address" type="string">0x20010ad4</member>
+			<member name="last_addr" type="uint32">0x20010ad4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.current_ma[0]；左ID1最终提交电流；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5202,8 +5202,8 @@
 			<member name="name" type="string">g_chassis_status.temperature_c[0]</member>
 			<member name="unit" type="string">℃</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ad4</member>
-			<member name="last_addr" type="uint32">0x20010ad4</member>
+			<member name="address" type="string">0x20010adc</member>
+			<member name="last_addr" type="uint32">0x20010adc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.temperature_c[0]；左ID1电机温度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5251,8 +5251,8 @@
 			<member name="name" type="string">g_chassis_status.feedback_ms[1]</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010aa4</member>
-			<member name="last_addr" type="uint32">0x20010aa4</member>
+			<member name="address" type="string">0x20010aac</member>
+			<member name="last_addr" type="uint32">0x20010aac</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.feedback_ms[1]；右ID2最近反馈时刻；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5300,8 +5300,8 @@
 			<member name="name" type="string">g_chassis_status.measured_rpm[1]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ac0</member>
-			<member name="last_addr" type="uint32">0x20010ac0</member>
+			<member name="address" type="string">0x20010ac8</member>
+			<member name="last_addr" type="uint32">0x20010ac8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.measured_rpm[1]；右ID2实测转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5349,8 +5349,8 @@
 			<member name="name" type="string">g_chassis_status.current_ma[1]</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ad0</member>
-			<member name="last_addr" type="uint32">0x20010ad0</member>
+			<member name="address" type="string">0x20010ad8</member>
+			<member name="last_addr" type="uint32">0x20010ad8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.current_ma[1]；右ID2最终提交电流；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5398,8 +5398,8 @@
 			<member name="name" type="string">g_chassis_status.temperature_c[1]</member>
 			<member name="unit" type="string">℃</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ad8</member>
-			<member name="last_addr" type="uint32">0x20010ad8</member>
+			<member name="address" type="string">0x20010ae0</member>
+			<member name="last_addr" type="uint32">0x20010ae0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.temperature_c[1]；右ID2电机温度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5496,8 +5496,8 @@
 			<member name="name" type="string">g_chassis_status.rx_dropped</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a98</member>
-			<member name="last_addr" type="uint32">0x20010a98</member>
+			<member name="address" type="string">0x20010aa0</member>
+			<member name="last_addr" type="uint32">0x20010aa0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.rx_dropped；CAN2接收丢帧累计；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5545,8 +5545,8 @@
 			<member name="name" type="string">g_chassis_status.v_m_s</member>
 			<member name="unit" type="string">m/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010adc</member>
-			<member name="last_addr" type="uint32">0x20010adc</member>
+			<member name="address" type="string">0x20010ae4</member>
+			<member name="last_addr" type="uint32">0x20010ae4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.v_m_s；轮速估计纵向速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5594,8 +5594,8 @@
 			<member name="name" type="string">g_chassis_status.omega_rad_s</member>
 			<member name="unit" type="string">rad/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ae0</member>
-			<member name="last_addr" type="uint32">0x20010ae0</member>
+			<member name="address" type="string">0x20010ae8</member>
+			<member name="last_addr" type="uint32">0x20010ae8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.omega_rad_s；轮速估计转向速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5643,8 +5643,8 @@
 			<member name="name" type="string">g_chassis_status.wheels_stationary</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010afc</member>
-			<member name="last_addr" type="uint32">0x20010afc</member>
+			<member name="address" type="string">0x20010b04</member>
+			<member name="last_addr" type="uint32">0x20010b04</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.wheels_stationary；驱动轮静止确认；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5692,8 +5692,8 @@
 			<member name="name" type="string">g_chassis_status.target_rpm[0]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ac4</member>
-			<member name="last_addr" type="uint32">0x20010ac4</member>
+			<member name="address" type="string">0x20010acc</member>
+			<member name="last_addr" type="uint32">0x20010acc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.target_rpm[0]；左ID1目标转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5741,8 +5741,8 @@
 			<member name="name" type="string">g_chassis_status.target_rpm[1]</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ac8</member>
-			<member name="last_addr" type="uint32">0x20010ac8</member>
+			<member name="address" type="string">0x20010ad0</member>
+			<member name="last_addr" type="uint32">0x20010ad0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.target_rpm[1]；右ID2目标转子速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5790,8 +5790,8 @@
 			<member name="name" type="string">g_chassis_status.power_frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ab4</member>
-			<member name="last_addr" type="uint32">0x20010ab4</member>
+			<member name="address" type="string">0x20010abc</member>
+			<member name="last_addr" type="uint32">0x20010abc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.power_frames；功率帧累计；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5839,8 +5839,8 @@
 			<member name="name" type="string">g_chassis_status.power_received_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ab0</member>
-			<member name="last_addr" type="uint32">0x20010ab0</member>
+			<member name="address" type="string">0x20010ab8</member>
+			<member name="last_addr" type="uint32">0x20010ab8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.power_received_ms；功率最近接收时刻；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5888,8 +5888,8 @@
 			<member name="name" type="string">g_chassis_status.power_w</member>
 			<member name="unit" type="string">W</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ae4</member>
-			<member name="last_addr" type="uint32">0x20010ae4</member>
+			<member name="address" type="string">0x20010aec</member>
+			<member name="last_addr" type="uint32">0x20010aec</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.power_w；功率计反馈；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5937,8 +5937,8 @@
 			<member name="name" type="string">g_chassis_status.energy_j</member>
 			<member name="unit" type="string">J</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ae8</member>
-			<member name="last_addr" type="uint32">0x20010ae8</member>
+			<member name="address" type="string">0x20010af0</member>
+			<member name="last_addr" type="uint32">0x20010af0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.energy_j；缓冲能量；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5986,8 +5986,8 @@
 			<member name="name" type="string">g_chassis_status.min_energy_j</member>
 			<member name="unit" type="string">J</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010aec</member>
-			<member name="last_addr" type="uint32">0x20010aec</member>
+			<member name="address" type="string">0x20010af4</member>
+			<member name="last_addr" type="uint32">0x20010af4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.min_energy_j；本次最低缓冲能量；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6035,8 +6035,8 @@
 			<member name="name" type="string">g_chassis_status.power_over_50_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010ab8</member>
-			<member name="last_addr" type="uint32">0x20010ab8</member>
+			<member name="address" type="string">0x20010ac0</member>
+			<member name="last_addr" type="uint32">0x20010ac0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.power_over_50_ms；原始功率超50W累计时间；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6084,8 +6084,8 @@
 			<member name="name" type="string">g_chassis_status.power_over_latched</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b05</member>
-			<member name="last_addr" type="uint32">0x20010b05</member>
+			<member name="address" type="string">0x20010b0d</member>
+			<member name="last_addr" type="uint32">0x20010b0d</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_over_latched；曾超50W锁存；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6133,8 +6133,8 @@
 			<member name="name" type="string">g_chassis_status.power_filtered_w</member>
 			<member name="unit" type="string">W</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010af4</member>
-			<member name="last_addr" type="uint32">0x20010af4</member>
+			<member name="address" type="string">0x20010afc</member>
+			<member name="last_addr" type="uint32">0x20010afc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.power_filtered_w；滤波后功率；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6182,8 +6182,8 @@
 			<member name="name" type="string">g_chassis_status.power_speed_scale</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010af0</member>
-			<member name="last_addr" type="uint32">0x20010af0</member>
+			<member name="address" type="string">0x20010af8</member>
+			<member name="last_addr" type="uint32">0x20010af8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_status.power_speed_scale；功率/能量限速比例；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6231,8 +6231,8 @@
 			<member name="name" type="string">g_chassis_status.power_configuration_valid</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010afe</member>
-			<member name="last_addr" type="uint32">0x20010afe</member>
+			<member name="address" type="string">0x20010b06</member>
+			<member name="last_addr" type="uint32">0x20010b06</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_configuration_valid；功率配置合法；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6280,8 +6280,8 @@
 			<member name="name" type="string">g_chassis_status.power_confirmed</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010aff</member>
-			<member name="last_addr" type="uint32">0x20010aff</member>
+			<member name="address" type="string">0x20010b07</member>
+			<member name="last_addr" type="uint32">0x20010b07</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_confirmed；功率实测确认；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6329,8 +6329,8 @@
 			<member name="name" type="string">g_chassis_status.power_phase</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b03</member>
-			<member name="last_addr" type="uint32">0x20010b03</member>
+			<member name="address" type="string">0x20010b0b</member>
+			<member name="last_addr" type="uint32">0x20010b0b</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_phase；功率停车阶段；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6378,8 +6378,8 @@
 			<member name="name" type="string">g_chassis_status.power_reason</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b04</member>
-			<member name="last_addr" type="uint32">0x20010b04</member>
+			<member name="address" type="string">0x20010b0c</member>
+			<member name="last_addr" type="uint32">0x20010b0c</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_reason；功率停车原因；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6427,8 +6427,8 @@
 			<member name="name" type="string">g_chassis_status.power_session_allowed</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b00</member>
-			<member name="last_addr" type="uint32">0x20010b00</member>
+			<member name="address" type="string">0x20010b08</member>
+			<member name="last_addr" type="uint32">0x20010b08</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_session_allowed；能量允许运行；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6476,8 +6476,8 @@
 			<member name="name" type="string">g_chassis_status.power_stop_requested</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b01</member>
-			<member name="last_addr" type="uint32">0x20010b01</member>
+			<member name="address" type="string">0x20010b09</member>
+			<member name="last_addr" type="uint32">0x20010b09</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_stop_requested；功率请求受控停车；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6525,8 +6525,8 @@
 			<member name="name" type="string">g_chassis_status.power_inhibited</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b02</member>
-			<member name="last_addr" type="uint32">0x20010b02</member>
+			<member name="address" type="string">0x20010b0a</member>
+			<member name="last_addr" type="uint32">0x20010b0a</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_chassis_status.power_inhibited；功率禁止重启；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6721,8 +6721,8 @@
 			<member name="name" type="string">tune_yaw_half_range_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107a8</member>
-			<member name="last_addr" type="uint32">0x200107a8</member>
+			<member name="address" type="string">0x200107b0</member>
+			<member name="last_addr" type="uint32">0x200107b0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_half_range_deg；Yaw软限位半幅；实物确认的线束半幅；直接填写，owner检查后生效。看result与active_half_range_deg，不写旧限位序号。</member>
 			<member name="comment" type="string" />
@@ -6770,8 +6770,8 @@
 			<member name="name" type="string">g_yaw_limit_status.result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a78</member>
-			<member name="last_addr" type="uint32">0x20010a78</member>
+			<member name="address" type="string">0x20010a80</member>
+			<member name="last_addr" type="uint32">0x20010a80</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.result；限位结果 0成功；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6819,8 +6819,8 @@
 			<member name="name" type="string">g_yaw_limit_status.ready</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a8c</member>
-			<member name="last_addr" type="uint32">0x20010a8c</member>
+			<member name="address" type="string">0x20010a94</member>
+			<member name="last_addr" type="uint32">0x20010a94</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_limit_status.ready；在线限位就绪；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6868,8 +6868,8 @@
 			<member name="name" type="string">g_yaw_limit_status.active_half_range_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a7c</member>
-			<member name="last_addr" type="uint32">0x20010a7c</member>
+			<member name="address" type="string">0x20010a84</member>
+			<member name="last_addr" type="uint32">0x20010a84</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.active_half_range_deg；生效半幅；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6917,8 +6917,8 @@
 			<member name="name" type="string">g_yaw_limit_status.min_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a80</member>
-			<member name="last_addr" type="uint32">0x20010a80</member>
+			<member name="address" type="string">0x20010a88</member>
+			<member name="last_addr" type="uint32">0x20010a88</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.min_deg；生效最小角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6966,8 +6966,8 @@
 			<member name="name" type="string">g_yaw_limit_status.max_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a84</member>
-			<member name="last_addr" type="uint32">0x20010a84</member>
+			<member name="address" type="string">0x20010a8c</member>
+			<member name="last_addr" type="uint32">0x20010a8c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.max_deg；生效最大角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7015,8 +7015,8 @@
 			<member name="name" type="string">g_yaw_limit_status.max_speed_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a88</member>
-			<member name="last_addr" type="uint32">0x20010a88</member>
+			<member name="address" type="string">0x20010a90</member>
+			<member name="last_addr" type="uint32">0x20010a90</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.max_speed_deg_s；限位基础速度上限；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7162,8 +7162,8 @@
 			<member name="name" type="string">tune_yaw_velocity_ki</member>
 			<member name="unit" type="string">raw/deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107a0</member>
-			<member name="last_addr" type="uint32">0x200107a0</member>
+			<member name="address" type="string">0x200107a8</member>
+			<member name="last_addr" type="uint32">0x200107a8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_velocity_ki；Yaw速度I；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -7260,8 +7260,8 @@
 			<member name="name" type="string">tune_yaw_friction_ff_raw</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107a4</member>
-			<member name="last_addr" type="uint32">0x200107a4</member>
+			<member name="address" type="string">0x200107ac</member>
+			<member name="last_addr" type="uint32">0x200107ac</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_friction_ff_raw；Yaw静摩擦前馈 电压原码；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -7407,8 +7407,8 @@
 			<member name="name" type="string">g_robot_tune_status.yaw_parameter_result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107c0</member>
-			<member name="last_addr" type="uint32">0x200107c0</member>
+			<member name="address" type="string">0x200107c8</member>
+			<member name="last_addr" type="uint32">0x200107c8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_tune_status.yaw_parameter_result；Yaw参数结果 0成功；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7456,8 +7456,8 @@
 			<member name="name" type="string">g_robot_tune_status.yaw_position_kp</member>
 			<member name="unit" type="string">1/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107c4</member>
-			<member name="last_addr" type="uint32">0x200107c4</member>
+			<member name="address" type="string">0x200107cc</member>
+			<member name="last_addr" type="uint32">0x200107cc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_tune_status.yaw_position_kp；Yaw生效位置P；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7505,8 +7505,8 @@
 			<member name="name" type="string">g_robot_tune_status.yaw_velocity_kp</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107c8</member>
-			<member name="last_addr" type="uint32">0x200107c8</member>
+			<member name="address" type="string">0x200107d0</member>
+			<member name="last_addr" type="uint32">0x200107d0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_tune_status.yaw_velocity_kp；Yaw生效速度P；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7554,8 +7554,8 @@
 			<member name="name" type="string">g_robot_tune_status.yaw_velocity_ki</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107cc</member>
-			<member name="last_addr" type="uint32">0x200107cc</member>
+			<member name="address" type="string">0x200107d4</member>
+			<member name="last_addr" type="uint32">0x200107d4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_tune_status.yaw_velocity_ki；Yaw生效速度I；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7603,8 +7603,8 @@
 			<member name="name" type="string">g_robot_tune_status.yaw_voltage_limit_raw</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107d0</member>
-			<member name="last_addr" type="uint32">0x200107d0</member>
+			<member name="address" type="string">0x200107d8</member>
+			<member name="last_addr" type="uint32">0x200107d8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_tune_status.yaw_voltage_limit_raw；Yaw生效输出上限 电压原码；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7750,8 +7750,8 @@
 			<member name="name" type="string">tune_yaw_speed_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010798</member>
-			<member name="last_addr" type="uint32">0x20010798</member>
+			<member name="address" type="string">0x200107a0</member>
+			<member name="last_addr" type="uint32">0x200107a0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_speed_deg_s；Yaw速度内环目标；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -7799,8 +7799,8 @@
 			<member name="name" type="string">tune_yaw_target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001079c</member>
-			<member name="last_addr" type="uint32">0x2001079c</member>
+			<member name="address" type="string">0x200107a4</member>
+			<member name="last_addr" type="uint32">0x200107a4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_target_deg；Yaw位置双环目标；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -7897,8 +7897,8 @@
 			<member name="name" type="string">g_ins_status.received_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b60</member>
-			<member name="last_addr" type="uint32">0x20010b60</member>
+			<member name="address" type="string">0x20010b68</member>
+			<member name="last_addr" type="uint32">0x20010b68</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_ins_status.received_ms；IMU采样时刻；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7946,8 +7946,8 @@
 			<member name="name" type="string">g_ins_status.frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b64</member>
-			<member name="last_addr" type="uint32">0x20010b64</member>
+			<member name="address" type="string">0x20010b6c</member>
+			<member name="last_addr" type="uint32">0x20010b6c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_ins_status.frames；IMU采样累计；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7995,8 +7995,8 @@
 			<member name="name" type="string">g_ins_status.tilt_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bac</member>
-			<member name="last_addr" type="uint32">0x20010bac</member>
+			<member name="address" type="string">0x20010bb4</member>
+			<member name="last_addr" type="uint32">0x20010bb4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_ins_status.tilt_deg；倾斜角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8044,8 +8044,8 @@
 			<member name="name" type="string">g_ins_status.tipped</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bbe</member>
-			<member name="last_addr" type="uint32">0x20010bbe</member>
+			<member name="address" type="string">0x20010bc6</member>
+			<member name="last_addr" type="uint32">0x20010bc6</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_ins_status.tipped；翻车判定；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8093,8 +8093,8 @@
 			<member name="name" type="string">g_ins_status.calibrating</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bbf</member>
-			<member name="last_addr" type="uint32">0x20010bbf</member>
+			<member name="address" type="string">0x20010bc7</member>
+			<member name="last_addr" type="uint32">0x20010bc7</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_ins_status.calibrating；正在静态标定；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8142,8 +8142,8 @@
 			<member name="name" type="string">g_ins_status.driver_errors</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010b70</member>
-			<member name="last_addr" type="uint32">0x20010b70</member>
+			<member name="address" type="string">0x20010b78</member>
+			<member name="last_addr" type="uint32">0x20010b78</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_ins_status.driver_errors；驱动错误累计；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8387,8 +8387,8 @@
 			<member name="name" type="string">g_ins_debug_command</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bc4</member>
-			<member name="last_addr" type="uint32">0x20010bc4</member>
+			<member name="address" type="string">0x20010bcc</member>
+			<member name="last_addr" type="uint32">0x20010bcc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_ins_debug_command；请求IMU静态标定 写1；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -8436,8 +8436,8 @@
 			<member name="name" type="string">g_vehicle_health.healthy</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010bd1</member>
-			<member name="last_addr" type="uint32">0x20010bd1</member>
+			<member name="address" type="string">0x20010bd9</member>
+			<member name="last_addr" type="uint32">0x20010bd9</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_vehicle_health.healthy；整车健康；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />

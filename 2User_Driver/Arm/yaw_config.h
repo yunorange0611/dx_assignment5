@@ -18,12 +18,12 @@ inline constexpr JointConfig kYawConfig = {
     1, // 37T:37T；右限位ecd4352相对零点6352为-87.890625deg，右负左正
     -360, // 用户要求：零点右侧一整圈；必须确认线束行程
     360, // 用户要求：零点左侧一整圈；单圈绝对编码器掉电不能保存圈数
-    10,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
-    30,     // max_accel_deg_s2：参考加速度上限
+    50,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
+    60,     // max_accel_deg_s2：参考加速度上限
     25000.0f, // max_effort：电压原码上限；旧驱动满量程25000，手册可到30000
     2.0f,     // position_kp：位置P，安全起步值
-    8.0f,    // velocity_kp：速度P，raw/(deg/s)，安全起步值
-    0.0f,     // velocity_ki：速度I，raw/deg，先关闭积分
+    40.0f,    // velocity_kp：速度P，raw/(deg/s)，安全起步值
+    40.0f,     // velocity_ki：速度I，raw/deg，先关闭积分
 
     0,
     0,
@@ -44,7 +44,9 @@ inline constexpr float kYawBrakingMarginDeg = 2.0f;
 inline constexpr float kYawBrakingAccelDegS2 = 15.0f;
 inline constexpr float kYawMaxTargetLeadDeg = 5.0f;
 // Position-loop friction assist: continuous zero crossing and 150ms 0-to-full ramp.
-inline constexpr float kYawPositionFfFullSpeedDegS = 3.0f;
+// Position assist uses fixed magnitude, not a speed-proportional reduction.
+inline constexpr float kYawPositionFfStartErrorDeg = 0.20f;
+inline constexpr float kYawPositionFfStopErrorDeg = 0.10f;
 inline constexpr float kYawPositionFfRiseTimeS = 0.15f;
 inline constexpr float kYawSpeedFfRiseTimeS = 0.30f; // mode5: 0-to-full 300ms
 } // namespace engineer

@@ -205,6 +205,7 @@ class ArmControl {
     YawPid yaw_position_pid_{}, yaw_velocity_pid_{};
     void reset_yaw_pid();
     float yaw_position_ff_ = 0;
+    bool yaw_position_ff_active_ = false;
     float yaw_speed_ff_ = 0;
     bool yaw_test_active_ = false;
     float limit_yaw_speed(float requested, float dt) const;

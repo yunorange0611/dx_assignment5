@@ -460,6 +460,7 @@ void ArmControl::trip(uint32_t fault, unsigned i) {
 }
 void ArmControl::disable() {
     yaw_position_ff_ = 0;
+                        yaw_position_ff_active_ = false;
     yaw_speed_ff_ = 0;
     status_.enabled_mask = 0;
     for (unsigned i = 0; i < kJointCount; ++i) {
@@ -501,6 +502,7 @@ Result ArmControl::disable_joints(uint8_t mask) {
     }
     if (mask & (1u << Yaw)) {
         yaw_position_ff_ = 0;
+                        yaw_position_ff_active_ = false;
         yaw_speed_ff_ = 0;
         yaw_test_active_ = false;
         yaw_test_speed_ = 0;
@@ -637,6 +639,7 @@ void ArmControl::clear_yaw_test() {
     yaw_test_active_ = false;
     yaw_test_speed_ = 0;
     yaw_position_ff_ = 0;
+                        yaw_position_ff_active_ = false;
     yaw_speed_ff_ = 0;
     reset_yaw_pid();
     auto &s = status_.joint[Yaw];
@@ -1073,6 +1076,7 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                 if (c.motor == Motor::Gm6020Voltage) {
                     if (yaw_test_active_) {
                         yaw_position_ff_ = 0;
+                        yaw_position_ff_active_ = false;
                         const float requested_ff = std::fabs(speed_target) > kYawFrictionDeadbandDegS
                             ? (speed_target > 0 ? yaw_friction_ff_raw_ : -yaw_friction_ff_raw_)
                             : 0;
@@ -1084,12 +1088,21 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                         feedforward = yaw_speed_ff_;
                     } else {
                         yaw_speed_ff_ = 0;
-                        const float requested_ff = yaw_friction_ff_raw_ *
-                            clamp(speed_target / kYawPositionFfFullSpeedDegS, -1.0f, 1.0f);
+                        const float position_error = s.target_deg - s.drive_position_deg;
+                        const float abs_error = std::fabs(position_error);
+                        if (abs_error <= kYawPositionFfStopErrorDeg || speed_target == 0)
+                            yaw_position_ff_active_ = false;
+                        else if (abs_error >= kYawPositionFfStartErrorDeg)
+                            yaw_position_ff_active_ = true;
+                        // Never assist a command pointing away from the actual destination.
+                        const bool toward_target = speed_target * position_error > 0;
+                        const float requested_ff = yaw_position_ff_active_ && toward_target
+                            ? (speed_target > 0 ? yaw_friction_ff_raw_ : -yaw_friction_ff_raw_) : 0;
                         const float max_delta = yaw_friction_ff_raw_ * yaw_dt / kYawPositionFfRiseTimeS;
-                        if (yaw_friction_ff_raw_ == 0)
+                        if (yaw_friction_ff_raw_ == 0) {
                             yaw_position_ff_ = 0;
-                        else
+                            yaw_position_ff_active_ = false;
+                        } else
                             yaw_position_ff_ += clamp(requested_ff - yaw_position_ff_,
                                                       -max_delta, max_delta);
                         feedforward = yaw_position_ff_;
@@ -1136,6 +1149,7 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             s.velocity_target_deg_s = 0;
             if (i == Yaw) {
                 yaw_position_ff_ = 0;
+                        yaw_position_ff_active_ = false;
                 yaw_speed_ff_ = 0;
             }
         }
