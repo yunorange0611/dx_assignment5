@@ -9,10 +9,6 @@ constexpr float kRadToDeg = 57.29577951308232f;
 // Below this speed target the Yaw friction feedforward is disabled, so a hold
 // command near zero does not buzz against static friction.
 constexpr float kYawFrictionDeadbandDegS = 0.5f;
-// Position/normal control scales the friction assist in over this planned
-// reference speed. Holding still has zero reference velocity, so a hand push
-// does not get a full sign-step feedforward.
-constexpr float kYawFrictionFullSpeedDegS = 1.0f;
 float clamp(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
@@ -821,19 +817,13 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
         return status_.last_result = Result::OutOfRange;
     for (unsigned i = 0; i < kJointCount; ++i)
         if (mask & (1u << i)) {
-            auto &joint = status_.joint[i];
-            auto &runtime = runtime_[i];
-            if (i == Yaw && !yaw_test_active_ && next[i] != joint.target_deg) {
-                const float actual_error = next[i] - joint.position_deg;
-                const float reference_error = next[i] - joint.reference_deg;
-                // Re-plan only when the old trajectory points away from the new
-                // physical destination. Repeated identical commands must not reset it.
-                if (actual_error * reference_error < 0 ||
-                    actual_error * runtime.reference_velocity < 0) {
-                    joint.reference_deg = joint.position_deg;
-                    runtime.reference_velocity = 0;
-                    runtime.integral = 0;
-                }
+            if (i == Yaw && !yaw_test_active_ && next[i] != status_.joint[i].target_deg) {
+                const float old_error = status_.joint[i].target_deg - status_.joint[i].position_deg;
+                const float new_error = next[i] - status_.joint[i].position_deg;
+                // Clear old velocity-I only on an explicit reversal across the
+                // actual angle. Repeated targets and normal overshoot keep PI state.
+                if (old_error * new_error < 0)
+                    runtime_[i].integral = 0;
             }
             status_.joint[i].target_deg =
                 i == Yaw
@@ -894,16 +884,12 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
         if (i == BigPitch || i == SmallPitch)
             continue;
         if (s.enabled && (c.motor != Motor::Dm4310Mit || s.motor_state == 1)) {
-            if (i == Yaw && !yaw_test_active_) {
-                const float actual_error = s.target_deg - s.position_deg;
-                if (actual_error * (s.target_deg - s.reference_deg) < 0 ||
-                    actual_error * r.reference_velocity < 0) {
-                    // Feedback crossed the reference/target: discard the stale
-                    // planner direction, not the final position destination.
-                    s.reference_deg = s.position_deg;
-                    r.reference_velocity = 0;
-                    r.integral = 0;
-                }
+            if (i == Yaw) {
+                // Yaw cascade: position P uses the actual angle directly.
+                // No independent reference planner or per-cycle integral reset.
+                s.reference_deg = yaw_test_active_ ? s.position_deg : s.target_deg;
+                r.reference_velocity = 0;
+                continue;
             }
             const float error = s.target_deg - s.reference_deg;
             // 到目标前按制动距离减速；每周期约束参考速度和加速度。
@@ -919,17 +905,7 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                 r.reference_velocity = limit_yaw_speed(r.reference_velocity, dt);
             s.reference_deg =
                 clamp(s.reference_deg + r.reference_velocity * dt, drive_min(i), drive_max(i));
-            // Bound only reference position. reference_velocity is the planned
-            // motion request, not a derivative of the clamped reference: keep it
-            // toward the destination so friction assist survives tracking lag.
-            if (i == Yaw && !yaw_test_active_) {
-                const float planned = s.reference_deg;
-                s.reference_deg = clamp(
-                    planned,
-                    std::fmax(drive_min(i), s.position_deg - yaw_limits_.max_target_lead_deg),
-                    std::fmin(drive_max(i), s.position_deg + yaw_limits_.max_target_lead_deg));
 
-            }
         }
     }
     update_drive_references();
@@ -959,9 +935,12 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                 clamp(r.reference_velocity +
                           c.position_kp * (s.drive_reference_deg - s.drive_position_deg),
                       -speed_limit, speed_limit);
-            if (i == Yaw)
-                speed_target =
-                    limit_yaw_speed(yaw_test_active_ ? yaw_test_speed_ : speed_target, dt);
+            if (i == Yaw) {
+                const float requested = yaw_test_active_ ? yaw_test_speed_ :
+                    clamp(c.position_kp * (s.target_deg - s.position_deg),
+                          -speed_limit, speed_limit);
+                speed_target = limit_yaw_speed(requested, dt);
+            }
             s.velocity_target_deg_s = speed_target;
             // 这里必须使用a2的驱动速度；不能把q肘速度送入第二DM的独立PI。
             const float e = speed_target - s.drive_velocity_deg_s;
@@ -970,22 +949,20 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             float feedforward = 0;
             if (i == Yaw && c.motor == Motor::Gm6020Voltage) {
                 if (yaw_test_active_) {
-                    // Speed test: full assist in the commanded direction.
+                    // Preserve the commissioned mode-5 speed-loop behavior.
+                    yaw_position_ff_ = 0;
                     if (std::fabs(speed_target) > kYawFrictionDeadbandDegS)
                         feedforward = (speed_target > 0 ? 1.0f : -1.0f) * yaw_friction_ff_raw_;
-                } else if (std::fabs(r.reference_velocity) > kYawFrictionDeadbandDegS) {
-                    // Position/normal control: only intentional reference motion,
-                    // and only when that motion is actually toward the position
-                    // target. A stale/one-sided reference must never push away.
-                    const float position_error = s.target_deg - s.position_deg;
-                    const bool toward_target =
-                        (r.reference_velocity > 0) == (position_error > 0);
-                    if (toward_target) {
-                        const float scale = std::fmin(
-                            1.0f, std::fabs(r.reference_velocity) / kYawFrictionFullSpeedDegS);
-                        feedforward = (r.reference_velocity > 0 ? 1.0f : -1.0f) *
-                                      yaw_friction_ff_raw_ * scale;
-                    }
+                } else {
+                    const float requested_ff = yaw_friction_ff_raw_ *
+                        clamp(speed_target / kYawPositionFfFullSpeedDegS, -1.0f, 1.0f);
+                    const float max_delta = yaw_friction_ff_raw_ * dt / kYawPositionFfRiseTimeS;
+                    if (yaw_friction_ff_raw_ == 0)
+                        yaw_position_ff_ = 0;
+                    else
+                        yaw_position_ff_ += clamp(requested_ff - yaw_position_ff_, -max_delta, max_delta);
+                    // Ramp through zero on reversal; the brief old-sign tail is bounded.
+                    feedforward = yaw_position_ff_; // Continuous signed ramp, including reversal.
                 }
                 yaw_friction_ff_applied_ = feedforward;
             }
@@ -1001,6 +978,8 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             s.effort = 0;
             r.integral = 0;
             s.velocity_target_deg_s = 0;
+            if (i == Yaw)
+                yaw_position_ff_ = 0;
         }
 
         if (c.motor == Motor::Dm4310Mit) {

@@ -70,10 +70,41 @@ bool yaw_zero(const Frame *f, unsigned n) {
 }
 } // namespace
 int test_yaw() {
+    { // Position feedforward ramps symmetrically, including explicit reversal.
+        Config c = config();
+        c.joint[Yaw].position_kp = 1;
+        ArmControl a(c);
+        CHECK(feed(a, 0));
+        CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        a.set_yaw_tuning_limits(false);
+        a.set_yaw_friction_feedforward(500);
+        float q[kJointCount]{};
+        q[Yaw] = 10;
+        Frame frames[kJointCount]{};
+        float previous = 0;
+        for (unsigned t = 4; t <= 600; t += 4) {
+            if (t == 204) q[Yaw] = -10;
+            CHECK(feed(a, t));
+            CHECK(a.set_targets(1, q, t) == Result::Ok);
+            a.step(t, frames);
+            const float ff = a.yaw_friction_feedforward_applied();
+            CHECK(std::fabs(ff - previous) <= 500 * .004f / .15f + .01f);
+            if (t == 200) CHECK(std::fabs(ff - 500) < .01f);
+            previous = ff;
+        }
+        CHECK(std::fabs(previous + 500) < .01f);
+        a.set_yaw_friction_feedforward(0);
+        CHECK(feed(a, 604));
+        CHECK(a.set_targets(1, q, 604) == Result::Ok);
+        a.step(604, frames);
+        CHECK(a.yaw_friction_feedforward_applied() == 0);
+    }
+
     { // Default (no online limits): lag must neither run ahead nor lose assist.
         for (int sign : {-1, 1}) {
             Config c = config();
-            c.joint[Yaw].position_kp = .01f;
+            c.joint[Yaw].position_kp = .1f;
             ArmControl a(c);
             CHECK(a.yaw_limits().max_target_lead_deg == 5);
             CHECK(feed(a, 0));
@@ -91,8 +122,9 @@ int test_yaw() {
             }
             const auto &j = a.status().joint[Yaw];
             CHECK(j.target_deg == sign * 40);
-            CHECK(std::fabs(j.reference_deg) <= 5.001f);
-            CHECK(sign * j.drive_reference_velocity_deg_s > .5f);
+            CHECK(j.reference_deg == j.target_deg);
+            CHECK(std::fabs(j.velocity_target_deg_s - sign * 4.0f) < .001f);
+            CHECK(j.drive_reference_velocity_deg_s == 0);
             CHECK(sign * a.yaw_friction_feedforward_applied() > 0);
             CHECK(sign * j.velocity_target_deg_s > 0);
         }
@@ -114,7 +146,7 @@ int test_yaw() {
             CHECK(feed(a, t));
             CHECK(a.set_targets(1, q, t) == Result::Ok);
             a.step(t, frames);
-            CHECK(a.status().joint[Yaw].reference_deg <= 5.001f);
+            CHECK(a.status().joint[Yaw].reference_deg == q[Yaw]);
         }
         q[Yaw] = 18;
         CHECK(feed(a, 804));
@@ -198,6 +230,7 @@ int test_yaw() {
         c.joint[Yaw].velocity_kp = 0;
         c.joint[Yaw].velocity_ki = 0;
         c.joint[Yaw].max_effort = 5000;
+        c.joint[Yaw].position_kp = .1f;
         ArmControl a(c);
         Frame frames[kJointCount]{};
         auto yaw_raw = [&](unsigned n) {
@@ -250,6 +283,7 @@ int test_yaw() {
         c.joint[Yaw].velocity_kp = 0;
         c.joint[Yaw].velocity_ki = 0;
         c.joint[Yaw].max_effort = 5000;
+        c.joint[Yaw].position_kp = .1f;
         ArmControl a(c);
         Frame frames[kJointCount]{};
         CHECK(feed(a, 0));
@@ -260,7 +294,8 @@ int test_yaw() {
         a.step(0, frames);
         CHECK(feed(a, 4, 800)); // Hand disturbance: -8.8 deg, target still 0.
         a.step(4, frames);
-        CHECK(a.yaw_friction_feedforward_applied() == 0);
+        CHECK(a.yaw_friction_feedforward_applied() > 0);
+        CHECK(a.yaw_friction_feedforward_applied() < 500 * .004f / .15f + .001f);
         float q[kJointCount]{};
         q[Yaw] = 5;
         CHECK(a.set_targets(1, q, 4) == Result::Ok);

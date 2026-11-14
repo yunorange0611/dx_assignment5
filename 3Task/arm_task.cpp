@@ -10,6 +10,7 @@
 
 extern "C" {
 ArmStatus g_arm_status{};
+YawFeedbackDiag g_yaw_feedback_diag{};
 volatile ArmTuneRequest g_arm_tune_request{};
 ArmTuneStatus g_arm_tune_status{};
 }
@@ -98,6 +99,70 @@ int submit(Kind kind, uint8_t mask, const float *q = nullptr) {
         std::memcpy(c.q, q, sizeof(c.q));
     return osMessageQueuePut(commands, &c, 0, 0) == osOK;
 }
+// Single-owner observer, never feeds any value back into ArmControl.
+void diagnose_yaw(const ArmControl &arm, const Received &f, bool accepted) {
+    if (f.bus != kArmConfig.joint[Yaw].bus || f.id != arm.feedback_id(Yaw))
+        return;
+    static bool have = false;
+    static uint32_t last_ms = 0, start_ms = 0, samples = 0, zeros = 0;
+    static int last_encoder = 0;
+    static int64_t ticks = 0, rpm_sum = 0;
+    static int rpm_min = 0, rpm_max = 0;
+    auto &d = g_yaw_feedback_diag;
+    d.updated_ms = f.ms;
+    d.bus = f.bus; d.can_id = f.id; d.dlc = f.len;
+    std::memcpy(d.raw_data, f.data, 8);
+    if (!accepted || f.len != 8) {
+        ++d.invalid_frames; have = false; d.window_valid = 0; return;
+    }
+    d.raw_encoder = (uint16_t(f.data[0]) << 8) | f.data[1];
+    d.raw_rpm = int16_t((uint16_t(f.data[2]) << 8) | f.data[3]);
+    d.raw_effort = int16_t((uint16_t(f.data[4]) << 8) | f.data[5]);
+    ++d.frames;
+    if (!d.raw_rpm) ++d.zero_rpm_frames;
+    d.parsed_speed_deg_s = arm.status().joint[Yaw].velocity_deg_s;
+    d.parsed_position_deg = arm.status().joint[Yaw].position_deg;
+    JointTuning tuning{};
+    if (arm.get_tuning(Yaw, tuning)) {
+        d.velocity_kp = tuning.velocity_kp; d.velocity_ki = tuning.velocity_ki;
+        d.position_kp = tuning.position_kp;
+    }
+    const uint32_t gap = f.ms - last_ms;
+    if (have && gap > d.max_gap_ms) d.max_gap_ms = gap;
+    if (have && gap > kArmConfig.dji_unwrap_gap_ms) {
+        ++d.gap_resets; have = false; d.window_valid = 0;
+    }
+    if (!have) {
+        have = true; last_ms = start_ms = f.ms; last_encoder = d.raw_encoder;
+        samples = zeros = 0; ticks = rpm_sum = 0;
+        rpm_min = rpm_max = d.raw_rpm;
+        return;
+    }
+    int delta = int(d.raw_encoder) - last_encoder;
+    if (delta > 4096) delta -= 8192;
+    if (delta < -4096) delta += 8192;
+    ticks += delta;
+    rpm_sum += d.raw_rpm; ++samples;
+    if (!d.raw_rpm) ++zeros;
+    if (d.raw_rpm < rpm_min) rpm_min = d.raw_rpm;
+    if (d.raw_rpm > rpm_max) rpm_max = d.raw_rpm;
+    last_encoder = d.raw_encoder; last_ms = f.ms;
+    const uint32_t elapsed = f.ms - start_ms;
+    if (elapsed >= 500 && samples) {
+        const auto &c = kArmConfig.joint[Yaw];
+        const float scale = float(c.direction) / c.feedback_per_joint;
+        d.encoder_speed_deg_s = float(ticks) * (360.0f / 8192.0f) * 1000 / elapsed * scale;
+        d.rpm_mean_deg_s = float(rpm_sum) / samples * 6 * scale;
+        const float lo = rpm_min * 6 * scale, hi = rpm_max * 6 * scale;
+        d.rpm_min_deg_s = lo < hi ? lo : hi; d.rpm_max_deg_s = lo > hi ? lo : hi;
+        d.zero_rpm_fraction = float(zeros) / samples;
+        d.window_ms = elapsed; d.window_frames = samples;
+        d.window_valid = 1; ++d.window_seq;
+        start_ms = f.ms; samples = zeros = 0; ticks = rpm_sum = 0;
+        rpm_min = rpm_max = d.raw_rpm;
+    }
+}
+
 void publish(const ArmControl &arm, uint32_t now) {
     ArmStatus next{};
     const auto &s = arm.status();
@@ -212,8 +277,10 @@ extern "C" void arm_control_task(void *argument) {
         DR16_Service();
         Received f;
         // 消费先前的反馈，保持其原始接收时间，不能用消费时间冒充新反馈。
-        for (unsigned n = 0; n < 64 && osMessageQueueGet(feedback, &f, nullptr, 0) == osOK; ++n)
-            arm.receive(f.bus, f.id, f.data, f.len, f.ms);
+        for (unsigned n = 0; n < 64 && osMessageQueueGet(feedback, &f, nullptr, 0) == osOK; ++n) {
+            const bool accepted = arm.receive(f.bus, f.id, f.data, f.len, f.ms);
+            diagnose_yaw(arm, f, accepted);
+        }
         uint32_t now = HAL_GetTick();
         for (unsigned b = 0; b < 2; ++b) {
             if ((owned_buses & (1u << b)) && can_tx_error_count[b] != previous_errors[b])

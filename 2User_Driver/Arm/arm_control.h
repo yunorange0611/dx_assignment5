@@ -174,6 +174,7 @@ class ArmControl {
     float yaw_motion_min_ = 0, yaw_motion_max_ = 0, yaw_motion_speed_ = 0, yaw_test_speed_ = 0;
     float yaw_friction_ff_raw_ = 0;
     float yaw_friction_ff_applied_ = 0;
+    float yaw_position_ff_ = 0;
     bool yaw_test_active_ = false;
     float limit_yaw_speed(float requested, float dt) const;
     void refresh(uint32_t now_ms);

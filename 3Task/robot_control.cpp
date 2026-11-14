@@ -27,7 +27,7 @@ volatile float tune_wheel_kp = engineer::kChassisConfig.velocity_kp,
 volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
     tune_yaw_velocity_ki = 10, tune_yaw_voltage_limit_raw = 25000,
-    tune_yaw_friction_ff_raw = 5200, tune_yaw_half_range_deg = 0;
+    tune_yaw_friction_ff_raw = 5500, tune_yaw_half_range_deg = 0;
 RobotTuneStatus g_robot_tune_status{};
 }
 namespace {

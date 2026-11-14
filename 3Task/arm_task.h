@@ -34,6 +34,20 @@ typedef struct {
 // 原共享快照的稳定调试符号，外部只读；任务间仍用Arm_GetStatus原子复制。
 extern ArmStatus g_arm_status;
 
+// Read-only Yaw CAN feedback diagnosis; averages use reception timestamps.
+typedef struct {
+    uint32_t updated_ms, frames, invalid_frames, window_seq, window_ms, window_frames;
+    uint32_t gap_resets, max_gap_ms, zero_rpm_frames;
+    uint16_t can_id, raw_encoder;
+    int16_t raw_rpm, raw_effort;
+    uint8_t bus, dlc, raw_data[8], window_valid;
+    float encoder_speed_deg_s, rpm_mean_deg_s, rpm_min_deg_s, rpm_max_deg_s;
+    float zero_rpm_fraction, parsed_speed_deg_s, parsed_position_deg;
+    float velocity_kp, velocity_ki, position_kp;
+} YawFeedbackDiag;
+extern YawFeedbackDiag g_yaw_feedback_diag;
+
+
 // Write the fields first and request_seq last. Rejected requests are consumed once.
 // PID/effort changes are RAM-only, disabled-only and never alter hardware/zero/limits.
 typedef struct {

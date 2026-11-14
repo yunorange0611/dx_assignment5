@@ -738,6 +738,23 @@ def main():
     parser.add_argument('--no-backup',action='store_true')
     args=parser.parse_args()
     tune,diagnostic=groups()
+    feedback_diag = variables('g_yaw_feedback_diag', [
+        ('window_valid','统计窗口有效',''),('window_seq','窗口更新序号',''),
+        ('window_ms','同窗时间','ms'),('window_frames','同窗反馈帧数',''),
+        ('encoder_speed_deg_s','编码器角差平均速度','deg/s'),
+        ('rpm_mean_deg_s','CAN rpm同窗平均速度','deg/s'),
+        ('rpm_min_deg_s','窗口CAN最小速度','deg/s'),('rpm_max_deg_s','窗口CAN最大速度','deg/s'),
+        ('zero_rpm_fraction','窗口零rpm比例',''),('raw_encoder','原始编码器',''),
+        ('raw_rpm','原始有符号rpm','rpm'),('raw_effort','原始电机反馈输出','raw'),
+        ('parsed_speed_deg_s','当前解析速度','deg/s'),('parsed_position_deg','当前解析位置','deg'),
+        ('frames','已接收Yaw帧数',''),('invalid_frames','无效帧数',''),
+        ('gap_resets','接收间隔超限次数',''),('max_gap_ms','最大接收间隔','ms'),
+        ('velocity_kp','控制器当前速度P',''),('velocity_ki','控制器当前速度I',''),
+        ('position_kp','控制器当前位置P',''),('updated_ms','最近接收时间','ms'),
+        ('can_id','反馈CAN ID',''),('bus','CAN总线',''),('dlc','报文长度','')]) + [
+        V(f'g_yaw_feedback_diag.raw_data[{i}]',f'原始CAN字节{i}') for i in range(8)]
+    tune.append(G('Yaw反馈诊断（只读500ms同窗）', feedback_diag))
+    diagnostic.append(G('Yaw反馈诊断（只读500ms同窗）', feedback_diag))
     records=[create(OUTPUT/'底盘调参.pmpx','底盘与Yaw分批调参',tune,not args.no_backup,
                     root_expressions=[spec['expr'] for spec in CH_MOTION]),
              create(OUTPUT/'底盘排障.pmpx','底盘与Yaw排障',diagnostic,not args.no_backup),
