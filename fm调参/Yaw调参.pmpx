@@ -4271,8 +4271,8 @@
 			<member name="name" type="string">g_yaw_limit_status.result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a80</member>
-			<member name="last_addr" type="uint32">0x20010a80</member>
+			<member name="address" type="string">0x20010a78</member>
+			<member name="last_addr" type="uint32">0x20010a78</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.result；限位结果 0成功；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4320,8 +4320,8 @@
 			<member name="name" type="string">g_yaw_limit_status.ready</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a94</member>
-			<member name="last_addr" type="uint32">0x20010a94</member>
+			<member name="address" type="string">0x20010a8c</member>
+			<member name="last_addr" type="uint32">0x20010a8c</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_limit_status.ready；在线限位就绪；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4369,8 +4369,8 @@
 			<member name="name" type="string">g_yaw_limit_status.active_half_range_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a84</member>
-			<member name="last_addr" type="uint32">0x20010a84</member>
+			<member name="address" type="string">0x20010a7c</member>
+			<member name="last_addr" type="uint32">0x20010a7c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.active_half_range_deg；生效半幅；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4418,8 +4418,8 @@
 			<member name="name" type="string">g_yaw_limit_status.min_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a88</member>
-			<member name="last_addr" type="uint32">0x20010a88</member>
+			<member name="address" type="string">0x20010a80</member>
+			<member name="last_addr" type="uint32">0x20010a80</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.min_deg；生效最小角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4467,8 +4467,8 @@
 			<member name="name" type="string">g_yaw_limit_status.max_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a8c</member>
-			<member name="last_addr" type="uint32">0x20010a8c</member>
+			<member name="address" type="string">0x20010a84</member>
+			<member name="last_addr" type="uint32">0x20010a84</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.max_deg；生效最大角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4516,8 +4516,8 @@
 			<member name="name" type="string">g_yaw_limit_status.max_speed_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010a90</member>
-			<member name="last_addr" type="uint32">0x20010a90</member>
+			<member name="address" type="string">0x20010a88</member>
+			<member name="last_addr" type="uint32">0x20010a88</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_limit_status.max_speed_deg_s；限位基础速度上限；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />

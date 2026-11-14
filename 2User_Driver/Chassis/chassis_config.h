@@ -9,7 +9,7 @@ struct ChassisConfig {
     int8_t direction[2] = {1, -1}; // Preserve each motor's validated sign: ID1 +1, ID2 -1.
     float diameter_m = .145f, track_m = .330f, gear_ratio = 19.0f;
     float max_speed_m_s = 1.2f,
-    max_turn_rad_s = 6.0f;//最大转向角速度
+    max_turn_rad_s = 8.0f;//最大转向角速度
     float acceleration_m_s2 = 2.0f,//推杆后加速的快慢
     deceleration_m_s2 = 2.0f,/*松杆后减速的快慢*/
     angular_accel_rad_s2 = 8.0f,//转向指令变大的快慢

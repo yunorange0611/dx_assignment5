@@ -428,7 +428,10 @@ int test_vehicle() {
         CHECK(!a.status().calibrated);
         a.step(sample(116, 30), .004f, true);
         CHECK(a.status().calibrated && a.status().valid && a.status().tilt_deg < .01f);
-        AttitudeEstimator defaults;
+        AttitudeConfig unconfirmed_attitude{};
+        unconfirmed_attitude.installation_confirmed = false;
+        unconfirmed_attitude.thresholds_confirmed = false;
+        AttitudeEstimator defaults(unconfirmed_attitude);
         for (unsigned n = 0; n < 600; ++n)
             defaults.step(sample(n * 4, n + 1), .004f, true);
         CHECK(defaults.status().configuration_valid && !defaults.status().confirmed &&
