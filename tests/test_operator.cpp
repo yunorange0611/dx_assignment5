@@ -205,6 +205,25 @@ int test_operator() {
         CHECK(o.longitudinal_brake && o.stop_chassis && o.turn_rate_request == 0 &&
               o.longitudinal_speed_request == 0);
     }
+    { // Remote Yaw target lead stops growing until feedback catches up; reverse
+      // stick is still allowed to move the target back immediately.
+        Rig r;
+        r.op.set_yaw_remote_lead(2.0f);
+        r.locks.drive_yaw_min_deg = -360;
+        r.locks.drive_yaw_max_deg = 360;
+        r.locks.drive_yaw_max_speed_deg_s = 10;
+        r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;
+        CHECK(r.start().active);
+        r.rc.frame.channel[kOperatorConfig.left_x_channel] = 660;
+        auto o = r.tick();
+        for (unsigned i = 0; i < 80; ++i)
+            o = r.tick();
+        CHECK(near(o.target_deg[Yaw], -2.0f, 0.05f));
+        r.rc.frame.channel[kOperatorConfig.left_x_channel] = -660;
+        for (unsigned i = 0; i < 80; ++i)
+            o = r.tick();
+        CHECK(o.target_deg[Yaw] > 0.0f);
+    }
     { // 上、中慢，下快；拒绝快速只降档，不能清除人工请求或缩放归一化意图。
         Rig r;
         r.rc.frame.switches[kOperatorConfig.left_switch_index] = DR16_SWITCH_UP;

@@ -40,6 +40,7 @@ int test_robot_tuning();
 namespace {
 Config bench() {
     Config c = kArmConfig;
+    c.joint[Yaw].encoder_velocity = false; // Legacy synthetic rpm fixtures.
     c.joint_mask = kAllJoints;
     c.hardware_confirmed = true;
     c.pitch.mapping_confirmed = true;

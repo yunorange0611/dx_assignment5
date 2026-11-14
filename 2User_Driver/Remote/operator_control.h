@@ -70,6 +70,9 @@ class ArmOperator {
   public:
     ArmOperator(const Config &arm, const OperatorConfig &config);
     void set_yaw_limits(const YawRuntimeLimits &limits);
+    // Remote Yaw target may lead the measured angle by at most this many degrees.
+    // Invalid values leave the previous limit unchanged.
+    void set_yaw_remote_lead(float deg);
     // Owner-only explicit return from tuning, after neutral/vehicle health checks.
     // Captures targets and resets timing; step still validates all normal guards.
     // This does not enable any drive: partially enabled arms require arm_request.
@@ -93,6 +96,7 @@ class ArmOperator {
   private:
     Config arm_;
     YawRuntimeLimits yaw_limits_{};
+    float yaw_remote_lead_deg_ = 15.0f;
     OperatorConfig config_;
     bool valid_ = false, active_ = false, waiting_ = true, neutral_tracking_ = false;
     bool have_step_ = false, safe_latched_ = true, permission_blocked_ = false;

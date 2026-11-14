@@ -280,6 +280,39 @@ bool ArmControl::valid_config() const {
     return true;
 }
 
+float ArmControl::update_yaw_velocity(uint16_t encoder, uint32_t now, bool reset) {
+    if (reset) {
+        yaw_velocity_count_ = yaw_velocity_head_ = 0;
+        yaw_velocity_ticks_ = 0;
+    } else {
+        int delta = int(encoder) - int(yaw_velocity_last_encoder_);
+        if (delta > 4096) delta -= 8192;
+        if (delta < -4096) delta += 8192;
+        yaw_velocity_ticks_ += delta;
+    }
+    yaw_velocity_last_encoder_ = encoder;
+    // Keep one sample per reception millisecond, preserving the latest angle.
+    if (yaw_velocity_count_ && yaw_velocity_history_[(yaw_velocity_head_ + 63) % 64].ms == now) {
+        yaw_velocity_history_[(yaw_velocity_head_ + 63) % 64].ticks = yaw_velocity_ticks_;
+    } else {
+        yaw_velocity_history_[yaw_velocity_head_] = {now, yaw_velocity_ticks_};
+        yaw_velocity_head_ = (yaw_velocity_head_ + 1) % 64;
+        if (yaw_velocity_count_ < 64) ++yaw_velocity_count_;
+    }
+    const VelocitySample *oldest = nullptr;
+    for (uint32_t n = 0; n < yaw_velocity_count_; ++n) {
+        const auto &sample = yaw_velocity_history_[(yaw_velocity_head_ + 63 - n) % 64];
+        oldest = &sample;
+        if (uint32_t(now - sample.ms) >= 40) break;
+    }
+    auto &s = status_.joint[Yaw];
+    s.velocity_window_ms = oldest ? uint32_t(now - oldest->ms) : 0;
+    if (s.velocity_window_ms < 4) return 0;
+    const auto &c = config_.joint[Yaw];
+    return float(yaw_velocity_ticks_ - oldest->ticks) * (360.0f / 8192.0f) *
+           1000.0f / s.velocity_window_ms * c.direction / c.feedback_per_joint;
+}
+
 bool ArmControl::receive(uint8_t bus, uint16_t id, const uint8_t *d, uint8_t len, uint32_t now) {
     if (!d || len != 8 || !status_.configuration_valid)
         return false;
@@ -334,8 +367,15 @@ bool ArmControl::receive(uint8_t bus, uint16_t id, const uint8_t *d, uint8_t len
             }
             r.last_encoder = encoder;
             r.motor_position_deg = float(r.encoder_sum) * (360.0f / 8192.0f);
-            s.drive_velocity_deg_s =
+            s.can_velocity_deg_s =
                 c.direction * float(int16_t(be16(d + 2))) * 6.0f / c.feedback_per_joint;
+            if (i == Yaw) {
+                s.encoder_velocity_deg_s = update_yaw_velocity(encoder, now,
+                    !r.have_feedback || uint32_t(now - s.last_feedback_ms) > config_.dji_unwrap_gap_ms);
+                s.drive_velocity_deg_s = c.encoder_velocity ? s.encoder_velocity_deg_s : s.can_velocity_deg_s;
+            } else {
+                s.drive_velocity_deg_s = s.can_velocity_deg_s;
+            }
             s.motor_effort_feedback = int16_t(be16(d + 4));
             // C610手册的DATA[6:7]保留，不当成温度反馈。
             s.temperature_c = c.motor != Motor::M2006 ? float(d[6]) : 0;

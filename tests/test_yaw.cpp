@@ -17,6 +17,7 @@ extern "C" volatile unsigned test_checks;
 namespace {
 Config config() {
     Config c = kArmConfig;
+    c.joint[Yaw].encoder_velocity = false; // Legacy synthetic rpm fixtures.
     c.joint_mask = kAllJoints;
     c.hardware_confirmed = true;
     c.pitch.mapping_confirmed = true;
@@ -70,6 +71,24 @@ bool yaw_zero(const Frame *f, unsigned n) {
 }
 } // namespace
 int test_yaw() {
+    { // Encoder speed uses wrapped angle/time, independently of bogus CAN rpm.
+        Config c = config(); c.joint[Yaw].encoder_velocity = true;
+        ArmControl a(c);
+        CHECK(feed(a, 0, 8180, 50));
+        CHECK(a.status().joint[Yaw].velocity_deg_s == 0);
+        for (uint32_t t = 1; t <= 80; ++t)
+            CHECK(feed(a, t, (8180 + t) % 8192, 50));
+        CHECK(std::fabs(a.status().joint[Yaw].velocity_deg_s - 43.9453125f) < .001f);
+        CHECK(a.status().joint[Yaw].can_velocity_deg_s == 300);
+        CHECK(a.status().joint[Yaw].velocity_window_ms == 40);
+        for (uint32_t t = 81; t <= 160; ++t)
+            CHECK(feed(a, t, (8260 - (t - 80)) % 8192, 50));
+        CHECK(std::fabs(a.status().joint[Yaw].velocity_deg_s + 43.9453125f) < .001f);
+        CHECK(feed(a, 180, 8180, 50)); // gap restarts window, not a false speed spike
+        CHECK(a.status().joint[Yaw].velocity_deg_s == 0);
+        CHECK(a.status().joint[Yaw].velocity_window_ms == 0);
+    }
+
     { // Position feedforward ramps symmetrically, including explicit reversal.
         Config c = config();
         c.joint[Yaw].position_kp = 1;

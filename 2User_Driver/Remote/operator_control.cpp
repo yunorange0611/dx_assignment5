@@ -51,6 +51,10 @@ void ArmOperator::set_yaw_limits(const YawRuntimeLimits &l) {
     arm_.joint[Yaw].max_speed_deg_s = l.max_speed_deg_s;
     targets_[Yaw] = clamp(targets_[Yaw], l.min_deg, l.max_deg);
 }
+void ArmOperator::set_yaw_remote_lead(float deg) {
+    if (finite(deg) && deg >= 2.0f && deg <= 180.0f)
+        yaw_remote_lead_deg_ = deg;
+}
 void ArmOperator::freeze(const Status &s) {
     for (unsigned i = 0; i < kJointCount; ++i)
         targets_[i] =
@@ -277,10 +281,15 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         targets_[i] = clamp(targets_[i] + input * c.max_speed_deg_s * dt, c.min_deg, c.max_deg);
     };
     auto constrain_yaw_target = [&]() {
+        // Remote target may lead the actual angle only by the configured amount,
+        // but never beyond the active runtime target-lead safety limit. When the
+        // limit is reached the stick can no longer increase the target; it waits
+        // for feedback. Reversing is allowed because it moves back into the window.
+        const float lead = std::fmin(yaw_remote_lead_deg_, yaw_limits_.max_target_lead_deg);
         targets_[Yaw] = clamp(
             targets_[Yaw],
-            std::fmax(yaw.min_deg, s.joint[Yaw].position_deg - yaw_limits_.max_target_lead_deg),
-            std::fmin(yaw.max_deg, s.joint[Yaw].position_deg + yaw_limits_.max_target_lead_deg));
+            std::fmax(yaw.min_deg, s.joint[Yaw].position_deg - lead),
+            std::fmin(yaw.max_deg, s.joint[Yaw].position_deg + lead));
     };
     if (mode_ == RobotMode::Drive) {
         o.reset_chassis_motion = false;

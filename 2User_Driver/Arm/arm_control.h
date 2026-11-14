@@ -52,7 +52,8 @@ struct JointConfig {
     float max_temperature_c;             // C610不提供温度，此项不适用于M2006
     float limit_margin_deg = 2.0f;       // 反馈越界锁存余量，同样按此轴角度单位
     float stationary_speed_deg_s = 2.0f; // 手动校零允许的驱动速度阈值
-    int16_t fixed_zero_encoder = -1; // DJI单圈固定零点0..8191；-1表示未标定
+    int16_t fixed_zero_encoder = -1;
+    bool encoder_velocity = false; // Yaw only; false restores CAN rpm feedback. // DJI单圈固定零点0..8191；-1表示未标定
 };
 struct PitchConfig {
     bool mapping_confirmed; // 两DM实例、正向、联合零位及连杆分支实测确认后才设true
@@ -95,6 +96,8 @@ struct JointStatus {
     uint8_t motor_state; // DM: 0=失能,1=使能,8~F=故障
     uint16_t raw_encoder; // DJI当前原始单圈编码器，0..8191
     int16_t fixed_zero_encoder; // 生效配置，-1表示未填写
+    float can_velocity_deg_s, encoder_velocity_deg_s;
+    uint32_t velocity_window_ms;
     bool homing; // 固定零点轴开控回零中
 };
 struct Status {
@@ -160,6 +163,11 @@ class ArmControl {
         uint32_t last_command_ms, enable_ms;
         bool have_feedback, dm_was_enabled;
     } runtime_[kJointCount]{};
+    struct VelocitySample { uint32_t ms; int64_t ticks; } yaw_velocity_history_[64]{};
+    uint32_t yaw_velocity_head_ = 0, yaw_velocity_count_ = 0;
+    int64_t yaw_velocity_ticks_ = 0;
+    uint16_t yaw_velocity_last_encoder_ = 0;
+    float update_yaw_velocity(uint16_t encoder, uint32_t now, bool reset);
     Config config_;
     const float startup_effort_cap_[kJointCount];
     float tuning_effort_limit_[kJointCount]{};

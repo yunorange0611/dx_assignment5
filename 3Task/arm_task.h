@@ -21,6 +21,8 @@ typedef struct {
     uint16_t raw_encoder;
     int16_t fixed_zero_encoder;
     uint8_t homing;
+    float can_velocity_deg_s, encoder_velocity_deg_s;
+    uint32_t velocity_window_ms;
 } ArmJointStatus;
 typedef struct {
     ArmJointStatus joint[ARM_JOINT_COUNT];
@@ -46,6 +48,22 @@ typedef struct {
     float velocity_kp, velocity_ki, position_kp;
 } YawFeedbackDiag;
 extern YawFeedbackDiag g_yaw_feedback_diag;
+
+// Fixed raw-frame capture: only while ALL arm outputs are disabled.
+// command=1 arms 500 consecutive Yaw frames (~0.5s); 2 aborts.
+// Read samples only after state=2 (frozen). state=3 means enabled/aborted.
+typedef struct {
+    uint32_t received_ms;
+    uint16_t can_id;
+    uint8_t bus, dlc, data[8];
+} YawRawSample;
+typedef struct {
+    uint32_t state, count, capture_seq;
+    YawRawSample samples[500];
+} YawRawCapture;
+extern volatile uint32_t g_yaw_capture_command;
+extern YawRawCapture g_yaw_raw_capture;
+
 
 
 // Write the fields first and request_seq last. Rejected requests are consumed once.

@@ -27,7 +27,8 @@ volatile float tune_wheel_kp = engineer::kChassisConfig.velocity_kp,
 volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
     tune_yaw_velocity_ki = 10, tune_yaw_voltage_limit_raw = 25000,
-    tune_yaw_friction_ff_raw = 5500, tune_yaw_half_range_deg = 0;
+    tune_yaw_friction_ff_raw = 5500, tune_yaw_half_range_deg = 0,
+    tune_yaw_remote_lead_deg = 15.0f;
 RobotTuneStatus g_robot_tune_status{};
 }
 namespace {
@@ -472,7 +473,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     Interlocks locks;
     bool arm_request, stop_request;
     uint32_t debug_command;
-    float yaw_friction_ff = 0;
+    float yaw_friction_ff = 0, yaw_remote_lead = 15.0f;
     taskENTER_CRITICAL();
     locks = shared_interlocks;
     arm_request = arm_requested;
@@ -482,8 +483,10 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     debug_command = g_robot_debug_command;
     g_robot_debug_command = ROBOT_DEBUG_IDLE;
     yaw_friction_ff = tune_yaw_friction_ff_raw;
+    yaw_remote_lead = tune_yaw_remote_lead_deg;
     taskEXIT_CRITICAL();
     arm.set_yaw_friction_feedforward(yaw_friction_ff);
+    controller.set_yaw_remote_lead(yaw_remote_lead);
     DR16Status rx{};
     DR16_GetStatus(&rx);
     now = HAL_GetTick();
@@ -714,8 +717,22 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         const float stick = remote_axis_value(input.frame, kOperatorConfig.left_x_channel,
                                               kOperatorConfig.axis_direction[1],
                                               kOperatorConfig.deadband);
-        yaw_direct_target_deg = std::fmax(
-            min_deg, std::fmin(max_deg, yaw_direct_target_deg + (yaw_joint.homing ? 0.0f : -stick * speed * dt)));
+        const float delta =
+            yaw_joint.homing ? 0.0f : -stick * speed * dt;
+        float candidate = std::fmax(
+            min_deg, std::fmin(max_deg, yaw_direct_target_deg + delta));
+        // Independent direct drive uses the same remote lead limit: stop
+        // increasing the target when it gets too far ahead of measured Yaw,
+        // but allow a reverse stick to move the target back immediately.
+        const float configured_lead =
+            std::isfinite(yaw_remote_lead) && yaw_remote_lead >= 2.0f ? yaw_remote_lead : 15.0f;
+        const float effective_lead =
+            std::fmin(configured_lead, limits.max_target_lead_deg);
+        if (delta > 0 && candidate - yaw_joint.position_deg > effective_lead)
+            candidate = yaw_joint.position_deg + effective_lead;
+        else if (delta < 0 && candidate - yaw_joint.position_deg < -effective_lead)
+            candidate = yaw_joint.position_deg - effective_lead;
+        yaw_direct_target_deg = std::fmax(min_deg, std::fmin(max_deg, candidate));
         float targets[kJointCount]{};
         targets[Yaw] = yaw_direct_target_deg;
         if (arm.set_targets(1u << Yaw, targets, now) == Result::Ok)

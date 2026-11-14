@@ -21,7 +21,7 @@ inline constexpr JointConfig kYawConfig = {
     10,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
     30,     // max_accel_deg_s2：参考加速度上限
     25000.0f, // max_effort：电压原码上限；旧驱动满量程25000，手册可到30000
-    0.001f,     // position_kp：位置P
+    2.4f,     // position_kp：位置P
     35.0f,   // velocity_kp：速度P，raw/(deg/s)
     10.0f,    // velocity_ki：速度I，raw/deg
     0,
@@ -30,7 +30,8 @@ inline constexpr JointConfig kYawConfig = {
     70, // 无DM协议量程；温度门槛°C
     2.0f, // 越界余量deg
     2.0f, // 静止速度阈值deg/s
-    kYawZeroEncoder
+    kYawZeroEncoder,
+    true // encoder_velocity: 40ms encoder window; false restores CAN rpm
 };
 // These values are placeholders until the wire routing and stopping distance are
 // measured. Confirmation is separate from joint PID/protocol configuration.

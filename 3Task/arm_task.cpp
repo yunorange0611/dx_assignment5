@@ -11,6 +11,8 @@
 extern "C" {
 ArmStatus g_arm_status{};
 YawFeedbackDiag g_yaw_feedback_diag{};
+volatile uint32_t g_yaw_capture_command = 0;
+YawRawCapture g_yaw_raw_capture{};
 volatile ArmTuneRequest g_arm_tune_request{};
 ArmTuneStatus g_arm_tune_status{};
 }
@@ -103,6 +105,31 @@ int submit(Kind kind, uint8_t mask, const float *q = nullptr) {
 void diagnose_yaw(const ArmControl &arm, const Received &f, bool accepted) {
     if (f.bus != kArmConfig.joint[Yaw].bus || f.id != arm.feedback_id(Yaw))
         return;
+    // Capture the queue's original raw bytes and receive timestamp together.
+    // Once frozen, no task writes samples until another explicit arm command.
+    const uint32_t command = g_yaw_capture_command;
+    if (command) {
+        g_yaw_capture_command = 0;
+        if (command == 1 && !arm.status().enabled_mask) {
+            g_yaw_raw_capture.count = 0;
+            ++g_yaw_raw_capture.capture_seq;
+            g_yaw_raw_capture.state = 1;
+        } else {
+            g_yaw_raw_capture.state = 3;
+        }
+    }
+    if (g_yaw_raw_capture.state == 1) {
+        if (arm.status().enabled_mask) {
+            g_yaw_raw_capture.state = 3;
+        } else {
+            auto &sample = g_yaw_raw_capture.samples[g_yaw_raw_capture.count];
+            sample.received_ms = f.ms;
+            sample.can_id = f.id; sample.bus = f.bus; sample.dlc = f.len;
+            std::memcpy(sample.data, f.data, 8);
+            if (++g_yaw_raw_capture.count == 500)
+                g_yaw_raw_capture.state = 2;
+        }
+    }
     static bool have = false;
     static uint32_t last_ms = 0, start_ms = 0, samples = 0, zeros = 0;
     static int last_encoder = 0;
@@ -203,6 +230,9 @@ void publish(const ArmControl &arm, uint32_t now) {
         d.raw_encoder = j.raw_encoder;
         d.fixed_zero_encoder = j.fixed_zero_encoder;
         d.homing = j.homing;
+        d.can_velocity_deg_s = j.can_velocity_deg_s;
+        d.encoder_velocity_deg_s = j.encoder_velocity_deg_s;
+        d.velocity_window_ms = j.velocity_window_ms;
     }
     taskENTER_CRITICAL();
     g_arm_status = next;

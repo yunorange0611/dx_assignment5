@@ -167,6 +167,7 @@ def joint(i):
         ('online','在线',''),('calibrated','已人工校零',''),('enabled','已使能',''),('motor_state','电机状态',''),
         ('faults','故障位图',''),('feedback_age_ms','反馈年龄','ms'),('position_deg','关节角','deg'),
         ('target_deg','关节目标','deg'),('reference_deg','参考角','deg'),('velocity_deg_s','关节速度','deg/s'),
+        ('can_velocity_deg_s','CAN原始rpm速度','deg/s'),('encoder_velocity_deg_s','编码器40ms速度','deg/s'),('velocity_window_ms','测速窗口','ms'),
         ('drive_position_deg','电机驱动角','deg'),('drive_target_deg','电机驱动目标','deg'),
         ('drive_velocity_deg_s','电机驱动速度','deg/s'),('velocity_target_deg_s','闭环目标速度','deg/s'),
         ('effort','控制输出','raw' if i == 0 else ('mA' if i in (3,4) else 'Nm'))]]
@@ -201,6 +202,7 @@ YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
             V('tune_yaw_velocity_ki','Yaw速度I','raw/deg',True,0,1000000),
             V('tune_yaw_voltage_limit_raw','Yaw测试输出上限 电压原码','raw',True,0,25000),
             V('tune_yaw_friction_ff_raw','Yaw静摩擦前馈 电压原码','raw',True,0,25000),
+            V('tune_yaw_remote_lead_deg','Yaw遥控目标最大领先','deg',True,2,180),
             V('g_arm_status.yaw_friction_ff_applied','Yaw实际叠加静摩擦前馈','raw')] + variables('g_robot_tune_status',
             [('yaw_parameter_result','Yaw参数结果 0成功',''),('yaw_position_kp','Yaw生效位置P','1/s'),
              ('yaw_velocity_kp','Yaw生效速度P',''),('yaw_velocity_ki','Yaw生效速度I',''),
@@ -753,6 +755,12 @@ def main():
         ('position_kp','控制器当前位置P',''),('updated_ms','最近接收时间','ms'),
         ('can_id','反馈CAN ID',''),('bus','CAN总线',''),('dlc','报文长度','')]) + [
         V(f'g_yaw_feedback_diag.raw_data[{i}]',f'原始CAN字节{i}') for i in range(8)]
+    feedback_diag += variables('g_arm_status.joint[0]', [
+        ('can_velocity_deg_s','CAN原始rpm速度','deg/s'),
+        ('encoder_velocity_deg_s','编码器40ms速度','deg/s'),
+        ('velocity_deg_s','当前闭环采用速度','deg/s'),
+        ('velocity_target_deg_s','闭环目标速度','deg/s'),
+        ('velocity_window_ms','编码器测速窗口','ms')])
     tune.append(G('Yaw反馈诊断（只读500ms同窗）', feedback_diag))
     diagnostic.append(G('Yaw反馈诊断（只读500ms同窗）', feedback_diag))
     records=[create(OUTPUT/'底盘调参.pmpx','底盘与Yaw分批调参',tune,not args.no_backup,
