@@ -141,6 +141,41 @@ float Project4Reference(YawPid *pid, float target, float feedback, float dt)
 }
 } // namespace
 int test_yaw() {
+    { // Migration regression: resets must reach the new sigma, not legacy integral.
+        Config c = config();
+        c.joint[Yaw].velocity_ki = 10;
+        ArmControl a(c); Frame frames[kJointCount]{};
+        CHECK(feed(a, 0)); CHECK(a.capture_zero(1, 0) == Result::Ok);
+        CHECK(a.enable(1, 0) == Result::Ok);
+        a.set_yaw_tuning_limits(false);
+        for (unsigned t = 4; t <= 100; t += 4) {
+            CHECK(feed(a, t)); CHECK(a.set_yaw_test_speed(5, t) == Result::Ok);
+            a.step(t, frames);
+        }
+        CHECK(a.yaw_pid_snapshot().velocity_sigma > 0);
+        CHECK(a.set_yaw_test_speed(-5, 100) == Result::Ok);
+        CHECK(a.yaw_pid_snapshot().velocity_sigma == 0);
+        for (unsigned t = 104; t <= 200; t += 4) {
+            CHECK(feed(a, t)); CHECK(a.set_yaw_test_speed(-5, t) == Result::Ok);
+            a.step(t, frames);
+        }
+        CHECK(a.yaw_pid_snapshot().velocity_sigma < 0);
+        CHECK(a.set_yaw_test_speed(0, 200) == Result::Ok);
+        CHECK(a.yaw_pid_snapshot().velocity_sigma == 0);
+        a.clear_yaw_test();
+        float q[kJointCount]{}; q[Yaw] = 5;
+        for (unsigned t = 204; t <= 300; t += 4) {
+            CHECK(feed(a, t)); CHECK(a.set_targets(1, q, t) == Result::Ok);
+            a.step(t, frames);
+        }
+        CHECK(a.yaw_pid_snapshot().velocity_sigma > 0);
+        // Same-direction update retains I; explicit opposite destination clears it.
+        q[Yaw] = 6; CHECK(a.set_targets(1, q, 300) == Result::Ok);
+        CHECK(a.yaw_pid_snapshot().velocity_sigma > 0);
+        q[Yaw] = -5; CHECK(a.set_targets(1, q, 300) == Result::Ok);
+        CHECK(a.yaw_pid_snapshot().velocity_sigma == 0);
+    }
+
     { // Low-speed position request still receives full fixed friction compensation.
         Config c = config(); c.joint[Yaw].position_kp = .01f;
         ArmControl a(c); Frame frames[kJointCount]{};

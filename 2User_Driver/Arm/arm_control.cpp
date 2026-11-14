@@ -618,7 +618,7 @@ Result ArmControl::set_yaw_test_speed(float speed, uint32_t now) {
                            (speed < 0 && yaw_test_speed_ > 0);
     const bool stopping = speed == 0 && yaw_test_speed_ != 0;
     if (reversing || stopping)
-        runtime_[Yaw].integral = 0;
+        yaw_velocity_pid_.sigma_error = 0; // Actual project4 PID integral, not legacy PI state.
     // Entering/leaving the speed test is a control-mode change: start the new
     // Yaw PID pair from a clean state. Target changes inside a mode do not reset.
     if (!yaw_test_active_)
@@ -935,12 +935,13 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
     for (unsigned i = 0; i < kJointCount; ++i)
         if (mask & (1u << i)) {
             if (i == Yaw && !yaw_test_active_ && next[i] != status_.joint[i].target_deg) {
-                const float old_error = status_.joint[i].target_deg - status_.joint[i].position_deg;
                 const float new_error = next[i] - status_.joint[i].position_deg;
-                // Clear old velocity-I only on an explicit reversal across the
-                // actual angle. Repeated targets and normal overshoot keep PI state.
-                if (old_error * new_error < 0)
-                    runtime_[i].integral = 0;
+                // Explicit destination update: discard I only when it fights the
+                // new destination. Also works when the old destination was reached.
+                // Unchanged targets / natural overshoot never repeatedly clear I.
+                if (std::fabs(new_error) > kYawPositionFfStartErrorDeg &&
+                    new_error * yaw_velocity_pid_.sigma_error < 0)
+                    yaw_velocity_pid_.sigma_error = 0;
             }
             status_.joint[i].target_deg =
                 i == Yaw

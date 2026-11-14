@@ -7,7 +7,7 @@ namespace engineer {
 // 以下方向、零位范围、PID和电压原码上限仍是台架占位，需负责人实测。
 // 对正车头且失能时，读取 g_arm_status.joint[0].raw_encoder 后填入这里。
 // -1=尚未填写，禁止固定零点自动开控；有效值0..8191。修改后重新编译烧录。
-inline constexpr int16_t kYawZeroEncoder = 1442; // 2026-11-14 用户指定当前姿态；SWD读1441/1442/1442（0x05A2）
+inline constexpr int16_t kYawZeroEncoder = 2484; // 用户指定当前零位；SWD连续三次2484（0x09B4）
 static_assert(kYawZeroEncoder >= -1 && kYawZeroEncoder < 8192, "Yaw zero must be -1 or 0..8191");
 inline constexpr JointConfig kYawConfig = {
     Motor::Gm6020Voltage,
@@ -21,7 +21,7 @@ inline constexpr JointConfig kYawConfig = {
     50,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
     60,     // max_accel_deg_s2：参考加速度上限
     25000.0f, // max_effort：电压原码上限；旧驱动满量程25000，手册可到30000
-    30.0f,     // position_kp：位置P，安全起步值
+    45.0f,     // position_kp：位置P，安全起步值
     48.0f,    // velocity_kp：速度P，raw/(deg/s)，安全起步值
     40.0f,     // velocity_ki：速度I，raw/deg，先关闭积分
 

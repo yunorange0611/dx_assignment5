@@ -9,7 +9,7 @@ volatile float tune_yaw_position_max_output = engineer::kYawConfig.max_speed_deg
 volatile float tune_yaw_position_d_tau = 0.01f;
 volatile float tune_yaw_velocity_kd = 0;
 volatile float tune_yaw_velocity_max_i_error = 60.0f;
-volatile float tune_yaw_velocity_max_sigma = 300.0f; // deg: independent error-integral bound
+volatile float tune_yaw_velocity_max_sigma = 400.0f; // deg: independent error-integral bound
 volatile float tune_yaw_velocity_d_tau = 0.01f;
 }
 
