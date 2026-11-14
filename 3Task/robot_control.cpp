@@ -29,7 +29,7 @@ volatile float tune_yaw_position_kp = engineer::kYawConfig.position_kp,
     tune_yaw_velocity_kp = engineer::kYawConfig.velocity_kp,
     tune_yaw_velocity_ki = engineer::kYawConfig.velocity_ki,
     tune_yaw_voltage_limit_raw = engineer::kYawConfig.max_effort,
-    tune_yaw_friction_ff_raw = 0, tune_yaw_half_range_deg = 0,
+    tune_yaw_friction_ff_raw = 5500, tune_yaw_half_range_deg = 0,
     tune_yaw_remote_lead_deg = 3.0f; // Remote target lead; runtime cap is also applied.
 RobotTuneStatus g_robot_tune_status{};
 }

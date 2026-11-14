@@ -21,8 +21,8 @@ inline constexpr JointConfig kYawConfig = {
     50,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
     60,     // max_accel_deg_s2：参考加速度上限
     25000.0f, // max_effort：电压原码上限；旧驱动满量程25000，手册可到30000
-    2.0f,     // position_kp：位置P，安全起步值
-    40.0f,    // velocity_kp：速度P，raw/(deg/s)，安全起步值
+    30.0f,     // position_kp：位置P，安全起步值
+    48.0f,    // velocity_kp：速度P，raw/(deg/s)，安全起步值
     40.0f,     // velocity_ki：速度I，raw/deg，先关闭积分
 
     0,

@@ -8,8 +8,8 @@
 			<member name="name" type="string">robot_tune_mode</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010794</member>
-			<member name="last_addr" type="uint32">0x20010794</member>
+			<member name="address" type="string">0x2001079c</member>
+			<member name="last_addr" type="uint32">0x2001079c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">robot_tune_mode；调参对象 0正常1左电流2右电流3左速度4右速度5Yaw速度6Yaw位置；只选对象；切档自动清旧目标。写非零电流/速度目标即开始本次测试，写0停止；位置档选档后保持在当前角。0档退出并保留已有机械臂保持。</member>
 			<member name="comment" type="string" />
@@ -57,8 +57,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010774</member>
-			<member name="last_addr" type="uint32">0x20010774</member>
+			<member name="address" type="string">0x2001077c</member>
+			<member name="last_addr" type="uint32">0x2001077c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[0]；左竖 前后请求；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -106,8 +106,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[3]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010780</member>
-			<member name="last_addr" type="uint32">0x20010780</member>
+			<member name="address" type="string">0x20010788</member>
+			<member name="last_addr" type="uint32">0x20010788</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[3]；右横 转向请求；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -155,8 +155,8 @@
 			<member name="name" type="string">g_robot_status.remote_switch[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010784</member>
-			<member name="last_addr" type="uint32">0x20010784</member>
+			<member name="address" type="string">0x2001078c</member>
+			<member name="last_addr" type="uint32">0x2001078c</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.remote_switch[0]；左拨杆 上1中3下2；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -204,8 +204,8 @@
 			<member name="name" type="string">g_dr16_status.valid</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000daa8</member>
-			<member name="last_addr" type="uint32">0x2000daa8</member>
+			<member name="address" type="string">0x2000dab0</member>
+			<member name="last_addr" type="uint32">0x2000dab0</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_dr16_status.valid；遥控帧有效；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -253,8 +253,8 @@
 			<member name="name" type="string">g_robot_status.remote_age_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010738</member>
-			<member name="last_addr" type="uint32">0x20010738</member>
+			<member name="address" type="string">0x20010740</member>
+			<member name="last_addr" type="uint32">0x20010740</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_age_ms；遥控接收年龄；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -302,8 +302,8 @@
 			<member name="name" type="string">g_robot_status.independent_stop_latched</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010726</member>
-			<member name="last_addr" type="uint32">0x20010726</member>
+			<member name="address" type="string">0x2001072e</member>
+			<member name="last_addr" type="uint32">0x2001072e</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.independent_stop_latched；独立底盘STOP锁存 回中/命令4清除；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -351,8 +351,8 @@
 			<member name="name" type="string">g_robot_status.independent_armed</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010727</member>
-			<member name="last_addr" type="uint32">0x20010727</member>
+			<member name="address" type="string">0x2001072f</member>
+			<member name="last_addr" type="uint32">0x2001072f</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.independent_armed；独立底盘已回中解锁；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -988,8 +988,8 @@
 			<member name="name" type="string">g_robot_debug_command</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010790</member>
-			<member name="last_addr" type="uint32">0x20010790</member>
+			<member name="address" type="string">0x20010798</member>
+			<member name="last_addr" type="uint32">0x20010798</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_debug_command；整车命令 0空闲1停2校零3清错4请求开控5仅使能Yaw6仅失能Yaw；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -1037,8 +1037,8 @@
 			<member name="name" type="string">uwTick</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000014c</member>
-			<member name="last_addr" type="uint32">0x2000014c</member>
+			<member name="address" type="string">0x20000154</member>
+			<member name="last_addr" type="uint32">0x20000154</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">uwTick；系统毫秒计数；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1086,8 +1086,8 @@
 			<member name="name" type="string">g_robot_status.stop_epoch</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001072c</member>
-			<member name="last_addr" type="uint32">0x2001072c</member>
+			<member name="address" type="string">0x20010734</member>
+			<member name="last_addr" type="uint32">0x20010734</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.stop_epoch；全局关控次数；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1135,8 +1135,8 @@
 			<member name="name" type="string">g_robot_status.protection_current_reasons</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010740</member>
-			<member name="last_addr" type="uint32">0x20010740</member>
+			<member name="address" type="string">0x20010748</member>
+			<member name="last_addr" type="uint32">0x20010748</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.protection_current_reasons；当前保护原因位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1184,8 +1184,8 @@
 			<member name="name" type="string">g_robot_status.protection_latched_reasons</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010744</member>
-			<member name="last_addr" type="uint32">0x20010744</member>
+			<member name="address" type="string">0x2001074c</member>
+			<member name="last_addr" type="uint32">0x2001074c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.protection_latched_reasons；历史锁存原因位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1233,8 +1233,8 @@
 			<member name="name" type="string">g_arm_status.enabled_mask</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcc0</member>
-			<member name="last_addr" type="uint32">0x2000dcc0</member>
+			<member name="address" type="string">0x2000dcc8</member>
+			<member name="last_addr" type="uint32">0x2000dcc8</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_arm_status.enabled_mask；机械臂使能掩码；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1282,8 +1282,8 @@
 			<member name="name" type="string">g_dr16_status.good_frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da98</member>
-			<member name="last_addr" type="uint32">0x2000da98</member>
+			<member name="address" type="string">0x2000daa0</member>
+			<member name="last_addr" type="uint32">0x2000daa0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_dr16_status.good_frames；有效帧累计；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1331,8 +1331,8 @@
 			<member name="name" type="string">g_dr16_status.frame.channel[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da7c</member>
-			<member name="last_addr" type="uint32">0x2000da7c</member>
+			<member name="address" type="string">0x2000da84</member>
+			<member name="last_addr" type="uint32">0x2000da84</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_dr16_status.frame.channel[0]；遥控通道0 中位约0；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1380,8 +1380,8 @@
 			<member name="name" type="string">g_dr16_status.frame.channel[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da7e</member>
-			<member name="last_addr" type="uint32">0x2000da7e</member>
+			<member name="address" type="string">0x2000da86</member>
+			<member name="last_addr" type="uint32">0x2000da86</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_dr16_status.frame.channel[1]；遥控通道1 中位约0；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1429,8 +1429,8 @@
 			<member name="name" type="string">g_dr16_status.frame.channel[2]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da80</member>
-			<member name="last_addr" type="uint32">0x2000da80</member>
+			<member name="address" type="string">0x2000da88</member>
+			<member name="last_addr" type="uint32">0x2000da88</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_dr16_status.frame.channel[2]；遥控通道2 中位约0；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1478,8 +1478,8 @@
 			<member name="name" type="string">g_dr16_status.frame.channel[3]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da82</member>
-			<member name="last_addr" type="uint32">0x2000da82</member>
+			<member name="address" type="string">0x2000da8a</member>
+			<member name="last_addr" type="uint32">0x2000da8a</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_dr16_status.frame.channel[3]；遥控通道3 中位约0；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1527,8 +1527,8 @@
 			<member name="name" type="string">g_dr16_status.frame.channel[4]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da84</member>
-			<member name="last_addr" type="uint32">0x2000da84</member>
+			<member name="address" type="string">0x2000da8c</member>
+			<member name="last_addr" type="uint32">0x2000da8c</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_dr16_status.frame.channel[4]；遥控通道4 中位约0；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1576,8 +1576,8 @@
 			<member name="name" type="string">g_dr16_status.frame.switches[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da86</member>
-			<member name="last_addr" type="uint32">0x2000da86</member>
+			<member name="address" type="string">0x2000da8e</member>
+			<member name="last_addr" type="uint32">0x2000da8e</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_dr16_status.frame.switches[0]；拨杆原码0 上1中3下2；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1625,8 +1625,8 @@
 			<member name="name" type="string">g_dr16_status.frame.switches[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000da87</member>
-			<member name="last_addr" type="uint32">0x2000da87</member>
+			<member name="address" type="string">0x2000da8f</member>
+			<member name="last_addr" type="uint32">0x2000da8f</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_dr16_status.frame.switches[1]；拨杆原码1 上1中3下2；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1674,8 +1674,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010778</member>
-			<member name="last_addr" type="uint32">0x20010778</member>
+			<member name="address" type="string">0x20010780</member>
+			<member name="last_addr" type="uint32">0x20010780</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[1]；左横X 处理后；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1723,8 +1723,8 @@
 			<member name="name" type="string">g_robot_status.remote_axis[2]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001077c</member>
-			<member name="last_addr" type="uint32">0x2001077c</member>
+			<member name="address" type="string">0x20010784</member>
+			<member name="last_addr" type="uint32">0x20010784</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.remote_axis[2]；右竖Y 处理后；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1772,8 +1772,8 @@
 			<member name="name" type="string">g_robot_status.remote_switch[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010785</member>
-			<member name="last_addr" type="uint32">0x20010785</member>
+			<member name="address" type="string">0x2001078d</member>
+			<member name="last_addr" type="uint32">0x2001078d</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.remote_switch[1]；处理后右拨杆；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1821,8 +1821,8 @@
 			<member name="name" type="string">g_robot_status.remote_online</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001071d</member>
-			<member name="last_addr" type="uint32">0x2001071d</member>
+			<member name="address" type="string">0x20010725</member>
+			<member name="last_addr" type="uint32">0x20010725</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.remote_online；遥控在线；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -1968,8 +1968,8 @@
 			<member name="name" type="string">tune_current_ma</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010798</member>
-			<member name="last_addr" type="uint32">0x20010798</member>
+			<member name="address" type="string">0x200107a0</member>
+			<member name="last_addr" type="uint32">0x200107a0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_current_ma；单轮电流测试目标；选档后从0小步填写；非零电流开始500ms计时，写0停止。</member>
 			<member name="comment" type="string" />
@@ -2213,8 +2213,8 @@
 			<member name="name" type="string">tune_chassis_acceleration_m_s2</member>
 			<member name="unit" type="string">m/s^2</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20000078</member>
-			<member name="last_addr" type="uint32">0x20000078</member>
+			<member name="address" type="string">0x20000080</member>
+			<member name="last_addr" type="uint32">0x20000080</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_chassis_acceleration_m_s2；行驶加速度；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2262,8 +2262,8 @@
 			<member name="name" type="string">tune_chassis_deceleration_m_s2</member>
 			<member name="unit" type="string">m/s^2</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000007c</member>
-			<member name="last_addr" type="uint32">0x2000007c</member>
+			<member name="address" type="string">0x20000084</member>
+			<member name="last_addr" type="uint32">0x20000084</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_chassis_deceleration_m_s2；行驶减速度；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2311,8 +2311,8 @@
 			<member name="name" type="string">tune_chassis_angular_accel_rad_s2</member>
 			<member name="unit" type="string">rad/s^2</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20000080</member>
-			<member name="last_addr" type="uint32">0x20000080</member>
+			<member name="address" type="string">0x20000088</member>
+			<member name="last_addr" type="uint32">0x20000088</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_chassis_angular_accel_rad_s2；转向角加速度；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2360,8 +2360,8 @@
 			<member name="name" type="string">tune_chassis_angular_decel_rad_s2</member>
 			<member name="unit" type="string">rad/s^2</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20000084</member>
-			<member name="last_addr" type="uint32">0x20000084</member>
+			<member name="address" type="string">0x2000008c</member>
+			<member name="last_addr" type="uint32">0x2000008c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_chassis_angular_decel_rad_s2；转向角减速度；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2409,8 +2409,8 @@
 			<member name="name" type="string">tune_chassis_max_turn_rad_s</member>
 			<member name="unit" type="string">rad/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20000088</member>
-			<member name="last_addr" type="uint32">0x20000088</member>
+			<member name="address" type="string">0x20000090</member>
+			<member name="last_addr" type="uint32">0x20000090</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_chassis_max_turn_rad_s；最大转向角速度；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2458,8 +2458,8 @@
 			<member name="name" type="string">tune_attitude_trip_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000bc</member>
-			<member name="last_addr" type="uint32">0x200000bc</member>
+			<member name="address" type="string">0x200000c4</member>
+			<member name="last_addr" type="uint32">0x200000c4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_attitude_trip_deg；翻车触发角；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2507,8 +2507,8 @@
 			<member name="name" type="string">tune_attitude_release_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000c0</member>
-			<member name="last_addr" type="uint32">0x200000c0</member>
+			<member name="address" type="string">0x200000c8</member>
+			<member name="last_addr" type="uint32">0x200000c8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_attitude_release_deg；翻车解除角；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2556,8 +2556,8 @@
 			<member name="name" type="string">tune_attitude_trip_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000c4</member>
-			<member name="last_addr" type="uint32">0x200000c4</member>
+			<member name="address" type="string">0x200000cc</member>
+			<member name="last_addr" type="uint32">0x200000cc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_attitude_trip_ms；翻车触发时间；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2605,8 +2605,8 @@
 			<member name="name" type="string">tune_attitude_release_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000c8</member>
-			<member name="last_addr" type="uint32">0x200000c8</member>
+			<member name="address" type="string">0x200000d0</member>
+			<member name="last_addr" type="uint32">0x200000d0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_attitude_release_ms；翻车解除时间；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -2899,8 +2899,8 @@
 			<member name="name" type="string">g_robot_status.yaw_direct_active</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010728</member>
-			<member name="last_addr" type="uint32">0x20010728</member>
+			<member name="address" type="string">0x20010730</member>
+			<member name="last_addr" type="uint32">0x20010730</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.yaw_direct_active；Yaw直控中；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2948,8 +2948,8 @@
 			<member name="name" type="string">g_robot_status.yaw_direct_target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010758</member>
-			<member name="last_addr" type="uint32">0x20010758</member>
+			<member name="address" type="string">0x20010760</member>
+			<member name="last_addr" type="uint32">0x20010760</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_robot_status.yaw_direct_target_deg；Yaw直控目标；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -2997,8 +2997,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000daf0</member>
-			<member name="last_addr" type="uint32">0x2000daf0</member>
+			<member name="address" type="string">0x2000daf8</member>
+			<member name="last_addr" type="uint32">0x2000daf8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].position_deg；Yaw反馈；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3046,8 +3046,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000daf8</member>
-			<member name="last_addr" type="uint32">0x2000daf8</member>
+			<member name="address" type="string">0x2000db00</member>
+			<member name="last_addr" type="uint32">0x2000db00</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].target_deg；Yaw目标；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3095,8 +3095,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].velocity_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000daf4</member>
-			<member name="last_addr" type="uint32">0x2000daf4</member>
+			<member name="address" type="string">0x2000dafc</member>
+			<member name="last_addr" type="uint32">0x2000dafc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].velocity_deg_s；Yaw速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3144,8 +3144,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].effort</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db00</member>
-			<member name="last_addr" type="uint32">0x2000db00</member>
+			<member name="address" type="string">0x2000db08</member>
+			<member name="last_addr" type="uint32">0x2000db08</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].effort；Yaw输出 电压原码；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3193,8 +3193,8 @@
 			<member name="name" type="string">tune_yaw_friction_ff_raw</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107ac</member>
-			<member name="last_addr" type="uint32">0x200107ac</member>
+			<member name="address" type="string">0x20000044</member>
+			<member name="last_addr" type="uint32">0x20000044</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_friction_ff_raw；Yaw静摩擦前馈 电压原码；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -3242,8 +3242,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].enabled</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db32</member>
-			<member name="last_addr" type="uint32">0x2000db32</member>
+			<member name="address" type="string">0x2000db3a</member>
+			<member name="last_addr" type="uint32">0x2000db3a</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_arm_status.joint[0].enabled；Yaw使能；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3291,8 +3291,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].calibrated</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db31</member>
-			<member name="last_addr" type="uint32">0x2000db31</member>
+			<member name="address" type="string">0x2000db39</member>
+			<member name="last_addr" type="uint32">0x2000db39</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_arm_status.joint[0].calibrated；Yaw校零；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3340,8 +3340,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].faults</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db2c</member>
-			<member name="last_addr" type="uint32">0x2000db2c</member>
+			<member name="address" type="string">0x2000db34</member>
+			<member name="last_addr" type="uint32">0x2000db34</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].faults；Yaw故障位图；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -3487,8 +3487,8 @@
 			<member name="name" type="string">tune_chassis_power_budget_w</member>
 			<member name="unit" type="string">W</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000008c</member>
-			<member name="last_addr" type="uint32">0x2000008c</member>
+			<member name="address" type="string">0x20000094</member>
+			<member name="last_addr" type="uint32">0x20000094</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_chassis_power_budget_w；功率预算 50W以下；confirmed=false 时不生效；当前代码默认未启用。</member>
 			<member name="comment" type="string" />
@@ -3536,8 +3536,8 @@
 			<member name="name" type="string">tune_chassis_power_filter_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20000090</member>
-			<member name="last_addr" type="uint32">0x20000090</member>
+			<member name="address" type="string">0x20000098</member>
+			<member name="last_addr" type="uint32">0x20000098</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_chassis_power_filter_ms；功率滤波时间；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -4271,8 +4271,8 @@
 			<member name="name" type="string">tune_speed_rpm</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001079c</member>
-			<member name="last_addr" type="uint32">0x2001079c</member>
+			<member name="address" type="string">0x200107a4</member>
+			<member name="last_addr" type="uint32">0x200107a4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_speed_rpm；单轮速度目标 3508转子rpm；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -4320,8 +4320,8 @@
 			<member name="name" type="string">g_chassis_tune_status.result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000ac</member>
-			<member name="last_addr" type="uint32">0x200000ac</member>
+			<member name="address" type="string">0x200000b4</member>
+			<member name="last_addr" type="uint32">0x200000b4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_tune_status.result；轮参数结果 0待机1成功2非法3忙4未就绪；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4369,8 +4369,8 @@
 			<member name="name" type="string">g_chassis_tune_status.velocity_kp</member>
 			<member name="unit" type="string">mA/rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000b0</member>
-			<member name="last_addr" type="uint32">0x200000b0</member>
+			<member name="address" type="string">0x200000b8</member>
+			<member name="last_addr" type="uint32">0x200000b8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_tune_status.velocity_kp；生效轮速P；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4418,8 +4418,8 @@
 			<member name="name" type="string">g_chassis_tune_status.velocity_ki</member>
 			<member name="unit" type="string">mA/(rpm*s)</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000b4</member>
-			<member name="last_addr" type="uint32">0x200000b4</member>
+			<member name="address" type="string">0x200000bc</member>
+			<member name="last_addr" type="uint32">0x200000bc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_tune_status.velocity_ki；生效轮速I；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4467,8 +4467,8 @@
 			<member name="name" type="string">g_chassis_tune_status.max_current_ma</member>
 			<member name="unit" type="string">mA</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200000b8</member>
-			<member name="last_addr" type="uint32">0x200000b8</member>
+			<member name="address" type="string">0x200000c0</member>
+			<member name="last_addr" type="uint32">0x200000c0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_chassis_tune_status.max_current_ma；生效运行限流；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4516,8 +4516,8 @@
 			<member name="name" type="string">g_arm_status.joint[1].position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db48</member>
-			<member name="last_addr" type="uint32">0x2000db48</member>
+			<member name="address" type="string">0x2000db50</member>
+			<member name="last_addr" type="uint32">0x2000db50</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[1].position_deg；肩关节关节角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4565,8 +4565,8 @@
 			<member name="name" type="string">g_arm_status.joint[1].target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db50</member>
-			<member name="last_addr" type="uint32">0x2000db50</member>
+			<member name="address" type="string">0x2000db58</member>
+			<member name="last_addr" type="uint32">0x2000db58</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[1].target_deg；肩关节关节目标；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4614,8 +4614,8 @@
 			<member name="name" type="string">g_arm_status.joint[1].effort</member>
 			<member name="unit" type="string">Nm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db58</member>
-			<member name="last_addr" type="uint32">0x2000db58</member>
+			<member name="address" type="string">0x2000db60</member>
+			<member name="last_addr" type="uint32">0x2000db60</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[1].effort；肩关节控制输出；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4663,8 +4663,8 @@
 			<member name="name" type="string">g_arm_status.joint[2].position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dba0</member>
-			<member name="last_addr" type="uint32">0x2000dba0</member>
+			<member name="address" type="string">0x2000dba8</member>
+			<member name="last_addr" type="uint32">0x2000dba8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[2].position_deg；肘关节关节角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4712,8 +4712,8 @@
 			<member name="name" type="string">g_arm_status.joint[2].target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dba8</member>
-			<member name="last_addr" type="uint32">0x2000dba8</member>
+			<member name="address" type="string">0x2000dbb0</member>
+			<member name="last_addr" type="uint32">0x2000dbb0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[2].target_deg；肘关节关节目标；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4761,8 +4761,8 @@
 			<member name="name" type="string">g_arm_status.joint[2].effort</member>
 			<member name="unit" type="string">Nm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dbb0</member>
-			<member name="last_addr" type="uint32">0x2000dbb0</member>
+			<member name="address" type="string">0x2000dbb8</member>
+			<member name="last_addr" type="uint32">0x2000dbb8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[2].effort；肘关节控制输出；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4810,8 +4810,8 @@
 			<member name="name" type="string">g_robot_status.mode</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20010719</member>
-			<member name="last_addr" type="uint32">0x20010719</member>
+			<member name="address" type="string">0x20010721</member>
+			<member name="last_addr" type="uint32">0x20010721</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.mode；模式 0安全1行驶2夹取3待机；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4859,8 +4859,8 @@
 			<member name="name" type="string">g_robot_status.active</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2001071b</member>
-			<member name="last_addr" type="uint32">0x2001071b</member>
+			<member name="address" type="string">0x20010723</member>
+			<member name="last_addr" type="uint32">0x20010723</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_robot_status.active；机械臂协调开控；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -4908,8 +4908,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].raw_encoder</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db34</member>
-			<member name="last_addr" type="uint32">0x2000db34</member>
+			<member name="address" type="string">0x2000db3c</member>
+			<member name="last_addr" type="uint32">0x2000db3c</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_arm_status.joint[0].raw_encoder；Yaw原始编码器 对正车头时抄到kYawZeroEncoder；只读0..8191；零点在Arm/yaw_config.h填写，重新编译烧录。</member>
 			<member name="comment" type="string" />
@@ -4957,8 +4957,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].fixed_zero_encoder</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db36</member>
-			<member name="last_addr" type="uint32">0x2000db36</member>
+			<member name="address" type="string">0x2000db3e</member>
+			<member name="last_addr" type="uint32">0x2000db3e</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_arm_status.joint[0].fixed_zero_encoder；Yaw已配置固定零点 -1未填写；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5006,8 +5006,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].homing</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db38</member>
-			<member name="last_addr" type="uint32">0x2000db38</member>
+			<member name="address" type="string">0x2000db40</member>
+			<member name="last_addr" type="uint32">0x2000db40</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_arm_status.joint[0].homing；Yaw开控回零中；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5202,8 +5202,8 @@
 			<member name="name" type="string">g_arm_status.last_result</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcc3</member>
-			<member name="last_addr" type="uint32">0x2000dcc3</member>
+			<member name="address" type="string">0x2000dccb</member>
+			<member name="last_addr" type="uint32">0x2000dccb</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_arm_status.last_result；Arm最近操作结果；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5300,8 +5300,8 @@
 			<member name="name" type="string">tune_yaw_velocity_ki</member>
 			<member name="unit" type="string">raw/deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107a8</member>
-			<member name="last_addr" type="uint32">0x200107a8</member>
+			<member name="address" type="string">0x2000003c</member>
+			<member name="last_addr" type="uint32">0x2000003c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_velocity_ki；Yaw速度I；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -5349,8 +5349,8 @@
 			<member name="name" type="string">tune_yaw_voltage_limit_raw</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000003c</member>
-			<member name="last_addr" type="uint32">0x2000003c</member>
+			<member name="address" type="string">0x20000040</member>
+			<member name="last_addr" type="uint32">0x20000040</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_voltage_limit_raw；Yaw测试输出上限 电压原码；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -5398,8 +5398,8 @@
 			<member name="name" type="string">tune_yaw_speed_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107a0</member>
-			<member name="last_addr" type="uint32">0x200107a0</member>
+			<member name="address" type="string">0x200107a8</member>
+			<member name="last_addr" type="uint32">0x200107a8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_speed_deg_s；Yaw速度内环目标；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -5447,8 +5447,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].velocity_target_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db20</member>
-			<member name="last_addr" type="uint32">0x2000db20</member>
+			<member name="address" type="string">0x2000db28</member>
+			<member name="last_addr" type="uint32">0x2000db28</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].velocity_target_deg_s；Yaw闭环目标速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -5790,8 +5790,8 @@
 			<member name="name" type="string">tune_yaw_target_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x200107a4</member>
-			<member name="last_addr" type="uint32">0x200107a4</member>
+			<member name="address" type="string">0x200107ac</member>
+			<member name="last_addr" type="uint32">0x200107ac</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_target_deg；Yaw位置双环目标；切6档时自动对齐当前角。目标必须在已生效线束软限位内，先测1到2度小动作。</member>
 			<member name="comment" type="string" />
@@ -5839,8 +5839,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].reference_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dafc</member>
-			<member name="last_addr" type="uint32">0x2000dafc</member>
+			<member name="address" type="string">0x2000db04</member>
+			<member name="last_addr" type="uint32">0x2000db04</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].reference_deg；Yaw参考角；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6035,8 +6035,8 @@
 			<member name="name" type="string">tune_yaw_remote_lead_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x20000040</member>
-			<member name="last_addr" type="uint32">0x20000040</member>
+			<member name="address" type="string">0x20000048</member>
+			<member name="last_addr" type="uint32">0x20000048</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">tune_yaw_remote_lead_deg；Yaw遥控目标最大领先 默认3；直接修改，由唯一控制owner检查后使用；切档先清目标。</member>
 			<member name="comment" type="string" />
@@ -6084,8 +6084,8 @@
 			<member name="name" type="string">g_arm_status.yaw_friction_ff_applied</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcc4</member>
-			<member name="last_addr" type="uint32">0x2000dcc4</member>
+			<member name="address" type="string">0x2000dccc</member>
+			<member name="last_addr" type="uint32">0x2000dccc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.yaw_friction_ff_applied；Yaw实际叠加静摩擦前馈；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6378,8 +6378,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.window_valid</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd16</member>
-			<member name="last_addr" type="uint32">0x2000dd16</member>
+			<member name="address" type="string">0x2000dd1e</member>
+			<member name="last_addr" type="uint32">0x2000dd1e</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.window_valid；统计窗口有效；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6427,8 +6427,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.window_seq</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcec</member>
-			<member name="last_addr" type="uint32">0x2000dcec</member>
+			<member name="address" type="string">0x2000dcf4</member>
+			<member name="last_addr" type="uint32">0x2000dcf4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.window_seq；窗口更新序号；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6476,8 +6476,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.window_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcf0</member>
-			<member name="last_addr" type="uint32">0x2000dcf0</member>
+			<member name="address" type="string">0x2000dcf8</member>
+			<member name="last_addr" type="uint32">0x2000dcf8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.window_ms；同窗时间；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6525,8 +6525,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.window_frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcf4</member>
-			<member name="last_addr" type="uint32">0x2000dcf4</member>
+			<member name="address" type="string">0x2000dcfc</member>
+			<member name="last_addr" type="uint32">0x2000dcfc</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.window_frames；同窗反馈帧数；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6574,8 +6574,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.encoder_speed_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd18</member>
-			<member name="last_addr" type="uint32">0x2000dd18</member>
+			<member name="address" type="string">0x2000dd20</member>
+			<member name="last_addr" type="uint32">0x2000dd20</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.encoder_speed_deg_s；编码器角差平均速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6623,8 +6623,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.rpm_mean_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd1c</member>
-			<member name="last_addr" type="uint32">0x2000dd1c</member>
+			<member name="address" type="string">0x2000dd24</member>
+			<member name="last_addr" type="uint32">0x2000dd24</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.rpm_mean_deg_s；CAN rpm同窗平均速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6672,8 +6672,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.rpm_min_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd20</member>
-			<member name="last_addr" type="uint32">0x2000dd20</member>
+			<member name="address" type="string">0x2000dd28</member>
+			<member name="last_addr" type="uint32">0x2000dd28</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.rpm_min_deg_s；窗口CAN最小速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6721,8 +6721,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.rpm_max_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd24</member>
-			<member name="last_addr" type="uint32">0x2000dd24</member>
+			<member name="address" type="string">0x2000dd2c</member>
+			<member name="last_addr" type="uint32">0x2000dd2c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.rpm_max_deg_s；窗口CAN最大速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6770,8 +6770,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.zero_rpm_fraction</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd28</member>
-			<member name="last_addr" type="uint32">0x2000dd28</member>
+			<member name="address" type="string">0x2000dd30</member>
+			<member name="last_addr" type="uint32">0x2000dd30</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.zero_rpm_fraction；窗口零rpm比例；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6819,8 +6819,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_encoder</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd06</member>
-			<member name="last_addr" type="uint32">0x2000dd06</member>
+			<member name="address" type="string">0x2000dd0e</member>
+			<member name="last_addr" type="uint32">0x2000dd0e</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_encoder；原始编码器；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6868,8 +6868,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_rpm</member>
 			<member name="unit" type="string">rpm</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd08</member>
-			<member name="last_addr" type="uint32">0x2000dd08</member>
+			<member name="address" type="string">0x2000dd10</member>
+			<member name="last_addr" type="uint32">0x2000dd10</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_rpm；原始有符号rpm；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6917,8 +6917,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_effort</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd0a</member>
-			<member name="last_addr" type="uint32">0x2000dd0a</member>
+			<member name="address" type="string">0x2000dd12</member>
+			<member name="last_addr" type="uint32">0x2000dd12</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_effort；原始电机反馈输出；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -6966,8 +6966,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.parsed_speed_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd2c</member>
-			<member name="last_addr" type="uint32">0x2000dd2c</member>
+			<member name="address" type="string">0x2000dd34</member>
+			<member name="last_addr" type="uint32">0x2000dd34</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.parsed_speed_deg_s；当前解析速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7015,8 +7015,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.parsed_position_deg</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd30</member>
-			<member name="last_addr" type="uint32">0x2000dd30</member>
+			<member name="address" type="string">0x2000dd38</member>
+			<member name="last_addr" type="uint32">0x2000dd38</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.parsed_position_deg；当前解析位置；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7064,8 +7064,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dce4</member>
-			<member name="last_addr" type="uint32">0x2000dce4</member>
+			<member name="address" type="string">0x2000dcec</member>
+			<member name="last_addr" type="uint32">0x2000dcec</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.frames；已接收Yaw帧数；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7113,8 +7113,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.invalid_frames</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dce8</member>
-			<member name="last_addr" type="uint32">0x2000dce8</member>
+			<member name="address" type="string">0x2000dcf0</member>
+			<member name="last_addr" type="uint32">0x2000dcf0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.invalid_frames；无效帧数；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7162,8 +7162,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.gap_resets</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcf8</member>
-			<member name="last_addr" type="uint32">0x2000dcf8</member>
+			<member name="address" type="string">0x2000dd00</member>
+			<member name="last_addr" type="uint32">0x2000dd00</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.gap_resets；接收间隔超限次数；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7211,8 +7211,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.max_gap_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcfc</member>
-			<member name="last_addr" type="uint32">0x2000dcfc</member>
+			<member name="address" type="string">0x2000dd04</member>
+			<member name="last_addr" type="uint32">0x2000dd04</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.max_gap_ms；最大接收间隔；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7260,8 +7260,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.velocity_kp</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd34</member>
-			<member name="last_addr" type="uint32">0x2000dd34</member>
+			<member name="address" type="string">0x2000dd3c</member>
+			<member name="last_addr" type="uint32">0x2000dd3c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.velocity_kp；控制器当前速度P；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7309,8 +7309,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.velocity_ki</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd38</member>
-			<member name="last_addr" type="uint32">0x2000dd38</member>
+			<member name="address" type="string">0x2000dd40</member>
+			<member name="last_addr" type="uint32">0x2000dd40</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.velocity_ki；控制器当前速度I；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7358,8 +7358,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.position_kp</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd3c</member>
-			<member name="last_addr" type="uint32">0x2000dd3c</member>
+			<member name="address" type="string">0x2000dd44</member>
+			<member name="last_addr" type="uint32">0x2000dd44</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.position_kp；控制器当前位置P；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7407,8 +7407,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.updated_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dce0</member>
-			<member name="last_addr" type="uint32">0x2000dce0</member>
+			<member name="address" type="string">0x2000dce8</member>
+			<member name="last_addr" type="uint32">0x2000dce8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.updated_ms；最近接收时间；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7456,8 +7456,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.can_id</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd04</member>
-			<member name="last_addr" type="uint32">0x2000dd04</member>
+			<member name="address" type="string">0x2000dd0c</member>
+			<member name="last_addr" type="uint32">0x2000dd0c</member>
 			<member name="byte_size" type="sint32">2</member>
 			<member name="description" type="string">g_yaw_feedback_diag.can_id；反馈CAN ID；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7505,8 +7505,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.bus</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd0c</member>
-			<member name="last_addr" type="uint32">0x2000dd0c</member>
+			<member name="address" type="string">0x2000dd14</member>
+			<member name="last_addr" type="uint32">0x2000dd14</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.bus；CAN总线；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7554,8 +7554,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.dlc</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd0d</member>
-			<member name="last_addr" type="uint32">0x2000dd0d</member>
+			<member name="address" type="string">0x2000dd15</member>
+			<member name="last_addr" type="uint32">0x2000dd15</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.dlc；报文长度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7603,8 +7603,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[0]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd0e</member>
-			<member name="last_addr" type="uint32">0x2000dd0e</member>
+			<member name="address" type="string">0x2000dd16</member>
+			<member name="last_addr" type="uint32">0x2000dd16</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[0]；原始CAN字节0；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7652,8 +7652,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[1]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd0f</member>
-			<member name="last_addr" type="uint32">0x2000dd0f</member>
+			<member name="address" type="string">0x2000dd17</member>
+			<member name="last_addr" type="uint32">0x2000dd17</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[1]；原始CAN字节1；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7701,8 +7701,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[2]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd10</member>
-			<member name="last_addr" type="uint32">0x2000dd10</member>
+			<member name="address" type="string">0x2000dd18</member>
+			<member name="last_addr" type="uint32">0x2000dd18</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[2]；原始CAN字节2；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7750,8 +7750,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[3]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd11</member>
-			<member name="last_addr" type="uint32">0x2000dd11</member>
+			<member name="address" type="string">0x2000dd19</member>
+			<member name="last_addr" type="uint32">0x2000dd19</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[3]；原始CAN字节3；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7799,8 +7799,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[4]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd12</member>
-			<member name="last_addr" type="uint32">0x2000dd12</member>
+			<member name="address" type="string">0x2000dd1a</member>
+			<member name="last_addr" type="uint32">0x2000dd1a</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[4]；原始CAN字节4；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7848,8 +7848,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[5]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd13</member>
-			<member name="last_addr" type="uint32">0x2000dd13</member>
+			<member name="address" type="string">0x2000dd1b</member>
+			<member name="last_addr" type="uint32">0x2000dd1b</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[5]；原始CAN字节5；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7897,8 +7897,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[6]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd14</member>
-			<member name="last_addr" type="uint32">0x2000dd14</member>
+			<member name="address" type="string">0x2000dd1c</member>
+			<member name="last_addr" type="uint32">0x2000dd1c</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[6]；原始CAN字节6；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7946,8 +7946,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.raw_data[7]</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd15</member>
-			<member name="last_addr" type="uint32">0x2000dd15</member>
+			<member name="address" type="string">0x2000dd1d</member>
+			<member name="last_addr" type="uint32">0x2000dd1d</member>
 			<member name="byte_size" type="sint32">1</member>
 			<member name="description" type="string">g_yaw_feedback_diag.raw_data[7]；原始CAN字节7；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -7995,8 +7995,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].can_velocity_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db3c</member>
-			<member name="last_addr" type="uint32">0x2000db3c</member>
+			<member name="address" type="string">0x2000db44</member>
+			<member name="last_addr" type="uint32">0x2000db44</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].can_velocity_deg_s；CAN原始rpm速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8044,8 +8044,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].encoder_velocity_deg_s</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db40</member>
-			<member name="last_addr" type="uint32">0x2000db40</member>
+			<member name="address" type="string">0x2000db48</member>
+			<member name="last_addr" type="uint32">0x2000db48</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].encoder_velocity_deg_s；编码器40ms速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8093,8 +8093,8 @@
 			<member name="name" type="string">g_arm_status.joint[0].velocity_window_ms</member>
 			<member name="unit" type="string">ms</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000db44</member>
-			<member name="last_addr" type="uint32">0x2000db44</member>
+			<member name="address" type="string">0x2000db4c</member>
+			<member name="last_addr" type="uint32">0x2000db4c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_status.joint[0].velocity_window_ms；编码器测速窗口；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8142,8 +8142,8 @@
 			<member name="name" type="string">g_arm_stack_free_bytes</member>
 			<member name="unit" type="string">byte</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dcc8</member>
-			<member name="last_addr" type="uint32">0x2000dcc8</member>
+			<member name="address" type="string">0x2000dcd0</member>
+			<member name="last_addr" type="uint32">0x2000dcd0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_arm_stack_free_bytes；Arm历史最小剩余栈；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8191,8 +8191,8 @@
 			<member name="name" type="string">g_stack_overflow_latched</member>
 			<member name="unit" type="string" />
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dccc</member>
-			<member name="last_addr" type="uint32">0x2000dccc</member>
+			<member name="address" type="string">0x2000dcd4</member>
+			<member name="last_addr" type="uint32">0x2000dcd4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_stack_overflow_latched；任务栈溢出锁存 0正常；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8240,8 +8240,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_pid_dt_s</member>
 			<member name="unit" type="string">s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd40</member>
-			<member name="last_addr" type="uint32">0x2000dd40</member>
+			<member name="address" type="string">0x2000dd48</member>
+			<member name="last_addr" type="uint32">0x2000dd48</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_pid_dt_s；Yaw PID实际dt；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8289,8 +8289,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_pos_p_term</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd60</member>
-			<member name="last_addr" type="uint32">0x2000dd60</member>
+			<member name="address" type="string">0x2000dd68</member>
+			<member name="last_addr" type="uint32">0x2000dd68</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_pos_p_term；Yaw位置P项；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8338,8 +8338,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_pos_i_term</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd64</member>
-			<member name="last_addr" type="uint32">0x2000dd64</member>
+			<member name="address" type="string">0x2000dd6c</member>
+			<member name="last_addr" type="uint32">0x2000dd6c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_pos_i_term；Yaw位置I项；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8387,8 +8387,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_pos_d_term</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd68</member>
-			<member name="last_addr" type="uint32">0x2000dd68</member>
+			<member name="address" type="string">0x2000dd70</member>
+			<member name="last_addr" type="uint32">0x2000dd70</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_pos_d_term；Yaw位置D项；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8436,8 +8436,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_pos_sigma</member>
 			<member name="unit" type="string">deg*s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd6c</member>
-			<member name="last_addr" type="uint32">0x2000dd6c</member>
+			<member name="address" type="string">0x2000dd74</member>
+			<member name="last_addr" type="uint32">0x2000dd74</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_pos_sigma；Yaw位置误差积分；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8485,8 +8485,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_pos_output</member>
 			<member name="unit" type="string">deg/s</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd70</member>
-			<member name="last_addr" type="uint32">0x2000dd70</member>
+			<member name="address" type="string">0x2000dd78</member>
+			<member name="last_addr" type="uint32">0x2000dd78</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_pos_output；Yaw位置PID输出速度；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8534,8 +8534,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_spd_p_term</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd90</member>
-			<member name="last_addr" type="uint32">0x2000dd90</member>
+			<member name="address" type="string">0x2000dd98</member>
+			<member name="last_addr" type="uint32">0x2000dd98</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_spd_p_term；Yaw速度P项；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8583,8 +8583,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_spd_i_term</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd94</member>
-			<member name="last_addr" type="uint32">0x2000dd94</member>
+			<member name="address" type="string">0x2000dd9c</member>
+			<member name="last_addr" type="uint32">0x2000dd9c</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_spd_i_term；Yaw速度I项；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8632,8 +8632,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_spd_d_term</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd98</member>
-			<member name="last_addr" type="uint32">0x2000dd98</member>
+			<member name="address" type="string">0x2000dda0</member>
+			<member name="last_addr" type="uint32">0x2000dda0</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_spd_d_term；Yaw速度D项；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8681,8 +8681,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_spd_sigma</member>
 			<member name="unit" type="string">deg</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dd9c</member>
-			<member name="last_addr" type="uint32">0x2000dd9c</member>
+			<member name="address" type="string">0x2000dda4</member>
+			<member name="last_addr" type="uint32">0x2000dda4</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_spd_sigma；Yaw速度误差积分；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8730,8 +8730,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_spd_prelimit</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dda0</member>
-			<member name="last_addr" type="uint32">0x2000dda0</member>
+			<member name="address" type="string">0x2000dda8</member>
+			<member name="last_addr" type="uint32">0x2000dda8</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_spd_prelimit；Yaw速度PID限幅前；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
@@ -8779,8 +8779,8 @@
 			<member name="name" type="string">g_yaw_feedback_diag.yaw_spd_output</member>
 			<member name="unit" type="string">raw</member>
 			<member name="period" type="sint32">100</member>
-			<member name="address" type="string">0x2000dda4</member>
-			<member name="last_addr" type="uint32">0x2000dda4</member>
+			<member name="address" type="string">0x2000ddac</member>
+			<member name="last_addr" type="uint32">0x2000ddac</member>
 			<member name="byte_size" type="sint32">4</member>
 			<member name="description" type="string">g_yaw_feedback_diag.yaw_spd_output；Yaw速度PID输出；只读观察，不能用它控制电机。</member>
 			<member name="comment" type="string" />
