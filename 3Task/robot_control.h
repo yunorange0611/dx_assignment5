@@ -36,6 +36,7 @@ typedef struct {
 // 整车诊断快照；底盘控制不读取本结构。原调试命令每轮取走并清零；
 // 有序号的Yaw请求由同一owner一次消费，不允许直接写状态控制电机。
 extern RobotControlStatus g_robot_status;
+extern volatile uint32_t g_imu_stop_current, g_imu_stop_latched; // PROTECT_IMU / PROTECT_TIPPED
 enum RobotDebugCommand {
     ROBOT_DEBUG_IDLE,
     ROBOT_DEBUG_STOP,

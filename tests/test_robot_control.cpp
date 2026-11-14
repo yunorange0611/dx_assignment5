@@ -114,6 +114,8 @@ int test_robot_control() {
     g_dr16_status.frame.switches[0] = DR16_SWITCH_UP;
     g_dr16_status.frame.switches[1] = DR16_SWITCH_MID;
     CHECK(Robot_RequestControl());
+    test_imu.ready = test_imu.valid = 1;
+    test_imu.updated_ms = test_imu.received_ms = 1234;
     ArmControl arm(cfg);
     Robot_Execute(arm, 1234, false);
     CHECK(Robot_GetControlStatus(&s));
@@ -675,5 +677,39 @@ int test_robot_control() {
     }
     }
     kChassisIndependent = true;
+    if (kArmConfig.joint_mask == kAllJoints) {
+        auto c = cfg; c.hardware_confirmed = true; c.pitch.mapping_confirmed = true;
+        ArmControl safety_arm(c);
+        uint32_t now = test_hal_tick + 100;
+        fresh_inputs(now); CHECK(feed_all(safety_arm, now));
+        CHECK(safety_arm.capture_zero(kAllJoints, now) == Result::Ok);
+        CHECK(safety_arm.enable(kAllJoints, now) == Result::Ok);
+        test_imu.tipped = 1;
+        robot_tune_mode = ROBOT_TUNE_LEFT_SPEED;
+        tune_speed_rpm = 100;
+        Robot_Execute(safety_arm, now, false);
+        CHECK(!safety_arm.status().enabled_mask);
+        CHECK(g_imu_stop_latched & PROTECT_TIPPED);
+        CHECK(tune_speed_rpm == 0);
+        CHECK(Robot_GetChassisCommand(&command) && !command.enabled && command.stop);
+        now += 4; fresh_inputs(now); CHECK(feed_all(safety_arm, now));
+        Robot_Execute(safety_arm, now, false);
+        CHECK(g_imu_stop_latched && !safety_arm.status().enabled_mask);
+        g_robot_debug_command = ROBOT_DEBUG_CLEAR_FAULTS;
+        now += 4; fresh_inputs(now); Robot_Execute(safety_arm, now, false);
+        CHECK(g_imu_stop_latched);
+        g_robot_debug_command = ROBOT_DEBUG_REQUEST_CONTROL;
+        now += 4; fresh_inputs(now); CHECK(feed_all(safety_arm, now));
+        Robot_Execute(safety_arm, now, false);
+        CHECK(!g_imu_stop_latched);
+        now += 4; fresh_inputs(now); test_imu.valid = 0;
+        g_robot_debug_command = ROBOT_DEBUG_REQUEST_CONTROL;
+        Robot_Execute(safety_arm, now, false);
+        CHECK((g_imu_stop_latched & PROTECT_IMU) && !safety_arm.status().enabled_mask);
+        now += 4; fresh_inputs(now); Robot_RequestControl();
+        CHECK(feed_all(safety_arm, now)); Robot_Execute(safety_arm, now, false);
+        CHECK(!g_imu_stop_latched);
+        robot_tune_mode = 0;
+    }
     return 0;
 }

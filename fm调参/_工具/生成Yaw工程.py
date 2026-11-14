@@ -21,7 +21,7 @@ def yaw_only():
     command = [V('g_robot_debug_command',
                  '命令 1关控 3清故障 5仅使能Yaw 6仅失能Yaw', write=True, low=0, high=6)]
     # 模式切换、开控和输入检测单独一组；不放PID参数。
-    mode_state = gen.TUNE_STATUS + [
+    mode_state = gen.TUNE_STATUS + [V('g_imu_stop_current','整车IMU当前原因 512失效1024翻车'), V('g_imu_stop_latched','整车IMU关控锁存 命令4恢复'), 
         V('g_robot_tune_status.yaw_parameter_result', 'Yaw参数结果 0成功'),
         V('g_robot_status.remote_online', '遥控在线'),
         V('g_robot_status.updated_ms', '整车协调发布时间', 'ms'),
