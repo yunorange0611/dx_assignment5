@@ -21,9 +21,10 @@ inline constexpr JointConfig kYawConfig = {
     10,     // max_speed_deg_s：静态参考速度上限，行驶还受姿态包络限制
     30,     // max_accel_deg_s2：参考加速度上限
     25000.0f, // max_effort：电压原码上限；旧驱动满量程25000，手册可到30000
-    5.0f,     // position_kp：位置P
-    17.0f,   // velocity_kp：速度P，raw/(deg/s)
-    47.0f,    // velocity_ki：速度I，raw/deg
+    2.0f,     // position_kp：位置P，安全起步值
+    8.0f,    // velocity_kp：速度P，raw/(deg/s)，安全起步值
+    0.0f,     // velocity_ki：速度I，raw/deg，先关闭积分
+
     0,
     0,
     0,
@@ -37,7 +38,6 @@ inline constexpr JointConfig kYawConfig = {
 // measured. Confirmation is separate from joint PID/protocol configuration.
 // Speed error threshold for integration; opposite error may unwind existing I.
 inline constexpr float kYawVelocityIntegralBandDegS = 50.0f;
-inline constexpr float kYawVelocityIntegralOutputFraction = 0.8f;
 inline constexpr bool kYawSafetyConfirmed = false;
 inline constexpr float kYawAbsoluteHalfRangeDeg = 360.0f; // 用户指定±一整圈；线束行程尚未实测验证
 inline constexpr float kYawBrakingMarginDeg = 2.0f;

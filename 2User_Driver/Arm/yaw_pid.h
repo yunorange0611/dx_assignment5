@@ -24,11 +24,15 @@ struct YawPid {
 void YawPid_Init(YawPid &pid, const YawPidConfig &config);
 void YawPid_Reset(YawPid &pid);
 
-// target/feedback use the same unit. feedforward is added after the PID terms.
-// The integral is committed only when the final (feedforward-inclusive) output
-// is not saturated in the direction of the current error.
-float YawPid_Calculate(YawPid &pid, float target, float feedback, float dt,
-                       float feedforward, float final_output_limit, bool allow_positive = true,
-                       bool allow_negative = true);
+// Exact project4 PID_Calculate math; feedforward/final device limits are external.
+float YawPid_Calculate(YawPid &pid, float target, float feedback, float dt);
 
 } // namespace engineer
+
+extern "C" {
+extern volatile float tune_yaw_position_ki, tune_yaw_position_kd;
+extern volatile float tune_yaw_position_max_i_error, tune_yaw_position_max_sigma;
+extern volatile float tune_yaw_position_max_output, tune_yaw_position_d_tau;
+extern volatile float tune_yaw_velocity_kd, tune_yaw_velocity_max_i_error;
+extern volatile float tune_yaw_velocity_max_sigma, tune_yaw_velocity_d_tau;
+}

@@ -36,6 +36,10 @@ def yaw_only():
 
     # 速度环：只放速度PID、速度目标/反馈、前馈和最终输出。
     speed_vars = gen.YAW_SPEED + [
+        V('tune_yaw_velocity_kd','速度Kd',write=True,low=0,high=1000000),
+        V('tune_yaw_velocity_max_i_error','max_i_error 积分分离阈值','deg/s',True,0,1000000),
+        V('tune_yaw_velocity_max_sigma','max_sigma 误差积分上限','deg',True,0,1000000),
+        V('tune_yaw_velocity_d_tau','d_tau 微分时间常数','s',True,0,10),
         V('tune_yaw_velocity_kp', 'Yaw速度P', 'raw/(deg/s)', True, 0, 1000000),
         V('tune_yaw_velocity_ki', 'Yaw速度I', 'raw/deg', True, 0, 1000000),
         V('tune_yaw_voltage_limit_raw', 'Yaw测试输出上限 电压原码', 'raw', True, 0, 25000),
@@ -53,8 +57,8 @@ def yaw_only():
         ('yaw_spd_i_term', '速度I输出', 'raw'),
         ('yaw_spd_d_term', '速度D输出', 'raw'),
         ('yaw_spd_sigma', '速度误差积分', 'deg'),
-        ('yaw_spd_prelimit', 'PID加前馈限幅前', 'raw'),
-        ('yaw_spd_output', 'PID边界限幅后输出', 'raw'),
+        ('yaw_spd_prelimit', 'PID自身限幅前（不含前馈）', 'raw'),
+        ('yaw_spd_output', 'PID自身输出（最终总输出看effort）', 'raw'),
     ]) + [
         V('g_robot_tune_status.yaw_velocity_kp', '生效速度P'),
         V('g_robot_tune_status.yaw_velocity_ki', '生效速度I'),
@@ -74,6 +78,12 @@ def yaw_only():
 
     # 位置环：只放位置PID、位置目标/反馈和位置PID输出。
     position_vars = gen.YAW_POSITION + [
+        V('tune_yaw_position_ki','位置Ki',write=True,low=0,high=1000000),
+        V('tune_yaw_position_kd','位置Kd',write=True,low=0,high=1000000),
+        V('tune_yaw_position_max_i_error','位置max_i_error','deg',True,0,1000000),
+        V('tune_yaw_position_max_sigma','位置max_sigma','deg*s',True,0,1000000),
+        V('tune_yaw_position_max_output','位置max_output 目标速度上限','deg/s',True,0.001,1000),
+        V('tune_yaw_position_d_tau','位置d_tau','s',True,0,10),
         V('tune_yaw_position_kp', 'Yaw位置P', '1/s', True, 0.001, 1000),
     ] + gen.variables('g_yaw_feedback_diag', [
         ('yaw_pid_dt_s', 'PID实际dt', 's'),

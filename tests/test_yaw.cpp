@@ -70,22 +70,103 @@ bool yaw_zero(const Frame *f, unsigned n) {
                     return false;
     return true;
 }
+float Project4Reference(YawPid *pid, float target, float feedback, float dt)
+{
+    float raw_d;
+    float new_sigma = pid->sigma_error; // 默认冻结积分
+
+    // 1. 首次运行保护：对齐历史数据，防止开机瞬间的微分突变
+    if (pid->first_run) {
+        pid->last_feedback = feedback;
+        pid->last_error = target - feedback;
+        raw_d = 0.0f;
+        pid->first_run = 0;
+    } else {
+        // 测量微分 (规避目标值突变带来的微分踢)
+        raw_d = -(feedback - pid->last_feedback) / dt;
+    }
+
+    // 2. 误差计算
+    pid->error = target - feedback;
+    pid->error_delta = pid->error - pid->last_error;
+
+    // 3. 动态时间常数低通滤波 (解耦控制周期 dt)
+    float alpha = dt / (pid->d_tau + dt);
+    pid->d_lpf = (1.0f - alpha) * pid->d_lpf + alpha * raw_d;
+
+    // 4. 积分分离：误差小于阈值才积分；
+    //    但误差和已有积分方向相反时（积分在“往回退”）不受阈值限制，照常积分。
+    //    否则：反方向攒满的积分 + 大误差 → 积分被冻结退不掉 → 抵消 P、推不动 → 误差一直大 → 死锁
+    //    （大 Yaw 位置环实测：一个方向很快到位，另一个方向走不动）
+    if (fabsf(pid->error) < pid->max_i_error ||
+        (pid->error * pid->sigma_error) < 0.0f) {
+        new_sigma += pid->error * dt;
+    }
+
+    // 5. 积分限幅
+    if (new_sigma > pid->max_sigma) {
+        new_sigma = pid->max_sigma;
+    } else if (new_sigma < -pid->max_sigma) {
+        new_sigma = -pid->max_sigma;
+    }
+
+    // 6. 核心计算
+    float p_out = pid->kp * pid->error;
+    float i_out = pid->ki * new_sigma;
+    float d_out = pid->kd * pid->d_lpf;
+    float total_out = p_out + i_out + d_out;
+
+    // 7. 输出限幅与精细化抗积分饱和 (条件积分)
+    if (total_out > pid->max_output) {
+        total_out = pid->max_output;
+        // 正饱和且误差还在扩大(同号)，禁止继续正向积分
+        if (pid->error > 0.0f) {
+            new_sigma = pid->sigma_error;
+        }
+    } else if (total_out < -pid->max_output) {
+        total_out = -pid->max_output;
+        // 负饱和且误差还在扩大(同号)，禁止继续负向积分
+        if (pid->error < 0.0f) {
+            new_sigma = pid->sigma_error;
+        }
+    }
+
+    // 8. 状态更新
+    pid->sigma_error = new_sigma;
+    pid->last_error = pid->error;
+    pid->last_feedback = feedback;
+    pid->output = total_out;
+
+    return pid->output;
+}
 } // namespace
 int test_yaw() {
-    { // Explicit separation, reverse unwinding and final directional saturation.
+    { // Exact project4 numerical equivalence over dt, sign, separation and saturation.
+        YawPid actual, reference;
+        YawPidConfig config{17, 47, .2f, 5, 3, 100, .01f};
+        YawPid_Init(actual, config); YawPid_Init(reference, config);
+        for (unsigned n = 0; n < 500; ++n) {
+            const float target = float(int(n % 41) - 20);
+            const float feedback = float(int(n % 17) - 8) * .3f;
+            const float dt = n % 2 ? .0041f : .0039f;
+            const float expected = Project4Reference(&reference, target, feedback, dt);
+            CHECK(YawPid_Calculate(actual, target, feedback, dt) == expected);
+            CHECK(actual.sigma_error == reference.sigma_error);
+            CHECK(actual.d_lpf == reference.d_lpf);
+        }
+    }
+
+    { // project4 semantics: integration separation, reversal, independent sigma bound.
         YawPid pid;
-        YawPid_Init(pid, {0, 2, 0, 5, 100, 100, .01f});
-        YawPid_Calculate(pid, 10, 0, .1f, 0, 100);
+        YawPid_Init(pid, {0, 2, 0, 5, .5f, 100, .01f});
+        YawPid_Calculate(pid, 10, 0, .1f);
         CHECK(pid.sigma_error == 0);
-        YawPid_Calculate(pid, 2, 0, .1f, 0, 100);
+        YawPid_Calculate(pid, 2, 0, .1f);
         CHECK(std::fabs(pid.sigma_error - .2f) < .0001f);
-        YawPid_Calculate(pid, -10, 0, .1f, 0, 100);
-        CHECK(pid.sigma_error == 0); // No reverse accumulation outside the band.
-        YawPid_Calculate(pid, 2, 0, .1f, 0, 100, false, true);
-        CHECK(pid.sigma_error == 0 && pid.output == 0);
-        CHECK(pid.output_prelimit == pid.ki * pid.sigma_error);
-        YawPid_Calculate(pid, -2, 0, .1f, 0, 100, false, true);
-        CHECK(pid.sigma_error < 0 && pid.output < 0);
+        YawPid_Calculate(pid, -10, 0, .1f);
+        CHECK(pid.sigma_error == -.5f); // Original allows crossing zero, then clamps.
+        YawPid_Reset(pid);
+        CHECK(pid.sigma_error == 0 && pid.first_run);
     }
 
     { // Yaw-only PID: dt-scaled integral, reverse integration, saturation.
@@ -96,13 +177,13 @@ int test_yaw() {
         c.max_sigma = 100.0f;
         c.max_output = 1000.0f;
         YawPid_Init(pid, c);
-        YawPid_Calculate(pid, 1.0f, 0.0f, 0.004f, 0.0f, 1000.0f);
+        YawPid_Calculate(pid, 1.0f, 0.0f, 0.004f);
         const float sigma_4ms = pid.sigma_error;
         YawPid_Reset(pid);
-        YawPid_Calculate(pid, 1.0f, 0.0f, 0.008f, 0.0f, 1000.0f);
+        YawPid_Calculate(pid, 1.0f, 0.0f, 0.008f);
         CHECK(std::fabs(pid.sigma_error - 2.0f * sigma_4ms) < 0.0001f);
         pid.sigma_error = 5.0f;
-        YawPid_Calculate(pid, -1.0f, 0.0f, 0.004f, 0.0f, 1000.0f);
+        YawPid_Calculate(pid, -1.0f, 0.0f, 0.004f);
         CHECK(pid.sigma_error < 5.0f);
         YawPidConfig sat{};
         sat.kp = 100.0f;
@@ -111,7 +192,7 @@ int test_yaw() {
         sat.max_sigma = 100.0f;
         sat.max_output = 50.0f;
         YawPid_Init(pid, sat);
-        const float out = YawPid_Calculate(pid, 10.0f, 0.0f, 0.004f, 100.0f, 50.0f);
+        const float out = YawPid_Calculate(pid, 10.0f, 0.0f, 0.004f);
         CHECK(out == 50.0f);
         CHECK(pid.sigma_error == 0.0f);
         CHECK(pid.d_lpf == 0.0f);

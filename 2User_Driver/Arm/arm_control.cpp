@@ -74,9 +74,7 @@ ArmControl::ArmControl(const Config &c)
     vel.kp = y.velocity_kp;
     vel.ki = y.velocity_ki;
     vel.max_i_error = kYawVelocityIntegralBandDegS;
-    vel.max_sigma = vel.ki > 0
-                        ? kYawVelocityIntegralOutputFraction * y.max_effort / vel.ki
-                        : 0;
+    vel.max_sigma = tune_yaw_velocity_max_sigma;
     vel.max_output = y.max_effort;
     vel.d_tau = kYawPidDerivativeTauS;
     YawPid_Init(yaw_velocity_pid_, vel);
@@ -737,13 +735,6 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
     }
     // Commit only after every field and both pitch drives have passed validation.
     auto &c = config_.joint[i];
-    if (i == Yaw) {
-        const float previous_i = yaw_velocity_pid_.ki * yaw_velocity_pid_.sigma_error;
-        const float max_i = kYawVelocityIntegralOutputFraction * tuning.effort_limit;
-        yaw_velocity_pid_.sigma_error = tuning.velocity_ki > 0
-            ? clamp(previous_i, -max_i, max_i) / tuning.velocity_ki : 0;
-        yaw_velocity_pid_.ki = tuning.velocity_ki;
-    }
     c.position_kp = tuning.position_kp;
     c.velocity_kp = tuning.velocity_kp;
     c.velocity_ki = tuning.velocity_ki;
@@ -1056,7 +1047,8 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
         const bool ready = (c.motor != Motor::Dm4310Mit || s.motor_state == 1) &&
                            ((i != BigPitch && i != SmallPitch) || pitch_running);
         if (s.enabled && ready) {
-            const float speed_limit = drive_speed_limit(i);
+            const float speed_limit = i == Yaw && !yaw_test_active_
+                ? tune_yaw_position_max_output : drive_speed_limit(i);
             const float limit = std::fmin(r.effort_limit, tuning_effort_limit_[i]);
             if (i == Yaw) {
                 float speed_target;
@@ -1065,15 +1057,14 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                 } else {
                     // Position PID feeds the same speed PID used by mode 5.
                     yaw_position_pid_.kp = c.position_kp;
-                    yaw_position_pid_.ki = 0;
-                    yaw_position_pid_.kd = 0;
-                    yaw_position_pid_.max_i_error = 0;
-                    yaw_position_pid_.max_sigma = 0;
-                    yaw_position_pid_.max_output = speed_limit;
-                    yaw_position_pid_.d_tau = kYawPidDerivativeTauS;
+                    yaw_position_pid_.ki = tune_yaw_position_ki;
+                    yaw_position_pid_.kd = tune_yaw_position_kd;
+                    yaw_position_pid_.max_i_error = tune_yaw_position_max_i_error;
+                    yaw_position_pid_.max_sigma = tune_yaw_position_max_sigma;
+                    yaw_position_pid_.max_output = tune_yaw_position_max_output;
+                    yaw_position_pid_.d_tau = tune_yaw_position_d_tau;
                     const float position_command = YawPid_Calculate(
-                        yaw_position_pid_, s.target_deg, s.drive_position_deg, yaw_dt, 0,
-                        speed_limit);
+                        yaw_position_pid_, s.target_deg, s.drive_position_deg, yaw_dt);
                     speed_target = limit_yaw_speed(position_command, yaw_dt);
                 }
                 s.velocity_target_deg_s = speed_target;
@@ -1108,19 +1099,15 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
 
                 yaw_velocity_pid_.kp = c.velocity_kp;
                 yaw_velocity_pid_.ki = c.velocity_ki;
-                yaw_velocity_pid_.kd = 0;
-                yaw_velocity_pid_.max_i_error = kYawVelocityIntegralBandDegS;
-                yaw_velocity_pid_.max_sigma =
-                    c.velocity_ki > 0
-                        ? kYawVelocityIntegralOutputFraction * limit / c.velocity_ki
-                        : 0;
+                yaw_velocity_pid_.kd = tune_yaw_velocity_kd;
+                yaw_velocity_pid_.max_i_error = tune_yaw_velocity_max_i_error;
+                yaw_velocity_pid_.max_sigma = tune_yaw_velocity_max_sigma;
                 yaw_velocity_pid_.max_output = limit;
-                yaw_velocity_pid_.d_tau = kYawPidDerivativeTauS;
-                float final = YawPid_Calculate(
-                    yaw_velocity_pid_, speed_target, s.drive_velocity_deg_s, yaw_dt,
-                    feedforward, limit,
-                    s.drive_position_deg < drive_max(i),
-                    s.drive_position_deg > drive_min(i));
+                yaw_velocity_pid_.d_tau = tune_yaw_velocity_d_tau;
+                const float pid_output = YawPid_Calculate(
+                    yaw_velocity_pid_, speed_target, s.drive_velocity_deg_s, yaw_dt);
+                // project4: PID limits itself, then add friction FF and limit total.
+                float final = clamp(pid_output + feedforward, -limit, limit);
                 if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
                     (s.drive_position_deg >= drive_max(i) && final > 0))
                     final = 0;
