@@ -170,8 +170,9 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     // whole-vehicle readiness. Once confirmed, stale/invalid/tipped always stops.
     const bool imu_required = kAttitudeConfig.installation_confirmed &&
                               kAttitudeConfig.thresholds_confirmed;
+    // 翻车保护已关闭：tipped 不再参与调参/开控就绪判断。
     const bool imu_ok = !imu_required ||
-        (imu.ready && imu.valid && !imu.tipped &&
+        (imu.ready && imu.valid &&
          uint32_t(now - imu.updated_ms) <= 40 &&
          uint32_t(now - imu.received_ms) <= kAttitudeConfig.max_sample_gap_ms);
     const bool wheel_mode = requested >= ROBOT_TUNE_LEFT_CURRENT &&
@@ -367,7 +368,7 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
 
     TaskProtectInput protection{uint8_t(wheel_mode || kOperatorConfig.mapping_confirmed), uint8_t(online), 1,
         uint8_t(stop), uint8_t(timing_ok), uint8_t(arm.status().faults != 0),
-        uint32_t(wheel_mode || imu_ok ? 0 : (imu.tipped ? PROTECT_TIPPED : PROTECT_IMU))};
+        uint32_t(wheel_mode || imu_ok ? 0 : PROTECT_IMU)};
     Task_Protect_Tick(&protection, now);
     if (fatal || stop)
         Task_Protect_Trip(stop ? PROTECT_STOP_REQUEST : PROTECT_ARM_FAULT, now);

@@ -12,8 +12,8 @@ struct ChassisConfig {
     max_turn_rad_s = 8.0f;//最大转向角速度
     float acceleration_m_s2 = 2.0f,//推杆后加速的快慢
     deceleration_m_s2 = 2.0f,/*松杆后减速的快慢*/
-    angular_accel_rad_s2 = 8.0f,//转向指令变大的快慢
-    angular_decel_rad_s2 = 12.0f;//转向指令回零的快慢
+    angular_accel_rad_s2 = 7.0f,//转向指令变大的快慢
+    angular_decel_rad_s2 = 14.0f;//转向指令回零的快慢
     // 9000 is the rotor limit, not a recommended test speed. It also lets
     // tune_speed_rpm reach the full rotor range instead of stopping at 1500.
     float max_rotor_rpm = 9000, max_current_ma = 15000;

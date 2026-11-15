@@ -55,9 +55,11 @@ VehicleState evaluate_vehicle(uint32_t now, const VehicleConfig &cfg, const Vehi
         uint32_t(now - imu.received_ms) > timing.imu_sample_timeout_ms) {
         state.reasons |= VehicleImuInvalid;
     }
-    if (imu.tipped) {
-        state.reasons |= VehicleTipped;
-    }
+    // 翻车保护已按用户要求关闭：tipped 仍由 IMU 估计器计算用于诊断，
+    // 但不再作为整车保护原因上报，不影响其他控制/互锁判断。
+    // if (imu.tipped) {
+    //     state.reasons |= VehicleTipped;
+    // }
     // An unconfirmed power loop reports session_allowed=0 by design; that is not
     // an energy inhibit. Only an active power session may block on energy/feedback.
     if (ch.power_confirmed && !ch.power_session_allowed) {

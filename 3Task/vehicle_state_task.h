@@ -42,9 +42,10 @@ inline uint32_t Vehicle_ProtectionFromHealth(uint32_t now_ms, const VehicleHealt
     if (health->reasons & engineer::VehicleImuInvalid) {
         reasons |= PROTECT_IMU;
     }
-    if (health->reasons & engineer::VehicleTipped) {
-        reasons |= PROTECT_TIPPED;
-    }
+    // 翻车保护已关闭：即使 VehicleTipped 诊断位被置位，也不再映射为停机原因。
+    // if (health->reasons & engineer::VehicleTipped) {
+    //     reasons |= PROTECT_TIPPED;
+    // }
     if (health->reasons & engineer::VehicleEnergyInhibited) {
         reasons |= PROTECT_POWER;
     }
