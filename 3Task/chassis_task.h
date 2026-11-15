@@ -13,7 +13,7 @@ typedef struct {
         bench_active;
     uint8_t power_configuration_valid, power_confirmed;
     uint8_t power_session_allowed, power_stop_requested, power_inhibited, power_phase, power_reason,
-        power_over_latched;
+        power_over_latched, power_meter_held, power_meter_stale;
     uint8_t tune_mode, tune_blocked;
     uint32_t tune_epoch, tune_result; // Runtime mode epoch; result uses ChassisTuneResult.
     float tune_current_limit_ma;

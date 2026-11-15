@@ -79,6 +79,7 @@ int test_vehicle() {
         CHECK(!defaults.step(0, meter(0), false, true).session_allowed);
         auto cfg = kChassisPowerConfig;
         cfg.confirmed = true;
+        cfg.require_meter = true; // This block verifies the strict legacy policy.
         ChassisPower p(cfg);
         PowerMeterStatus empty{};
         CHECK(!p.step(0, empty, false, true).session_allowed &&
@@ -192,9 +193,10 @@ int test_vehicle() {
         CHECK(p.step(100, meter(100, 400), true, false).phase == PowerPhase::Driving);
         CHECK(!p.status().stop_requested && p.status().session_allowed);
     }
-    { // Meter loss has a finite stopping window, with no infinite brake exception.
+    { // Strict policy: meter loss has a finite stopping window.
         auto cfg = kChassisPowerConfig;
         cfg.confirmed = true;
+        cfg.require_meter = true;
         cfg.timeout_ms = 20;
         cfg.stopping_timeout_ms = 100;
         ChassisPower p(cfg);
@@ -219,9 +221,11 @@ int test_vehicle() {
         wrap.step(0xfffffff0u, meter(0xfffffff0u), false, true);
         CHECK(wrap.step(0, meter(0), true, false).session_allowed);
     }
-    { // Meter loss immediately after the first granted cycle still permits bounded braking.
+    { // Strict policy: meter loss immediately after the first granted cycle still
+      // permits bounded braking instead of a silent no-output state.
         auto cfg = kChassisPowerConfig;
         cfg.confirmed = true;
+        cfg.require_meter = true;
         ChassisPower p(cfg);
         CHECK(p.step(0, meter(0), false, true).session_allowed);
         PowerMeterStatus absent{};
@@ -236,6 +240,117 @@ int test_vehicle() {
         const float candidate[2] = {-500, -500}, rpm[2] = {100, 100};
         p.limit(candidate, rpm, out);
         CHECK(out[0] == 0 && out[1] == 0); // Clearing never emits a deferred brake/start.
+    }
+    { // M1: meter loss holds the last limit factor, then ramps it out; no inhibit.
+        auto cfg = kChassisPowerConfig;
+        cfg.confirmed = true; // require_meter defaults to false = M1 policy.
+        cfg.timeout_ms = 20;
+        cfg.meter_hold_ms = 100;
+        cfg.meter_stale_ramp_ms = 200;
+        cfg.meter_recovery_ramp_ms = 200;
+        cfg.power_filter_ms = 4;
+        ChassisPower p(cfg);
+        p.step(0, meter(0, 400, 10), false, true);
+        for (uint32_t t = 4; t <= 40; t += 4)
+            p.step(t, meter(t, 400, 90), true, false);
+        CHECK(p.status().speed_scale > .4f && p.status().speed_scale < .6f);
+        const float held = p.status().speed_scale;
+        const PowerMeterStatus stale = meter(40, 400, 90);
+        p.step(64, stale, true, false); // 24ms since the last frame, inside the hold.
+        CHECK(p.status().meter_held && !p.status().meter_stale && p.status().meter_online == 0);
+        CHECK(!p.status().stop_requested && p.status().session_allowed &&
+              p.status().phase == PowerPhase::Driving);
+        CHECK(near(p.status().speed_scale, held));
+        float out[2];
+        const float candidate[2] = {1000, -1000}, rpm[2] = {100, 100};
+        p.limit(candidate, rpm, out);
+        CHECK(out[0] == 1000 && out[1] == -1000);
+        p.step(124, stale, true, false); // 84ms: still held.
+        CHECK(p.status().meter_held && near(p.status().speed_scale, held));
+        p.step(144, stale, true, false); // 104ms: hold expired, ramp starts at held.
+        CHECK(p.status().meter_stale && !p.status().meter_held);
+        CHECK(near(p.status().speed_scale, held) && !p.status().stop_requested);
+        p.step(244, stale, true, false); // Half of the 200ms stale ramp.
+        CHECK(p.status().speed_scale > held && p.status().speed_scale < 1.0f);
+        CHECK(near(p.status().speed_scale, (held + 1.0f) * .5f, 0.002f));
+        p.step(344, stale, true, false); // Stale ramp complete; still driving.
+        CHECK(near(p.status().speed_scale, 1.0f) && !p.status().inhibited &&
+              p.status().session_allowed);
+        // Fresh data returns: ramp back to the newly computed limit, no clear.
+        p.step(348, meter(348, 400, 90), true, false);
+        CHECK(p.status().meter_online && !p.status().meter_stale &&
+              !p.status().stop_requested);
+        CHECK(p.status().speed_scale > .5f && p.status().speed_scale <= 1.0f);
+        p.step(448, meter(448, 400, 90), true, false); // Half of the recovery ramp.
+        CHECK(near(p.status().speed_scale, .75f, 0.002f));
+        p.step(548, meter(548, 400, 90), true, false); // Recovery complete.
+        CHECK(near(p.status().speed_scale, .5f, 0.002f));
+    }
+    { // M1: low-energy confirmation needs fresh frames; a lost link cannot extend
+      // the debounce, and a confirmed stop is never auto-cancelled by recovery.
+        auto cfg = kChassisPowerConfig;
+        cfg.confirmed = true;
+        cfg.timeout_ms = 20;
+        cfg.meter_hold_ms = 100;
+        cfg.meter_stale_ramp_ms = 100;
+        cfg.meter_recovery_ramp_ms = 100;
+        cfg.power_filter_ms = 4;
+        ChassisPower p(cfg);
+        p.step(0, meter(0, 70, 10), false, true);
+        p.step(4, meter(4, 70, 10), true, false);
+        p.step(8, meter(8, 70, 10), true, false);
+        const PowerMeterStatus stale_low = meter(8, 70, 10);
+        p.step(32, stale_low, true, false); // Timeout breaks the low-energy timer.
+        CHECK(p.status().meter_held && !p.status().stop_requested &&
+              p.status().phase == PowerPhase::Driving);
+        p.step(132, stale_low, true, false); // Hold expired; still no low-energy stop.
+        CHECK(p.status().meter_stale && p.status().phase == PowerPhase::Driving &&
+              !p.status().stop_requested && !p.status().inhibited);
+        p.step(236, meter(236, 400, 10), true, false); // Recovery is not a stop.
+        CHECK(p.status().meter_online && p.status().phase == PowerPhase::Driving &&
+              !p.status().stop_requested);
+
+        // Re-reading the same low frame for 100ms must not confirm low energy.
+        auto dwell_cfg = kChassisPowerConfig;
+        dwell_cfg.confirmed = true;
+        ChassisPower dwell(dwell_cfg);
+        const PowerMeterStatus one_low = meter(0, 70, 10);
+        dwell.step(0, one_low, false, true);
+        for (uint32_t t = 4; t <= 104; t += 4)
+            dwell.step(t, one_low, true, false);
+        CHECK(dwell.status().phase != PowerPhase::StopLowEnergy &&
+              !dwell.status().stop_requested && dwell.status().session_allowed);
+
+        auto stop_cfg = cfg;
+        stop_cfg.stopping_timeout_ms = 1000;
+        ChassisPower stop(stop_cfg);
+        stop.step(0, meter(0, 70, 10), false, true);
+        for (uint32_t t = 4; t <= 104; t += 4)
+            stop.step(t, meter(t, 70, 10), true, false);
+        CHECK(stop.status().phase == PowerPhase::StopLowEnergy);
+        const PowerMeterStatus stop_stale = meter(104, 70, 10);
+        stop.step(132, stop_stale, true, false); // Meter loss must not cancel it.
+        CHECK(stop.status().phase == PowerPhase::StopLowEnergy &&
+              stop.status().stop_requested && stop.status().session_allowed);
+        stop.step(136, stop_stale, true, true);
+        CHECK(stop.status().phase == PowerPhase::Inhibited && stop.status().inhibited);
+    }
+    { // M1: no first meter frame at all no longer blocks the chassis.
+        auto cfg = kChassisPowerConfig;
+        cfg.confirmed = true;
+        cfg.meter_stale_ramp_ms = 0;
+        ChassisPower p(cfg);
+        PowerMeterStatus empty{};
+        CHECK(p.step(0, empty, false, true).session_allowed);
+        CHECK(p.status().phase == PowerPhase::Ready && p.status().meter_stale &&
+              p.status().reason == PowerBlock::NoMeter);
+        CHECK(p.step(4, empty, true, false).phase == PowerPhase::Driving);
+        CHECK(p.status().session_allowed && !p.status().stop_requested &&
+              !p.status().inhibited);
+        float out[2];
+        const float candidate[2] = {1000, -1000}, rpm[2] = {100, 100};
+        p.limit(candidate, rpm, out);
+        CHECK(out[0] == 1000 && out[1] == -1000);
     }
     { // Real healthy snapshots permit slow drive before active; no startup deadlock.
         VehicleConfig cfg{};

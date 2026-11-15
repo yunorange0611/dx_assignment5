@@ -207,10 +207,10 @@ YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
             [('yaw_parameter_result','Yaw参数结果 0成功',''),('yaw_position_kp','Yaw生效位置P','1/s'),
              ('yaw_velocity_kp','Yaw生效速度P',''),('yaw_velocity_ki','Yaw生效速度I',''),
              ('yaw_voltage_limit_raw','Yaw生效输出上限 电压原码','raw')])
-POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('min_energy_j','本次最低缓冲能量','J'),('power_over_50_ms','原始功率超50W累计时间','ms'),('power_over_latched','曾超50W锁存',''),('power_filtered_w','滤波后功率','W'),('power_speed_scale','功率/能量限速比例',''),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启','')])
+POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('min_energy_j','本次最低缓冲能量','J'),('power_over_50_ms','原始功率超50W累计时间','ms'),('power_over_latched','曾超50W锁存',''),('power_filtered_w','滤波后功率','W'),('power_speed_scale','功率/能量限速比例',''),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启',''),('power_meter_held','功率计丢帧宽限中',''),('power_meter_stale','功率计失联 功率缩放已退出','')])
 POWER_TUNE = [
     V('tune_chassis_power_budget_w','功率预算 50W以下','W',True,1,49,
-      note='confirmed=false 时不生效；当前代码默认未启用。'),
+      note='confirmed=false 时不生效；M1丢帧不主动停车，长时间失联会退出功率缩放。'),
     V('tune_chassis_power_filter_ms','功率滤波时间','ms',True,1,2000),
 ]
 TILT_TUNE = [
@@ -384,7 +384,9 @@ def groups():
             V('g_chassis_status.power_phase','功率阶段'),
             V('g_chassis_status.power_reason','功率原因'),
             V('g_chassis_status.power_stop_requested','功率请求停车'),
-            V('g_chassis_status.power_inhibited','功率锁存禁行')]),
+            V('g_chassis_status.power_inhibited','功率锁存禁行'),
+            V('g_chassis_status.power_meter_held','功率计丢帧宽限中'),
+            V('g_chassis_status.power_meter_stale','功率计失联 功率缩放已退出')]),
         # 第4批：两轮速度PI；目标只上曲线，不占变量行。
         G('第4批 两轮速度PI', select + wheel_params + CH_SPEED +
           wheel_fields(0, ('measured_rpm', 'current_ma')) +

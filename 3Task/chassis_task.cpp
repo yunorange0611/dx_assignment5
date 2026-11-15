@@ -400,6 +400,8 @@ void publish_status(const ChassisRuntime &runtime) {
     status.power_inhibited = energy.inhibited;
     status.power_phase = uint8_t(energy.phase);
     status.power_reason = uint8_t(energy.reason);
+    status.power_meter_held = energy.meter_held;
+    status.power_meter_stale = energy.meter_stale;
     status.v_m_s = control.v_m_s;
     status.omega_rad_s = control.omega_rad_s;
     status.power_w = power.power_w;
