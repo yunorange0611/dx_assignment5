@@ -34,7 +34,7 @@ FreeMASTER日常直接修改 `tune_wheel_kp`、`tune_wheel_ki`、`tune_wheel_cur
 
 把目标写0或回0档停止轮测试，而不撤机械臂保持。模式1/2非零电流最多500ms，不能靠改幅值或符号延长；模式3/4速度档不会自动结束，必须写0或回0档。失联、反馈/温度/时序异常、发送失败、全局关控和本地故障均能撤销测试；目标会被清0，健康恢复不自动续跑。回0档清本次调参锁，再按需清本地硬故障、重新选档并重写目标。模式5/6调Yaw时两轮禁止输出。
 
-功率未实测确认时，独立底盘0档不经过功率环，只受 `max_current_ma` 和速度斜坡约束；这不代表可以落地行驶。一旦 `confirmed=true`，功率环按当前 `require_meter` 策略工作。默认 `require_meter=false`（M1）：功率计短时失联不再主动停车或锁存，而是保持最后限制系数 `meter_hold_ms`（从最后一帧有效数据起算，默认1000ms），之后在 `meter_stale_ramp_ms` 内平滑退出到 `meter_stale_speed_scale`（默认1.0）；数据恢复时在 `meter_recovery_ramp_ms` 内平滑回到新计算值。低能量确认只认连续新帧，重复读取同一帧不会推进100ms判据；已确认并进入的低能量停车不会因为失联自动恢复。功率计长时间失联后软件无法保证50W限制，但CAN2发送故障、轮反馈/温度、时序和遥控保护仍独立有效。`require_meter=true` 才保留旧的缺帧即制动的严格策略。本地CAN2停止/清错不直接撤销CAN1机械臂保持；完整说明见 [README_VEHICLE.md](README_VEHICLE.md) 和 [功率限制调参说明.md](fm调参/功率限制调参说明.md)。
+当前 `confirmed=true`，独立底盘0档已启用功率环，按 `require_meter=false`（M1）工作。功率计短时失联不再主动停车或锁存，而是保持最后限制系数 `meter_hold_ms`（从最后一帧有效数据起算，默认1000ms），之后在 `meter_stale_ramp_ms` 内平滑退出到 `meter_stale_speed_scale`（默认1.0）；数据恢复时在 `meter_recovery_ramp_ms` 内平滑回到新计算值。低能量确认只认连续新帧，重复读取同一帧不会推进100ms判据；已确认并进入的低能量停车不会因为失联自动恢复。功率计长时间失联后软件无法保证50W限制，但CAN2发送故障、轮反馈/温度、时序和遥控保护仍独立有效。`require_meter=true` 才保留旧的缺帧即制动的严格策略；改回 `confirmed=false` 则功率环完全不参与。功率环主要按滤波功率降速度目标，堵转时仍由电机15A上限和500J缓冲兜底，不能保证瞬时严格低于50W。本地CAN2停止/清错不直接撤销CAN1机械臂保持；完整说明见 [README_VEHICLE.md](README_VEHICLE.md) 和 [功率限制调参说明.md](fm调参/功率限制调参说明.md)。
 
 ## 退出、清错与观察
 
@@ -99,12 +99,12 @@ FreeMASTER「行驶加减速与转向」组的五项 `tune_chassis_*` 在正常�
 
 转向松杆和回中时按 `angular_decel_rad_s2` 收参考角速度；同时 `ChassisControl::step` 在无行驶/转向请求（`stop`，或 `brake` 且转向请求为0）时每个周期清零两轮速度环积分，避免积分在静摩擦下冻结、松杆后仍持续驱动一侧轮子。该清理不作用于纯转向中的 `brake`（转向请求非0时保留积分）。
 
-### 功率限制（代码已接入，默认未启用）
-`ChassisPowerConfig.confirmed` 默认 false，只有改源码重编为 true 后才参与控制。启用后：
+### 功率限制（当前已启用，M1）
+`ChassisPowerConfig.confirmed=true`、`require_meter=false`；改回 false 后功率环不参与控制。启用后：
 - 滤波后的 `power_w`（`power_filter_ms`，默认300ms）超过 `budget_w`（默认45W）时，按比例降低**速度目标**，不砍驱动电流；`max_current_ma`/`drive_current_ma` 只做电机/C620安全底。
 - 缓冲能量低于 `warning_energy_j`（默认300J）开始降速，低于 `stop_energy_j`（默认80J）受控停车，恢复需 `restart_energy_j`（默认350J）。低能量需持续100ms确认；停车请求期间保持底盘使能并用 `braking_current_ma` 制动，锁存 `Inhibited` 后才撤销输出。
 - `braking_current_ma` 默认8000，避免下坡/功率停车制动太弱。
-- FM「功率限制（当前未启用）」组的 `tune_chassis_power_budget_w`、`tune_chassis_power_filter_ms` 只改RAM参数；`confirmed` 必须改源码重编。
+- FM「功率限制（M1 已启用）」组的 `tune_chassis_power_budget_w`、`tune_chassis_power_filter_ms` 只改RAM参数；`confirmed` 必须改源码重编。
 - `g_chassis_status.power_speed_scale` 是功率/能量限速比例，`power_filtered_w` 是滤波后功率，用于现场判断是否在降速。
 - 只读诊断：`min_energy_j` 是本次统计最低缓冲，`power_over_50_ms` 是原始功率超50W累计时间，`power_over_latched` 表示本次曾超50W。三者不参与控制、不请求停车、不切电；上电、成功清功率锁存或底盘维护清错后清零。
 - 完整参数表、调参步骤和现场记录表见 [功率限制调参说明.md](fm调参/功率限制调参说明.md)。

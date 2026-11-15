@@ -3,14 +3,14 @@
 #include <cstdint>
 namespace engineer {
 struct ChassisPowerConfig {
-    // 50W/500J 是裁判缓冲边界。confirmed 默认关闭；打开后功率环作用到
+    // 50W/500J 是裁判缓冲边界。当前按用户要求启用功率环；它只作用到
     // 速度目标，电流上限只做电机/C620 安全底，不因瞬时功率砍过坎扭矩。
-    bool confirmed = false;
+    bool confirmed = true;
     // M1: false=功率计短时失联绝不主动停车/锁存，保持最后限制系数后平滑退出；
     // true=保留旧策略，缺帧即进入有界制动并最终锁存。仅影响功率计0x31帧，
     // 不改变CAN2发送故障、反馈/温度/时序和遥控等独立保护。低能量判据只在
     // 新帧上推进，重复读取同一帧不会凑满100ms。
-    bool require_meter = true;
+    bool require_meter = false;
     float budget_w = 45, warning_energy_j = 300, stop_energy_j = 80, restart_energy_j = 350;
     float drive_current_ma = 16000, braking_current_ma = 8000;
     float power_filter_ms = 300;

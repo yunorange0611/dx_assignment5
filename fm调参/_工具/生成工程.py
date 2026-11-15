@@ -210,7 +210,7 @@ YAW_TUNE = [V('tune_yaw_position_kp','Yaw位置P','1/s',True,0.001,1000),
 POWER = variables('g_chassis_status', [('power_frames','功率帧累计',''),('power_received_ms','功率最近接收时刻','ms'),('power_w','功率计反馈','W'),('energy_j','缓冲能量','J'),('min_energy_j','本次最低缓冲能量','J'),('power_over_50_ms','原始功率超50W累计时间','ms'),('power_over_latched','曾超50W锁存',''),('power_filtered_w','滤波后功率','W'),('power_speed_scale','功率/能量限速比例',''),('power_configuration_valid','功率配置合法',''),('power_confirmed','功率实测确认',''),('power_phase','功率停车阶段',''),('power_reason','功率停车原因',''),('power_session_allowed','能量允许运行',''),('power_stop_requested','功率请求受控停车',''),('power_inhibited','功率禁止重启',''),('power_meter_held','功率计丢帧宽限中',''),('power_meter_stale','功率计失联 功率缩放已退出','')])
 POWER_TUNE = [
     V('tune_chassis_power_budget_w','功率预算 50W以下','W',True,1,49,
-      note='confirmed=false 时不生效；M1丢帧不主动停车，长时间失联会退出功率缩放。'),
+      note='当前confirmed=true、require_meter=false（M1）；丢帧不主动停车，长时间失联会退出功率缩放。'),
     V('tune_chassis_power_filter_ms','功率滤波时间','ms',True,1,2000),
 ]
 TILT_TUNE = [
@@ -372,7 +372,7 @@ def groups():
             V('g_arm_status.joint[0].faults','Yaw故障位图'),
             V('g_yaw_limit_status.active_half_range_deg','Yaw半幅','deg'),
             V('g_yaw_limit_status.result','Yaw限位结果')]),
-        G('功率限制（当前未启用）', POWER_TUNE + [
+        G('功率限制（M1 已启用）', POWER_TUNE + [
             V('g_chassis_status.power_w','功率计瞬时功率','W'),
             V('g_chassis_status.energy_j','缓冲能量','J'),
             V('g_chassis_status.min_energy_j','本次最低缓冲能量','J'),

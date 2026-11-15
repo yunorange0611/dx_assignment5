@@ -38,7 +38,7 @@ HAL SPI头/源取自同机旧模板dipan，与当前HAL均为v1.8.5。源码增�
 
 ## 低功率与停车阶段
 
-50W/500J为规则边界；`ChassisPowerConfig.confirmed`默认false，未启用时独立底盘只用`ChassisConfig.max_current_ma`和速度斜坡。启用后预算默认45W、滤波`power_filter_ms=300ms`，滤波功率超预算时按比例降**速度目标**（`power_speed_scale`），不砍驱动电流；`drive_current_ma`/`max_current_ma`只做电机/C620安全底。缓冲能量300J开始降速、80J受控停车、350J才允许清除锁存，不能把缓冲当无条件超功率许可。
+50W/500J为规则边界；当前`ChassisPowerConfig.confirmed=true`、`require_meter=false`（M1），功率环已启用。预算默认45W、滤波`power_filter_ms=300ms`，滤波功率超预算时按比例降**速度目标**（`power_speed_scale`），不砍驱动电流；`drive_current_ma`/`max_current_ma`只做电机/C620安全底。缓冲能量300J开始降速、80J受控停车、350J才允许清除锁存，不能把缓冲当无条件超功率许可。堵转时电流仍可能较高，功率环靠速度目标和500J缓冲兜底，不保证瞬时严格低于50W；若把`confirmed`改回false，则完全只用`ChassisConfig.max_current_ma`和速度斜坡。
 
 功率计帧策略由`require_meter`选择。默认false（M1）：缺帧本身不触发停车或锁存；保持最后限制系数`meter_hold_ms`（从最后一帧有效数据起算，默认1000ms），再在`meter_stale_ramp_ms`内平滑退出到`meter_stale_speed_scale`（默认1.0），数据恢复时在`meter_recovery_ramp_ms`内平滑回到新计算值。低能量确认只认连续新帧，重复读取同一帧不会推进100ms判据，超时即中断计时；已经确认并进入的低能量停车继续执行，不因失联或数据恢复自动撤销。长时间失联后软件无法保证50W，只能依赖实测余量和裁判缓冲；CAN2发送故障、轮反馈/温度、时序和遥控保护仍各自独立。`require_meter=true`保留旧策略：断链且轮反馈健康时进入显式有时限的停车阶段，停止推进，保留有上限的制动电流；到静止或时限结束后锁存禁行，恢复数据不续跑。若轮反馈丢失或总线故障，立即取消CAN2旧帧并撤力，不承诺闭环停车。
 
