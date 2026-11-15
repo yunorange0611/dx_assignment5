@@ -1,6 +1,7 @@
 #include "Arm/arm_control.h"
 #include "Arm/yaw_pid.h"
 #include "arm_task.h"
+#include "arm_feedback_fixture.h"
 #include "Remote/operator_control.h"
 #include "Arm/yaw_bench.h"
 #include "yaw_service.h"
@@ -141,6 +142,21 @@ float Project4Reference(YawPid *pid, float target, float feedback, float dt)
 }
 } // namespace
 int test_yaw() {
+    { // Drive hold requires manual calibration, then holds each healthy axis at zero.
+        Config c = config(); ArmControl a(c);
+        prime_roll_feedback(a, 0); CHECK(feed_all(a, 0));
+        CHECK(a.enable_drive_zero_hold(0) != Result::Ok);
+        CHECK((a.status().enabled_mask & kFourAxisJoints) == 0);
+        CHECK(a.capture_zero(kFourAxisJoints, 0) == Result::Ok);
+        CHECK(a.enable_drive_zero_hold(0) == Result::Ok);
+        CHECK((a.status().enabled_mask & kFourAxisJoints) == kFourAxisJoints);
+        CHECK(!(a.status().enabled_mask & (1u << Yaw)));
+        for (unsigned i = BigPitch; i < kJointCount; ++i)
+            CHECK(a.status().joint[i].target_deg == 0);
+        CHECK(a.enable_drive_zero_hold(0) == Result::Ok);
+        a.disable(); CHECK(a.status().enabled_mask == 0);
+    }
+
     { // Migration regression: resets must reach the new sigma, not legacy integral.
         Config c = config();
         c.joint[Yaw].velocity_ki = 10;
@@ -417,6 +433,7 @@ int test_yaw() {
         Config c = config();
         c.hardware_confirmed = true;
         ArmControl a(c);
+        prime_roll_feedback(a, 0);
         CHECK(feed_all(a, 0));
         CHECK(a.capture_zero(kAllJoints, 0) == Result::Ok);
         CHECK(a.enable(1u << Roll, 0) == Result::Ok);
@@ -775,6 +792,7 @@ int test_yaw() {
     }
     { // Runtime selection adds only the selected axis; existing arm holders keep their history.
         ArmControl a(config());
+        prime_roll_feedback(a, 0);
         CHECK(feed_all(a, 0));
         CHECK(a.capture_zero(kAllJoints, 0) == Result::Ok);
         CHECK(a.set_yaw_limits(limits(), 0) == Result::Ok);
@@ -837,6 +855,7 @@ int test_yaw() {
     }
     { // Online tuning affects only the selected stationary drive and honors the immutable cap.
         ArmControl a(config());
+        prime_roll_feedback(a, 0);
         CHECK(feed_all(a, 0));
         CHECK(a.capture_zero(kAllJoints, 0) == Result::Ok);
         CHECK(a.set_yaw_limits(limits(), 0) == Result::Ok);

@@ -10,7 +10,7 @@ struct ChassisPowerConfig {
     // true=保留旧策略，缺帧即进入有界制动并最终锁存。仅影响功率计0x31帧，
     // 不改变CAN2发送故障、反馈/温度/时序和遥控等独立保护。低能量判据只在
     // 新帧上推进，重复读取同一帧不会凑满100ms。
-    bool require_meter = false;
+    bool require_meter = true;
     float budget_w = 45, warning_energy_j = 300, stop_energy_j = 80, restart_energy_j = 350;
     float drive_current_ma = 16000, braking_current_ma = 8000;
     float power_filter_ms = 300;
