@@ -156,7 +156,6 @@ class ArmControl {
     Result enable(uint8_t mask, uint32_t now_ms, bool independent_yaw = false);
     Result capture_parked_zero(uint32_t now_ms);
     Result enable_parked_tuning(uint32_t now_ms);
-    Result enable_drive_zero_hold(uint32_t now_ms);
     void disable();
     // Owner-only mode changes. Neither operation enables an axis; pitch stays paired.
     Result hold(uint8_t mask, uint32_t now_ms);
@@ -227,7 +226,6 @@ class ArmControl {
     Status status_{};
     uint32_t last_step_ms_ = 0;
     bool have_step_ = false, parked_tuning_ = false;
-    bool drive_zero_hold_ = false;
     YawRuntimeLimits yaw_limits_{};
     bool yaw_tuning_unlimited_ = false;
     float yaw_motion_min_ = 0, yaw_motion_max_ = 0, yaw_motion_speed_ = 0, yaw_test_speed_ = 0;

@@ -142,21 +142,6 @@ float Project4Reference(YawPid *pid, float target, float feedback, float dt)
 }
 } // namespace
 int test_yaw() {
-    { // Drive hold requires manual calibration, then holds each healthy axis at zero.
-        Config c = config(); ArmControl a(c);
-        prime_roll_feedback(a, 0); CHECK(feed_all(a, 0));
-        CHECK(a.enable_drive_zero_hold(0) != Result::Ok);
-        CHECK((a.status().enabled_mask & kFourAxisJoints) == 0);
-        CHECK(a.capture_zero(kFourAxisJoints, 0) == Result::Ok);
-        CHECK(a.enable_drive_zero_hold(0) == Result::Ok);
-        CHECK((a.status().enabled_mask & kFourAxisJoints) == kFourAxisJoints);
-        CHECK(!(a.status().enabled_mask & (1u << Yaw)));
-        for (unsigned i = BigPitch; i < kJointCount; ++i)
-            CHECK(a.status().joint[i].target_deg == 0);
-        CHECK(a.enable_drive_zero_hold(0) == Result::Ok);
-        a.disable(); CHECK(a.status().enabled_mask == 0);
-    }
-
     { // Migration regression: resets must reach the new sigma, not legacy integral.
         Config c = config();
         c.joint[Yaw].velocity_ki = 10;

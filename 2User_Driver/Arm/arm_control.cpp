@@ -393,7 +393,7 @@ void ArmControl::trip(uint32_t fault, unsigned i) {
         for (unsigned j = 0; j < kJointCount; ++j)
             status_.joint[j].calibrated = false;
     }
-    if ((parked_tuning_ || drive_zero_hold_) && i != Yaw && !(fault & kSharedArmFaults)) {
+    if (parked_tuning_ && i != Yaw && !(fault & kSharedArmFaults)) {
         const Result last_result = status_.last_result;
         disable_joints(1u << i);
         status_.last_result = last_result;
@@ -402,7 +402,6 @@ void ArmControl::trip(uint32_t fault, unsigned i) {
     }
 }
 void ArmControl::disable() {
-    drive_zero_hold_ = false;
     yaw_position_ff_ = 0;
                         yaw_position_ff_active_ = false;
     yaw_speed_ff_ = 0;
@@ -837,28 +836,6 @@ Result ArmControl::enable(uint8_t mask, uint32_t now, bool independent_yaw) {
         return status_.last_result = Result::Busy;
     return enable_checked(mask, now, !(independent_yaw && mask == (1u << Yaw)));
 }
-Result ArmControl::enable_drive_zero_hold(uint32_t now) {
-    // Independent axes: an absent gripper must not prevent pitch/roll holding.
-    // No calibration here: zero is exclusively the user's manual boot capture.
-    drive_zero_hold_ = true;
-    parked_tuning_ = false;
-    Result first_error = Result::Ok;
-    for (unsigned i = BigPitch; i < kJointCount; ++i) {
-        if (!(config_.joint_mask & (1u << i))) continue;
-        if (!status_.joint[i].enabled) {
-            const Result result = enable_checked(1u << i, now, false);
-            if (result != Result::Ok) {
-                if (first_error == Result::Ok) first_error = result;
-                continue;
-            }
-        }
-        float targets[kJointCount]{};
-        const Result result = set_targets(1u << i, targets, now);
-        if (first_error == Result::Ok && result != Result::Ok) first_error = result;
-    }
-    return status_.last_result = first_error;
-}
-
 Result ArmControl::enable_parked_tuning(uint32_t now) {
     if (status_.enabled_mask)
         return status_.last_result = Result::Busy;

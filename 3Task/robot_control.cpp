@@ -676,9 +676,6 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     const bool yaw_drive_requested = drive_yaw_enabled && kChassisIndependent && robot_tune_mode == 0 &&
         drive_switch && drive_armed && !global_stop && !chassis_stop_latched &&
         !tipover && !power_stop && remote_ok && debug_command != ROBOT_DEBUG_DISABLE_YAW;
-    const bool drive_zero_hold_requested = independent && robot_tune_mode == 0 &&
-        drive_switch && drive_armed && remote_ok && !global_stop &&
-        !chassis_stop_latched && !tipover && !power_stop;
     if (result.request_enable) {
 #if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
         // Revoke before ArmControl can enable an output. A stale disabled
@@ -695,9 +692,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     if (Task_Protect_GetStatus().disabled && result.active)
         reject();
     if (result.disable_arm) {
-        if (drive_zero_hold_requested) {
-            // The independent driving branch below owns four-axis zero hold.
-        } else if (yaw_ok && !global_stop && remote_ok && !tipover) {
+        if (yaw_ok && !global_stop && remote_ok && !tipover) {
             const uint8_t non_yaw = kAllJoints & ~(1u << Yaw);
             arm.disable_joints(non_yaw);
         } else {
@@ -709,14 +704,6 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
             Task_Protect_Trip(PROTECT_ARM_FAULT, now);
             reject();
         }
-    }
-    if (drive_zero_hold_requested) {
-#if VEHICLE_SAFETY_ENABLED && !ARM_FOUR_AXIS_BENCH && !DM_ID_CONFIG_MODE
-        INS_RevokeCalibrationPermission(now);
-#endif
-        arm.enable_drive_zero_hold(now);
-        for (unsigned i = BigPitch; i < kJointCount; ++i)
-            result.target_deg[i] = 0;
     }
     // Same switch/neutral release as the independent chassis; no whole-arm enable.
     // A fixed zero must be measured first. Keep other four axes under their owner.
