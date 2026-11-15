@@ -1,4 +1,5 @@
 #include "Arm/arm_control.h"
+#include "arm_feedback_fixture.h"
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -40,12 +41,22 @@ int test_robot_tuning();
 namespace {
 Config bench() {
     Config c = kArmConfig;
-    c.joint[Yaw].encoder_velocity = false; // Legacy synthetic rpm fixtures.
     c.joint_mask = kAllJoints;
     c.hardware_confirmed = true;
     c.pitch.mapping_confirmed = true;
-    // Legacy synthetic encoder tests use manual capture_zero, not the measured fixed zero.
-    c.joint[Yaw].fixed_zero_encoder = -1;
+    // Bidirectional controller fixtures use an explicit synthetic travel range.
+    c.joint[BigPitch].min_deg = c.joint[SmallPitch].min_deg = -150;
+    c.joint[BigPitch].max_deg = c.joint[SmallPitch].max_deg = 150;
+    // Synthetic PID/protocol cases use a load-free fixture. Production defaults
+    // are checked separately against the measured holding-torque points.
+    c.joint[BigPitch].torque_bias_nm = 0;
+    c.joint[BigPitch].gravity_gain_nm = 0;
+    c.joint[BigPitch].gravity_offset_deg = 0;
+    c.joint[BigPitch].up_ff_nm = c.joint[BigPitch].down_ff_nm = 0;
+    c.joint[SmallPitch].torque_bias_nm = 0;
+    c.joint[SmallPitch].gravity_gain_nm = 0;
+    c.joint[SmallPitch].gravity_offset_deg = 0;
+    c.joint[SmallPitch].up_ff_nm = c.joint[SmallPitch].down_ff_nm = 0;
     return c;
 }
 void dji(ArmControl &a, unsigned joint, unsigned e, uint32_t ms, int rpm = 0, unsigned temp = 25) {
@@ -61,11 +72,19 @@ void dm(ArmControl &a, unsigned joint, uint32_t ms, unsigned state = 0, unsigned
     a.receive(1, a.feedback_id(joint), d, 8, ms);
 }
 void all(ArmControl &a, uint32_t ms, unsigned state = 0) {
+    prime_roll_feedback(a, ms);
     dji(a, Yaw, 1000, ms);
     dji(a, Roll, 1000, ms);
     dji(a, Gripper, 1000, ms);
     dm(a, BigPitch, ms, state);
     dm(a, SmallPitch, ms, state);
+}
+void dm_at(ArmControl &a, unsigned joint, float degrees, uint32_t ms, unsigned velocity = 0x800) {
+    const auto position = unsigned((degrees / 57.2957795131f + 3.14159f) * 65535 / 6.28318f + .5f);
+    const unsigned id = joint == BigPitch ? 1 : 2;
+    const uint8_t d[8] = {uint8_t(0x10 | id), uint8_t(position >> 8), uint8_t(position),
+                         uint8_t(velocity >> 4), uint8_t((velocity << 4) | 8), 0, 25, 25};
+    a.receive(1, a.feedback_id(joint), d, 8, ms);
 }
 const Frame *find(const Frame *frames, unsigned n, unsigned bus, unsigned id) {
     for (unsigned i = 0; i < n; ++i)
@@ -118,10 +137,10 @@ void run() {
             CHECK(f[i].bus == 1);
         CHECK(find(f, n, 1, 1)->data[7] == 0xfd);
         CHECK(a.feedback_id(Yaw) == 0x205);
-        CHECK(find(f, n, 1, 0x1ff) != nullptr); // 电压模式yaw ID1占0x1ff第一槽
-        CHECK(find(f, n, 1, 0x2ff) == nullptr);
-        CHECK(find(f, n, 1, 0x1fe) == nullptr); // 当前配置不发送6020电流帧
-        CHECK(kArmConfig.joint[Yaw].motor == Motor::Gm6020Voltage);
+        CHECK(find(f, n, 1, 0x1fe) != nullptr); // 电流模式yaw ID1占0x1fe第一槽
+        CHECK(find(f, n, 1, 0x2fe) == nullptr);
+        CHECK(find(f, n, 1, 0x2ff) == nullptr); // 当前配置不再发送6020电压帧
+        CHECK(kArmConfig.joint[Yaw].motor == Motor::Gm6020Current);
         ArmControl b(bench());
         CHECK(b.enable(1, 0) == Result::NotOnline);
         all(b, 0);
@@ -138,6 +157,7 @@ void run() {
     }
     { // DJI过零解包和36:1换算；首次反馈不能凭空多一圈。
         ArmControl a(bench());
+        prime_roll_feedback(a, 0, 8190);
         dji(a, Roll, 8190, 0);
         CHECK(a.capture_zero(1u << Roll, 0) == Result::Ok);
         dji(a, Roll, 2, 1);
@@ -153,6 +173,71 @@ void run() {
         dji(a, Roll, 8190, 10);
         CHECK(!a.status().joint[Roll].calibrated);
     }
+    { // Roll zero tolerates RPM spikes and encoder seam jitter after 200 ms.
+        ArmControl a(bench());
+        dji(a, Roll, 8190, 0, 52);
+        dm(a, BigPitch, 0);
+        dm(a, SmallPitch, 0);
+        dji(a, Gripper, 1000, 0);
+        CHECK(a.capture_parked_zero(0) == Result::Moving);
+        CHECK(a.status().joint[BigPitch].calibrated);
+        CHECK(a.status().joint[SmallPitch].calibrated);
+        CHECK(!a.status().joint[Roll].calibrated);
+        CHECK(a.status().joint[Gripper].calibrated);
+        for (uint32_t t = 1; t < 200; ++t)
+            dji(a, Roll, (8190 + (t % 2) * 20) % 8192, t, t % 2 ? 52 : -52);
+        CHECK(a.capture_zero(1u << Roll, 199) == Result::Moving);
+        dji(a, Roll, 8190, 200, 52);
+        CHECK(a.capture_zero(1u << Roll, 200) == Result::Ok);
+        CHECK(a.status().joint[Roll].calibrated);
+        CHECK(std::fabs(a.status().joint[Roll].position_deg) < .0001f);
+        CHECK(a.status().joint[Roll].drive_velocity_deg_s > 8);
+    }
+    { // Actual slow motion rejects zero even when reported RPM is zero.
+        ArmControl a(bench());
+        for (uint32_t t = 0; t <= 400; ++t)
+            dji(a, Roll, 1000 + t, t);
+        CHECK(a.capture_zero(1u << Roll, 400) == Result::Moving);
+        for (uint32_t t = 401; t <= 600; ++t)
+            dji(a, Roll, 1400, t);
+        CHECK(a.capture_zero(1u << Roll, 600) == Result::Ok);
+    }
+    { // Returning to the starting angle cannot hide a large excursion.
+        ArmControl a(bench());
+        for (uint32_t t = 0; t <= 200; ++t)
+            dji(a, Roll, t == 100 ? 1500 : 1000, t);
+        CHECK(a.capture_zero(1u << Roll, 200) == Result::Moving);
+        for (uint32_t t = 201; t <= 301; ++t)
+            dji(a, Roll, 1000, t);
+        CHECK(a.capture_zero(1u << Roll, 301) == Result::Ok);
+    }
+    { // Stale feedback resets the window through refresh and receive paths.
+        ArmControl a(bench());
+        for (uint32_t t = 0; t <= 200; ++t)
+            dji(a, Roll, 1000, t);
+        CHECK(a.capture_zero(1u << Roll, 200) == Result::Ok);
+        CHECK(a.capture_zero(1u << Roll, 206) == Result::Moving);
+        CHECK(!a.status().joint[Roll].calibrated);
+        for (uint32_t t = 207; t <= 406; ++t)
+            dji(a, Roll, 1000, t);
+        CHECK(a.capture_zero(1u << Roll, 406) == Result::Moving);
+        dji(a, Roll, 1000, 407);
+        CHECK(a.capture_zero(1u << Roll, 407) == Result::Ok);
+        dji(a, Roll, 1000, 414);
+        CHECK(a.capture_zero(1u << Roll, 414) == Result::Moving);
+    }
+    { // Output-angle tolerance respects ratio/direction and tick wraparound.
+        auto c = bench();
+        c.joint[Roll].feedback_per_joint = 18;
+        c.joint[Roll].direction = -1;
+        ArmControl a(c);
+        const uint32_t start = 0xffffff80u;
+        for (uint32_t t = 0; t <= 200; ++t)
+            dji(a, Roll, 1000 + (t % 2) * 40, start + t, 52);
+        CHECK(a.capture_zero(1u << Roll, start + 200) == Result::Ok);
+        dji(a, Roll, 1100, start + 201);
+        CHECK(a.capture_zero(1u << Roll, start + 201) == Result::Moving);
+    }
     { // 非法目标整包拒绝，不能部分更新；目标超时锁存停机。
         ArmControl a(bench());
         all(a, 0);
@@ -163,7 +248,7 @@ void run() {
         q[0] = std::numeric_limits<float>::quiet_NaN();
         CHECK(a.set_targets(1, q, 0) == Result::InvalidArgument);
         CHECK(a.status().joint[Yaw].target_deg == 10);
-        q[0] = 400;
+        q[0] = 91;
         CHECK(a.set_targets(1, q, 0) == Result::OutOfRange);
         for (unsigned t = 0; t <= 251; ++t) {
             all(a, t);
@@ -251,12 +336,16 @@ void run() {
             const unsigned n = a.step(t * 4, f);
             auto &s = a.status().joint[Roll];
             CHECK(a.status().faults == 0);
-            CHECK(std::fabs(s.effort) <= 800);
+            CHECK(std::fabs(s.effort) <= 3000);
             const float v = (s.reference_deg - previous_q) / 0.004f;
-            CHECK(v >= -0.0001f && v <= 10.001f);
-            CHECK(std::fabs(v - previous_v) <= 0.13f);
+            CHECK(v >= -0.0001f && v <= cfg.joint[Roll].max_speed_deg_s + 0.001f);
+            CHECK(s.reference_deg <= cfg.joint[Roll].max_deg);
+            // At the position limit, clipping can shorten the final position step.
+            // Acceleration is constrained on the planner's reference velocity.
+            CHECK(std::fabs(s.drive_reference_velocity_deg_s - previous_v) <=
+                  cfg.joint[Roll].max_accel_deg_s2 * 0.004f + 0.0001f);
             previous_q = s.reference_deg;
-            previous_v = v;
+            previous_v = s.drive_reference_velocity_deg_s;
             const unsigned id = cfg.joint[Roll].motor_id, byte = ((id - 1) % 4) * 2;
             const auto *current = find(f, n, 1, id <= 4 ? 0x200 : 0x1ff);
             CHECK(current != nullptr);
@@ -274,7 +363,6 @@ void run() {
         for (unsigned id = 1; id <= 7; ++id)
             for (int sign = -1; sign <= 1; sign += 2) {
                 Config c = bench();
-                c.joint[Yaw].motor = Motor::Gm6020Current;
                 c.joint[Yaw].motor_id = id;
                 c.joint[Yaw].max_effort = 3000;
                 c.joint[Yaw].velocity_kp = 1000000;
@@ -304,8 +392,6 @@ void run() {
                 CHECK(dji_zero(f, n));
             }
         Config c = bench();
-        c.joint[Yaw].motor = Motor::Gm6020Current;
-        c.joint[Yaw].max_effort = 3000;
         c.joint[Yaw].velocity_kp = 1000000;
         c.joint[Yaw].direction = -1;
         ArmControl a(c);
@@ -317,17 +403,14 @@ void run() {
         auto n = a.step(0, f);
         const auto *current = find(f, n, 1, 0x1fe);
         CHECK(current != nullptr);
-        // 显式电流模式兼容测试：上限跟随配置，反向只影响报文符号。
-        const float expected_effort = c.joint[Yaw].max_effort;
-        const auto expected_raw = int16_t(-expected_effort * (16384.0f / 3000.0f));
-        CHECK(a.status().joint[Yaw].effort == expected_effort);
-        CHECK(int16_t(uint16_t(current->data[0]) << 8 | current->data[1]) == expected_raw);
+        // 默认上限300mA约对应1638原码；反向只影响报文符号，状态effort仍为关节正向mA。
+        CHECK(a.status().joint[Yaw].effort == 300);
+        CHECK(int16_t(uint16_t(current->data[0]) << 8 | current->data[1]) == -1638);
         dji(a, Yaw, 1000, 4, 0, 80);
         n = a.step(4, f);
         CHECK(a.status().faults & OverTemperature);
         CHECK(dji_zero(f, n));
         c = bench();
-        c.joint[Yaw].motor = Motor::Gm6020Current;
         c.joint[Yaw].max_effort = 3001;
         ArmControl bad_limit(c);
         CHECK(!bad_limit.status().configuration_valid);
@@ -393,7 +476,7 @@ void run() {
         const unsigned id = c.joint[Gripper].motor_id, byte = ((id - 1) % 4) * 2;
         const auto *current = find(f, n, 1, id <= 4 ? 0x200 : 0x1ff);
         CHECK(current != nullptr);
-        CHECK(int16_t(uint16_t(current->data[byte]) << 8 | current->data[byte + 1]) == 150);
+        CHECK(int16_t(uint16_t(current->data[byte]) << 8 | current->data[byte + 1]) == 150 * c.joint[Gripper].direction);
         for (unsigned j = 0; j < 8; ++j)
             if (j != byte && j != byte + 1) CHECK(current->data[j] == 0);
         CHECK(a.set_effort_limit(Gripper, 0) == Result::Ok);
@@ -434,7 +517,7 @@ void run() {
         const JointTuning invalid[] = {
             {nan, 40, 2, 500}, {3, nan, 2, 500}, {3, 40, nan, 500}, {3, 40, 2, nan},
             {0, 40, 2, 500}, {1001, 40, 2, 500}, {3, -1, 2, 500}, {3, 40, -1, 500},
-            {3, 1000001, 2, 500}, {3, 40, 1000001, 500}, {3, 40, 2, -1}, {3, 40, 2, 801}};
+            {3, 1000001, 2, 500}, {3, 40, 1000001, 500}, {3, 40, 2, -1}, {3, 40, 2, 3001}};
         for (const auto &bad : invalid) {
             CHECK(a.set_tuning(Roll, bad, 1) == Result::InvalidArgument);
             CHECK(a.get_tuning(Roll, current));
@@ -461,30 +544,83 @@ void run() {
         CHECK(!no_yaw.get_tuning(Yaw, current));
         CHECK(no_yaw.set_tuning(Yaw, {2, 20, 5, 100}, 0) == Result::InvalidArgument);
     }
-    { // 调一台pitch也必须同时核对另一台驱动的反馈和静止条件。
+    { // 两pitch解耦后，调一台只检查该轴自身的在线/校零/静止条件。
         ArmControl a(bench());
+        JointTuning small_before{};
+        CHECK(a.get_tuning(SmallPitch, small_before));
         const JointTuning tuning{3, .04f, .002f, .2f};
         dm(a, BigPitch, 0);
-        CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::NotOnline);
-        dm(a, SmallPitch, 0);
         CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::NotCalibrated);
-        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
-        uint8_t moving[8] = {2, 0x80, 0, 0xff, 0xf8, 0, 25, 25};
-        CHECK(a.receive(1, a.feedback_id(SmallPitch), moving, 8, 0));
-        CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::Moving);
-        dm(a, SmallPitch, 0);
+        CHECK(a.capture_zero(1u << BigPitch, 0) == Result::Ok);
         CHECK(a.set_tuning(BigPitch, tuning, 0) == Result::Ok);
         JointTuning small{};
         CHECK(a.get_tuning(SmallPitch, small));
-        CHECK(small.position_kp == 2 && small.velocity_kp == .03f &&
-              small.velocity_ki == .005f && small.effort_limit == .3f);
+        CHECK(small.position_kp == small_before.position_kp &&
+              small.velocity_kp == small_before.velocity_kp &&
+              small.velocity_ki == small_before.velocity_ki &&
+              small.effort_limit == small_before.effort_limit);
         CHECK(a.status().enabled_mask == 0 && a.status().joint[BigPitch].calibrated &&
-              a.status().joint[SmallPitch].calibrated);
-        dm(a, BigPitch, 10); // 双反馈时差超限，不能用单轴新反馈掩盖。
-        CHECK(a.set_tuning(BigPitch, tuning, 10) == Result::NotOnline);
+              !a.status().joint[SmallPitch].calibrated);
+        dm_at(a, BigPitch, 0, 4, 0x7d0); // 大P自身在动，仍要求静止。
+        CHECK(a.set_tuning(BigPitch, tuning, 4) == Result::Moving);
+        dm(a, BigPitch, 8);
+        CHECK(a.set_tuning(BigPitch, tuning, 8) == Result::Ok);
+    }
+    { // A lower startup limit is distinct from the permitted BigPitch tuning limit.
+        auto config = bench();
+        config.joint[BigPitch].max_effort = 3.0f;
+        config.joint[BigPitch].initial_effort_limit = .3f;
+        config.joint[BigPitch].velocity_kp = .03f;
+        config.joint[SmallPitch].max_effort = .3f;
+        config.joint[SmallPitch].initial_effort_limit = .3f;
+        ArmControl a(config);
+        JointTuning big{}, small{};
+        CHECK(a.get_tuning(BigPitch, big) && big.effort_limit == .3f);
+        CHECK(a.get_tuning(SmallPitch, small) && small.effort_limit == .3f);
+        dm(a, BigPitch, 0, 1);
+        dm(a, SmallPitch, 0, 1);
+        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+        const float q[kJointCount] = {0, 10, 0, 0, 0};
+        auto step_with_velocity_error = [&](uint32_t now) {
+            // MIT velocity raw 0x7d0 reports about -40 deg/s at VMAX=30 rad/s.
+            const uint8_t dm_fast[8] = {0x11, 0x80, 0, 0x7d, 0x08, 0, 25, 25};
+            a.receive(1, a.feedback_id(BigPitch), dm_fast, 8, now);
+            dm(a, SmallPitch, now, 1);
+            return a.step(now, f);
+        };
+        CHECK(a.enable(kPitchPair, 0) == Result::Ok);
+        CHECK(a.set_targets(kPitchPair, q, 0) == Result::Ok);
+        step_with_velocity_error(0);
+        CHECK(a.status().joint[BigPitch].effort == .3f);
+
+        a.disable();
+        dm(a, BigPitch, 4, 1);
+        dm(a, SmallPitch, 4, 1);
+        big.effort_limit = 3;
+        CHECK(a.set_tuning(BigPitch, big, 4) == Result::Ok);
+        big.effort_limit = 3.01f;
+        CHECK(a.set_tuning(BigPitch, big, 4) == Result::InvalidArgument);
+        small.effort_limit = 3;
+        CHECK(a.set_tuning(SmallPitch, small, 4) == Result::InvalidArgument);
+        CHECK(a.get_tuning(BigPitch, big) && big.effort_limit == 3);
+        CHECK(a.get_tuning(SmallPitch, small) && small.effort_limit == .3f);
+        CHECK(!a.status().enabled_mask);
+        CHECK(a.enable(kPitchPair, 4) == Result::Ok);
+        CHECK(a.set_targets(kPitchPair, q, 4) == Result::Ok);
+        const auto n = step_with_velocity_error(4);
+        const float effort = a.status().joint[BigPitch].effort;
+        CHECK(!a.status().faults && effort > .3f && effort <= 3);
+        const auto *drive = find(f, n, 1, 1);
+        CHECK(drive != nullptr);
+        const unsigned wire_torque = (unsigned(drive->data[6] & 0xf) << 8) | drive->data[7];
+        CHECK(std::fabs((wire_torque * 20.0f / 4095.0f - 10.0f) - effort) < .005f);
     }
     { // 在线增益真正进入原闭环；运行限流不会被夹爪owner的保持请求覆盖。
-        ArmControl baseline(bench()), tuned(bench());
+        auto baseline_config = bench();
+        baseline_config.joint[Roll].position_kp = 2;
+        baseline_config.joint[Roll].velocity_kp = 20;
+        baseline_config.joint[Roll].velocity_ki = 5;
+        ArmControl baseline(baseline_config), tuned(baseline_config);
         all(baseline, 0);
         all(tuned, 0);
         CHECK(baseline.capture_zero(1u << Roll, 0) == Result::Ok);
@@ -516,6 +652,326 @@ void run() {
         ArmControl restarted(c);
         JointTuning original{};
         CHECK(restarted.get_tuning(Gripper, original) && original.effort_limit == 500);
+    }
+    { // Production defaults carry the provisional measured pitch feedforward.
+        auto c = kArmConfig;
+        CHECK(c.joint[Roll].position_kp == 10 && c.joint[Roll].velocity_kp == 45 &&
+              c.joint[Roll].velocity_ki == 8);
+        c.hardware_confirmed = true;
+        ArmControl a(c);
+        dm(a, BigPitch, 0, 1);
+        dm(a, SmallPitch, 0, 1);
+        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+        for (unsigned joint = BigPitch; joint <= SmallPitch; ++joint) {
+            JointTuning tuning{};
+            CHECK(a.get_tuning(joint, tuning));
+            const float expected_bias = joint == BigPitch ? -0.228f : 1.276f;
+            const float expected_gain = joint == BigPitch ? 0.437f : 0.248f;
+            const float expected_offset = joint == BigPitch ? 90.0f : -48.33f;
+            CHECK(std::fabs(tuning.torque_bias_nm - expected_bias) < .0001f);
+            CHECK(std::fabs(tuning.gravity_gain_nm - expected_gain) < .0001f);
+            CHECK(std::fabs(tuning.gravity_offset_deg - expected_offset) < .0001f);
+            CHECK(tuning.effort_limit == 6.5f && c.joint[joint].max_effort == 6.5f);
+            CHECK(tuning.up_ff_nm == (joint == BigPitch ? .85f : 0));
+            CHECK(tuning.down_ff_nm == (joint == BigPitch ? .20f : 0));
+            CHECK(tuning.velocity_kp == (joint == BigPitch ? .012f : .01f));
+            CHECK(c.joint[joint].up_direction == (joint == BigPitch ? -1 : 1));
+            tuning.velocity_kp = tuning.velocity_ki = 0;
+            tuning.up_ff_nm = tuning.down_ff_nm = 0;
+            CHECK(a.set_tuning(joint, tuning, 0) == Result::Ok);
+        }
+        CHECK(a.enable(kPitchPair, 0) == Result::Ok);
+        dm_at(a, BigPitch, -1.0f, 4);
+        dm_at(a, SmallPitch, 59.151257f, 4);
+        a.step(4, f);
+        const auto &b = a.status().joint[BigPitch];
+        const auto &s = a.status().joint[SmallPitch];
+        CHECK(std::fabs(b.feedforward_effort -
+                        (-0.228f + 0.437f * std::cos((-1.0f + 90.0f) / 57.2957795131f))) <
+              .001f);
+        CHECK(std::fabs(s.feedforward_effort -
+                        (1.276f + 0.248f * std::cos((59.151257f - 48.33f) / 57.2957795131f))) <
+              .001f);
+        CHECK(b.effort == b.feedforward_effort && s.effort == s.feedforward_effort);
+    }
+    { // Each feedforward uses its own absolute calibrated drive angle.
+        auto c = bench();
+        c.joint[BigPitch].direction = -1;
+        ArmControl a(c);
+        dm(a, BigPitch, 0, 1);
+        dm(a, SmallPitch, 0, 1);
+        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+        CHECK(a.set_tuning(BigPitch, {2, 0, 0, 1, .2f, .8f, 15}, 0) == Result::Ok);
+        CHECK(a.set_tuning(SmallPitch, {2, 0, 0, 1, -.1f, .6f, -20}, 0) == Result::Ok);
+        CHECK(a.enable(kPitchPair, 0) == Result::Ok);
+        dm_at(a, BigPitch, -60, 4);
+        dm_at(a, SmallPitch, 30, 4);
+        const unsigned n = a.step(4, f);
+        const auto &b = a.status().joint[BigPitch];
+        const auto &s = a.status().joint[SmallPitch];
+        CHECK(std::fabs(b.drive_position_deg - 60) < .02f);
+        CHECK(std::fabs(s.position_deg - 30) < .02f);
+        CHECK(std::fabs(b.feedforward_effort - (.2f + .8f * std::cos(75 / 57.2957795131f))) < .001f);
+        CHECK(std::fabs(s.feedforward_effort - (-.1f + .6f * std::cos(10 / 57.2957795131f))) < .001f);
+        CHECK(b.effort == b.feedforward_effort && s.effort == s.feedforward_effort);
+        const auto *wire = find(f, n, 1, 1);
+        CHECK(wire != nullptr);
+        const unsigned torque = (unsigned(wire->data[6] & 15) << 8) | wire->data[7];
+        CHECK(std::fabs(torque * 20.0f / 4095 - 10 + b.effort) < .005f);
+        a.disable();
+        CHECK(a.status().joint[BigPitch].effort == 0 &&
+              a.status().joint[SmallPitch].feedforward_effort == 0);
+    }
+    { // Ki=0 removes stored integral; an enabled pitch can be retuned while moving.
+        auto c = bench();
+        c.joint[BigPitch].velocity_kp = 0;
+        c.joint[BigPitch].velocity_ki = 1;
+        ArmControl a(c);
+        dm(a, BigPitch, 0, 1);
+        dm(a, SmallPitch, 0, 1);
+        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+        CHECK(a.enable_parked_tuning(0) == Result::Ok);
+        a.step(0, f);
+        CHECK(std::fabs(a.status().joint[BigPitch].effort) > .0001f);
+        JointTuning b{}, small{};
+        CHECK(a.get_tuning(BigPitch, b) && a.get_tuning(SmallPitch, small));
+        b.velocity_ki = 0;
+        CHECK(a.set_tuning_runtime(BigPitch, b, 0) == Result::Ok);
+        dm(a, BigPitch, 4, 1);
+        dm(a, SmallPitch, 4, 1);
+        a.step(4, f);
+        CHECK(a.status().joint[BigPitch].effort == 0);
+        dm_at(a, BigPitch, 10, 8, 0x7d0);
+        dm_at(a, SmallPitch, 15, 8);
+        b.torque_bias_nm = .25f;
+        b.effort_limit = .5f;
+        CHECK(a.set_tuning_runtime(BigPitch, b, 8) == Result::Ok);
+        a.step(8, f);
+        CHECK(a.status().joint[BigPitch].effort == .25f);
+        b.velocity_kp = .03f;
+        CHECK(a.set_tuning_runtime(BigPitch, b, 8) == Result::Ok);
+        CHECK(a.get_tuning(BigPitch, b) && b.torque_bias_nm == .25f && b.velocity_kp == .03f);
+        b.velocity_kp = 0;
+        b.torque_bias_nm = std::numeric_limits<float>::quiet_NaN();
+        CHECK(a.set_tuning_runtime(BigPitch, b, 8) == Result::InvalidArgument);
+        JointTuning after_moving{};
+        CHECK(a.get_tuning(BigPitch, after_moving) && after_moving.torque_bias_nm == .25f &&
+              after_moving.velocity_kp == .03f);
+        JointTuning after{};
+        CHECK(a.get_tuning(SmallPitch, after) && after.velocity_kp == small.velocity_kp &&
+              after.torque_bias_nm == small.torque_bias_nm);
+        b.torque_bias_nm = 2;
+        CHECK(a.set_tuning_runtime(BigPitch, b, 8) == Result::Ok);
+        dm_at(a, BigPitch, 10, 12, 0x7d0);
+        dm_at(a, SmallPitch, 15, 12);
+        a.step(12, f);
+        CHECK(a.status().joint[BigPitch].feedforward_effort == 2 &&
+              a.status().joint[BigPitch].effort == .5f);
+        dm_at(a, BigPitch, 151, 16);
+        dm_at(a, SmallPitch, 151, 16);
+        a.step(16, f);
+        CHECK(a.status().joint[BigPitch].effort == 0); // Cannot push further beyond soft limit.
+        dm(a, BigPitch, 20, 8);
+        dm(a, SmallPitch, 20, 1);
+        a.step(20, f);
+        CHECK(a.status().joint[BigPitch].effort == 0 &&
+              a.status().joint[BigPitch].feedforward_effort == 0 &&
+              a.status().joint[SmallPitch].enabled);
+    }
+    { // Feedforward and PI share one cap; saturation must not accumulate velocity integral.
+        auto c = bench();
+        c.joint[BigPitch].velocity_kp = 0;
+        c.joint[BigPitch].velocity_ki = 1;
+        c.joint[BigPitch].torque_bias_nm = 2;
+        c.joint[BigPitch].initial_effort_limit = 1;
+        ArmControl a(c);
+        dm(a, BigPitch, 0, 1);
+        dm(a, SmallPitch, 0, 1);
+        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+        CHECK(a.enable_parked_tuning(0) == Result::Ok);
+        for (uint32_t t = 0; t <= 16; t += 4) {
+            dm_at(a, BigPitch, 0, t, 0x7d0);
+            dm_at(a, SmallPitch, 0, t);
+            a.step(t, f);
+            CHECK(a.status().joint[BigPitch].effort == 1);
+        }
+        dm(a, BigPitch, 20, 1);
+        dm(a, SmallPitch, 20, 1);
+        JointTuning t{};
+        CHECK(a.get_tuning(BigPitch, t));
+        t.torque_bias_nm = 0;
+        CHECK(a.set_tuning_runtime(BigPitch, t, 20) == Result::Ok);
+        a.step(20, f);
+        CHECK(std::fabs(a.status().joint[BigPitch].effort) < .01f);
+    }
+    { // Production pitch limits reject outward targets and permit recovery from each boundary.
+        auto c = kArmConfig;
+        c.hardware_confirmed = true;
+        for (unsigned j = BigPitch; j <= SmallPitch; ++j) {
+            CHECK(c.joint[j].min_deg == (j == BigPitch ? -2 : -70));
+            CHECK(c.joint[j].max_deg == (j == BigPitch ? 150 : 70));
+            c.joint[j].velocity_kp = c.joint[j].velocity_ki = 0;
+            c.joint[j].torque_bias_nm = -.5f;
+            c.joint[j].gravity_gain_nm = 0;
+            c.joint[j].up_ff_nm = c.joint[j].down_ff_nm = 0;
+        }
+        ArmControl outward(c);
+        dm(outward, BigPitch, 0);
+        dm(outward, SmallPitch, 0);
+        CHECK(outward.capture_zero(kPitchPair, 0) == Result::Ok);
+        CHECK(outward.enable(kPitchPair, 0) == Result::Ok);
+        float q[kJointCount] = {0, -2, -70, 0, 0};
+        CHECK(outward.set_targets(kPitchPair, q, 0) == Result::Ok);
+        q[BigPitch] = -2.01f;
+        CHECK(outward.set_targets(kPitchPair, q, 0) == Result::OutOfRange);
+        q[BigPitch] = -2;
+        q[SmallPitch] = -70.01f;
+        CHECK(outward.set_targets(kPitchPair, q, 0) == Result::OutOfRange);
+        q[SmallPitch] = 70;
+        CHECK(outward.set_targets(kPitchPair, q, 0) == Result::Ok);
+        q[SmallPitch] = 70.01f;
+        CHECK(outward.set_targets(kPitchPair, q, 0) == Result::OutOfRange);
+        q[SmallPitch] = -70;
+        CHECK(outward.set_targets(kPitchPair, q, 0) == Result::Ok);
+        dm_at(outward, BigPitch, -2.02f, 4);
+        dm_at(outward, SmallPitch, -70.02f, 4);
+        outward.step(4, f);
+        CHECK(outward.status().faults == 0);
+        for (unsigned j = BigPitch; j <= SmallPitch; ++j) {
+            CHECK(outward.status().joint[j].target_deg == c.joint[j].min_deg);
+            CHECK(outward.status().joint[j].reference_deg >= c.joint[j].min_deg);
+            CHECK(outward.status().joint[j].effort == 0);
+            c.joint[j].torque_bias_nm = .5f;
+        }
+        ArmControl inward(c);
+        dm(inward, BigPitch, 0);
+        dm(inward, SmallPitch, 0);
+        CHECK(inward.capture_zero(kPitchPair, 0) == Result::Ok);
+        CHECK(inward.enable(kPitchPair, 0) == Result::Ok);
+        dm_at(inward, BigPitch, -2.02f, 4);
+        dm_at(inward, SmallPitch, -70.02f, 4);
+        inward.step(4, f);
+        CHECK(inward.status().faults == 0);
+        CHECK(inward.status().joint[BigPitch].effort == .5f);
+        CHECK(inward.status().joint[SmallPitch].effort == .5f);
+        dm_at(outward, BigPitch, -4.1f, 8);
+        dm_at(outward, SmallPitch, -72.1f, 8);
+        outward.step(8, f);
+        CHECK(outward.status().faults & PositionLimit);
+        CHECK(outward.status().enabled_mask == 0);
+    }
+    { // Motion assist follows desired direction, slews, and stays within the total effort cap.
+        for (int up_direction = -1; up_direction <= 1; up_direction += 2) {
+            auto c = bench();
+            c.joint[BigPitch].up_direction = up_direction;
+            c.joint[SmallPitch].up_direction = -up_direction;
+            ArmControl a(c);
+            dm(a, BigPitch, 0);
+            dm(a, SmallPitch, 0);
+            CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+            for (unsigned j = BigPitch; j <= SmallPitch; ++j) {
+                JointTuning tuning{};
+                CHECK(a.get_tuning(j, tuning));
+                tuning.velocity_kp = tuning.velocity_ki = 0;
+                tuning.up_ff_nm = .12f;
+                tuning.down_ff_nm = .08f;
+                CHECK(a.set_tuning(j, tuning, 0) == Result::Ok);
+            }
+            CHECK(a.enable(kPitchPair, 0) == Result::Ok);
+            float q[kJointCount] = {0, float(up_direction * 10), float(-up_direction * 10), 0, 0};
+            float previous[kJointCount]{};
+            for (uint32_t now = 4; now <= 120; now += 4) {
+                dm(a, BigPitch, now, 1);
+                dm(a, SmallPitch, now, 1);
+                CHECK(a.set_targets(kPitchPair, q, now) == Result::Ok);
+                a.step(now, f);
+                for (unsigned j = BigPitch; j <= SmallPitch; ++j) {
+                    const auto &s = a.status().joint[j];
+                    CHECK(std::fabs(s.motion_feedforward_effort - previous[j]) <= .00801f);
+                    CHECK(s.effort == s.motion_feedforward_effort);
+                    previous[j] = s.motion_feedforward_effort;
+                }
+            }
+            CHECK(a.status().joint[BigPitch].motion_ff_direction == 1);
+            CHECK(std::fabs(a.status().joint[BigPitch].effort - up_direction * .12f) < .0001f);
+            CHECK(std::fabs(a.status().joint[SmallPitch].effort + up_direction * .12f) < .0001f);
+            q[BigPitch] *= -1;
+            q[SmallPitch] *= -1;
+            for (uint32_t now = 124; now <= 400; now += 4) {
+                dm(a, BigPitch, now, 1);
+                dm(a, SmallPitch, now, 1);
+                a.set_targets(kPitchPair, q, now);
+                const auto count = a.step(now, f);
+                for (unsigned j = BigPitch; j <= SmallPitch; ++j) {
+                    const auto &s = a.status().joint[j];
+                    CHECK(std::fabs(s.motion_feedforward_effort - previous[j]) <= .00801f);
+                    previous[j] = s.motion_feedforward_effort;
+                    const auto *wire = find(f, count, 1, c.joint[j].motor_id);
+                    CHECK(wire != nullptr);
+                    const unsigned torque = (unsigned(wire->data[6] & 15) << 8) | wire->data[7];
+                    CHECK(std::fabs(torque * 20.0f / 4095 - 10 - s.effort) < .005f);
+                }
+            }
+            CHECK(a.status().joint[BigPitch].motion_ff_direction == -1);
+            CHECK(std::fabs(a.status().joint[BigPitch].effort + up_direction * .08f) < .0001f);
+            CHECK(std::fabs(a.status().joint[SmallPitch].effort - up_direction * .08f) < .0001f);
+            CHECK(a.set_effort_limit(BigPitch, .02f) == Result::Ok);
+            dm(a, BigPitch, 404, 1);
+            dm(a, SmallPitch, 404, 1);
+            a.step(404, f);
+            CHECK(std::fabs(a.status().joint[BigPitch].effort) <= .020001f);
+            CHECK(a.disable_joints(1u << BigPitch) == Result::Ok);
+            CHECK(a.status().joint[BigPitch].motion_feedforward_effort == 0);
+            CHECK(a.status().joint[BigPitch].motion_ff_direction == 0);
+            CHECK(a.status().joint[SmallPitch].enabled);
+            a.disable();
+            CHECK(a.status().joint[SmallPitch].motion_feedforward_effort == 0);
+        }
+    }
+    { // Hysteresis uses desired speed, tolerates encoder zero quantization, and ramps out.
+        auto c = bench();
+        c.joint[BigPitch].up_direction = 1;
+        c.joint[BigPitch].velocity_kp = c.joint[BigPitch].velocity_ki = 0;
+        c.joint[BigPitch].up_ff_nm = .1f;
+        ArmControl a(c);
+        dm(a, BigPitch, 0);
+        CHECK(a.capture_zero(1u << BigPitch, 0) == Result::Ok);
+        CHECK(a.enable(1u << BigPitch, 0) == Result::Ok);
+        dm_at(a, BigPitch, -.2f, 4);
+        a.step(4, f);
+        CHECK(a.status().joint[BigPitch].motion_ff_direction == 0);
+        dm_at(a, BigPitch, -.3f, 8);
+        a.step(8, f);
+        CHECK(a.status().joint[BigPitch].motion_ff_direction == 1);
+        dm_at(a, BigPitch, -.2f, 12);
+        a.step(12, f);
+        CHECK(a.status().joint[BigPitch].motion_ff_direction == 1);
+        dm_at(a, BigPitch, -.1f, 16);
+        a.step(16, f);
+        CHECK(a.status().joint[BigPitch].motion_ff_direction == 0);
+        for (uint32_t now = 20; now <= 32; now += 4) {
+            dm(a, BigPitch, now, 1);
+            a.step(now, f);
+        }
+        CHECK(a.status().joint[BigPitch].motion_feedforward_effort == 0);
+        CHECK(a.status().joint[BigPitch].effort == 0);
+    }
+    { // Non-pitch axes cannot accidentally acquire a torque feedforward.
+        ArmControl a(bench());
+        JointTuning t{};
+        CHECK(a.get_tuning(Roll, t));
+        t.torque_bias_nm = .2f;
+        CHECK(a.set_tuning(Roll, t, 0) == Result::InvalidArgument);
+        t.torque_bias_nm = 0;
+        t.up_ff_nm = .1f;
+        CHECK(a.set_tuning(Roll, t, 0) == Result::InvalidArgument);
+        CHECK(a.get_tuning(BigPitch, t));
+        t.up_ff_nm = -.1f;
+        CHECK(a.set_tuning(BigPitch, t, 0) == Result::InvalidArgument);
+        t.up_ff_nm = 6.51f;
+        CHECK(a.set_tuning(BigPitch, t, 0) == Result::InvalidArgument);
+        t.up_ff_nm = std::numeric_limits<float>::quiet_NaN();
+        CHECK(a.set_tuning(BigPitch, t, 0) == Result::InvalidArgument);
     }
     { // HAL tick绕回不能触发误失联；原码8192不是有效编码器值。
         ArmControl a(bench());

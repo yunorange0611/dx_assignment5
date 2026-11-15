@@ -10,12 +10,13 @@ enum ArmJoint { ARM_YAW, ARM_BIG_PITCH, ARM_SMALL_PITCH, ARM_ROLL, ARM_GRIPPER, 
 #define ARM_PITCH_PAIR ((uint8_t)0x06)
 typedef struct {
     // effort: 6020电流模式/C610为mA，DM为Nm；feedback_effort仍为DJI反馈原码/DM Nm。
-    // BigPitch=肩角增量，SmallPitch=肘相对角增量；不是第二DM的驱动角。
+    // BigPitch=DM1独立关节角，SmallPitch=DM2独立关节角；两轴已解耦，不再做相对角换算。
     float position_deg, velocity_deg_s, target_deg, reference_deg, effort;
     float drive_position_deg, drive_velocity_deg_s, drive_target_deg, drive_reference_deg;
     float drive_reference_velocity_deg_s;
     float feedback_effort, temperature_c;
     float velocity_target_deg_s;
+    float feedforward_effort; // Pitch gravity/bias request before combined limiting, Nm.
     uint32_t received, feedback_age_ms, faults;
     uint8_t online, calibrated, enabled, motor_state;
     uint16_t raw_encoder;
@@ -23,6 +24,8 @@ typedef struct {
     uint8_t homing;
     float can_velocity_deg_s, encoder_velocity_deg_s;
     uint32_t velocity_window_ms;
+    float motion_feedforward_effort; // Signed, slew-limited motion assist, Nm.
+    int8_t motion_ff_direction; // +1 up, -1 down, 0 holding.
 } ArmJointStatus;
 typedef struct {
     ArmJointStatus joint[ARM_JOINT_COUNT];
@@ -77,19 +80,22 @@ extern YawRawCapture g_yaw_raw_capture;
 
 
 
-// Write the fields first and request_seq last. Rejected requests are consumed once.
-// PID/effort changes are RAM-only, disabled-only and never alter hardware/zero/limits.
+// RAM-only; the remote owner checks neutral input before applying requests.
+// Parked tuning accepts enabled, healthy axes, including motion-assist adjustments.
 typedef struct {
-    uint32_t joint;
     float position_kp, velocity_kp, velocity_ki, effort_limit;
-    uint32_t request_seq;
+    float torque_bias_nm, gravity_gain_nm, gravity_offset_deg; // Pitch only, RAM-only.
+    float up_ff_nm, down_ff_nm; // Nonnegative pitch motion-assist magnitudes, Nm.
 } ArmTuneRequest;
 typedef struct {
-    uint32_t consumed_seq, active_seq, result, active_joint;
+    uint32_t result;
     float position_kp, velocity_kp, velocity_ki, effort_limit;
+    float torque_bias_nm, gravity_gain_nm, gravity_offset_deg;
+    float up_ff_nm, down_ff_nm;
 } ArmTuneStatus;
-extern volatile ArmTuneRequest g_arm_tune_request;
-extern ArmTuneStatus g_arm_tune_status; // Read-only; result = engineer::Result.
+// Fixed indices 1..4 match g_arm_status.joint. Index 0 is reserved for Yaw.
+extern volatile ArmTuneRequest g_arm_tune_request[ARM_JOINT_COUNT];
+extern ArmTuneStatus g_arm_tune_status[ARM_JOINT_COUNT]; // Read-only; result = engineer::Result.
 
 // 仅供任务上下文调用；返回1=成功入队，实际执行结果看Arm_GetStatus().last_result。
 // 含pitch的校零/使能必须成对使用ARM_PITCH_PAIR；手动摆好的联合姿态定义两关节的0增量。

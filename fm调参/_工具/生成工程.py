@@ -179,12 +179,16 @@ ARM_OTHER_HEALTH = [V(f'g_arm_status.joint[{i}].{name}', label, unit)
                         ('faults', '辅助轴故障', ''), ('drive_velocity_deg_s', '辅助轴驱动速度', 'deg/s')]]
 
 
-ARM_TUNE = [V('g_arm_tune_request.joint','调参轴 0Yaw1肩2肘3Roll4爪',write=True,low=0,high=4),
-            V('g_arm_tune_request.position_kp','位置P申请','1/s',True,0.001,1000),
-            V('g_arm_tune_request.velocity_kp','速度P申请',write=True,low=0,high=1000000),
-            V('g_arm_tune_request.velocity_ki','速度I申请',write=True,low=0,high=1000000),
-            V('g_arm_tune_request.effort_limit','运行输出上限申请 DM为Nm Yaw为电压原码 M2006为mA',write=True,low=0,high=1000000),
-            V('g_arm_tune_request.request_seq','关节参数提交序号 最后加1',write=True,low=0,high=2147483647)] + variables('g_arm_tune_status', [('consumed_seq','已消费关节参数序号',''),('active_seq','已生效关节参数序号',''),('result','关节参数结果 engineer::Result',''),('active_joint','最近生效轴',''),('position_kp','生效位置P','1/s'),('velocity_kp','生效速度P',''),('velocity_ki','生效速度I',''),('effort_limit','生效输出上限 注意轴单位','')])
+ARM_TUNE = []
+for axis_id, label in [(1,'大P'),(2,'小P'),(3,'Roll'),(4,'夹爪')]:
+    for field, text, low in [('position_kp','位置P',0.001),('velocity_kp','速度P',0),
+        ('velocity_ki','速度I',0),('effort_limit','输出上限',0),('torque_bias_nm','恒定偏置Nm',-100),
+        ('gravity_gain_nm','重力幅值Nm',-100),('gravity_offset_deg','重力相位deg',-360),
+        ('up_ff_nm','上行补偿Nm',0),('down_ff_nm','下行补偿Nm',0)]:
+        ARM_TUNE.append(V(f'g_arm_tune_request[{axis_id}].{field}',label+text,write=True,low=low,high=1000000))
+    ARM_TUNE += variables(f'g_arm_tune_status[{axis_id}]', [('result',label+'参数结果',''),
+        ('position_kp',label+'生效位置P','1/s'),('velocity_kp',label+'生效速度P',''),
+        ('velocity_ki',label+'生效速度I',''),('effort_limit',label+'生效输出上限','')])
 YAW_ZERO = [
     V('g_arm_status.joint[0].raw_encoder', 'Yaw原始编码器 对正车头时抄到kYawZeroEncoder', note='只读0..8191；零点在Arm/yaw_config.h填写，重新编译烧录。'),
     V('g_arm_status.joint[0].fixed_zero_encoder', 'Yaw已配置固定零点 -1未填写'),
@@ -705,7 +709,7 @@ def bind(items, symbols):
                 raise ValueError('只允许绑定片内RAM观测/请求: '+spec['expr'])
             spec.update(last_addr=address,byte_size=width,treat_as=treat)
             if spec['writable'] and not spec['expr'].startswith(('robot_tune_mode','tune_',
-                    'g_chassis_debug_request.','g_arm_tune_request.','g_robot_debug_command','g_ins_debug_command')):
+                    'g_chassis_debug_request.','g_arm_tune_request[','g_arm_tune_request.','g_robot_debug_command','g_ins_debug_command')):
                 raise ValueError('不可写符号: '+spec['expr'])
 
 

@@ -12,17 +12,27 @@ constexpr float kYawFrictionDeadbandDegS = 0.5f;
 constexpr float kYawPidDerivativeTauS = 0.01f;
 // Project4 uses 5 rad/s; keep the reverse-integral behavior while limiting
 // windup in the much slower 4 ms loop. Units are the Yaw speed error in deg/s.
+constexpr uint32_t kRollZeroStationaryMs = 200;
+constexpr float kRollZeroMaxSpanDeg = 0.1f;
+constexpr float kMotionFfStartSpeedDegS = 0.5f;
+constexpr float kMotionFfStopSpeedDegS = 0.25f;
+constexpr float kMotionFfSlewNmS = 2.0f;
 float clamp(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
 bool finite(float x) {
     return std::isfinite(x);
 }
+bool valid_feedforward(unsigned joint, float bias, float gain, float offset,
+                       float up, float down) {
+    return finite(bias) && finite(gain) && finite(offset) &&
+           finite(up) && up >= 0 && finite(down) && down >= 0 &&
+           finite(std::fabs(bias) + std::fabs(gain)) &&
+           ((joint == BigPitch || joint == SmallPitch) ||
+            (bias == 0 && gain == 0 && offset == 0 && up == 0 && down == 0));
+}
 bool mask_valid(uint8_t m, uint8_t allowed) {
     return m != 0 && (m & ~allowed) == 0;
-}
-bool whole_pitch_pair(uint8_t m) {
-    return !(m & kPitchPair) || (m & kPitchPair) == kPitchPair;
 }
 uint16_t be16(const uint8_t *d) {
     return uint16_t(d[0]) << 8 | d[1];
@@ -125,18 +135,17 @@ YawPidSnapshot ArmControl::yaw_pid_snapshot() const {
 float ArmControl::drive_min(unsigned i) const {
     if (i == Yaw)
         return yaw_tuning_unlimited_ ? -180.0f : yaw_motion_min_;
-    return i == SmallPitch ? config_.pitch.second_drive_min_deg : config_.joint[i].min_deg;
+    return config_.joint[i].min_deg;
 }
 float ArmControl::drive_max(unsigned i) const {
     if (i == Yaw)
         return yaw_tuning_unlimited_ ? 180.0f : yaw_motion_max_;
-    return i == SmallPitch ? config_.pitch.second_drive_max_deg : config_.joint[i].max_deg;
+    return config_.joint[i].max_deg;
 }
 float ArmControl::drive_speed_limit(unsigned i) const {
     if (i == Yaw)
         return yaw_tuning_unlimited_ ? yaw_limits_.max_speed_deg_s : yaw_motion_speed_;
-    return i == SmallPitch ? config_.pitch.second_drive_max_speed_deg_s
-                           : config_.joint[i].max_speed_deg_s;
+    return config_.joint[i].max_speed_deg_s;
 }
 bool ArmControl::targets_in_range(const float q[kJointCount]) const {
     for (unsigned i = 0; i < kJointCount; ++i)
@@ -144,19 +153,7 @@ bool ArmControl::targets_in_range(const float q[kJointCount]) const {
             if (!finite(q[i]) || (!(i == Yaw && yaw_tuning_unlimited_) &&
                 (q[i] < config_.joint[i].min_deg || q[i] > config_.joint[i].max_deg)))
                 return false;
-    const float a2 = q[BigPitch] + q[SmallPitch];
-    return finite(a2) && a2 >= drive_min(SmallPitch) && a2 <= drive_max(SmallPitch);
-}
-bool ArmControl::pitch_feedback_ready(uint32_t now) const {
-    const auto &b = status_.joint[BigPitch], &s = status_.joint[SmallPitch];
-    if (!runtime_[BigPitch].have_feedback || !runtime_[SmallPitch].have_feedback ||
-        uint32_t(now - b.last_feedback_ms) > config_.feedback_timeout_ms ||
-        uint32_t(now - s.last_feedback_ms) > config_.feedback_timeout_ms)
-        return false;
-    // 两时间戳都已限制在最近feedback_timeout范围内，支持HAL tick绕回。
-    const uint32_t ab = b.last_feedback_ms - s.last_feedback_ms;
-    const uint32_t ba = s.last_feedback_ms - b.last_feedback_ms;
-    return (ab < ba ? ab : ba) <= config_.pitch.max_feedback_skew_ms;
+    return true;
 }
 void ArmControl::update_joint_feedback() {
     for (unsigned i = 0; i < kJointCount; ++i) {
@@ -170,10 +167,6 @@ void ArmControl::update_joint_feedback() {
         s.position_deg = s.drive_position_deg;
         s.velocity_deg_s = s.drive_velocity_deg_s;
     }
-    auto &s = status_.joint[SmallPitch];
-    const auto &b = status_.joint[BigPitch];
-    s.position_deg = s.drive_position_deg - b.drive_position_deg;
-    s.velocity_deg_s = s.drive_velocity_deg_s - b.drive_velocity_deg_s;
 }
 void ArmControl::update_drive_references() {
     for (unsigned i = 0; i < kJointCount; ++i) {
@@ -184,80 +177,6 @@ void ArmControl::update_drive_references() {
         s.drive_reference_deg = s.reference_deg;
         s.drive_reference_velocity_deg_s = runtime_[i].reference_velocity;
     }
-    auto &s = status_.joint[SmallPitch];
-    const auto &b = status_.joint[BigPitch];
-    s.drive_target_deg = b.target_deg + s.target_deg;
-    s.drive_reference_deg = b.reference_deg + s.reference_deg;
-    // runtime_.reference_velocity在pitch规划中已保存驱动坐标速度。
-}
-
-void ArmControl::step_pitch_reference(float dt) {
-    auto &b = status_.joint[BigPitch];
-    auto &s = status_.joint[SmallPitch];
-    const float error[2] = {b.target_deg - b.reference_deg, s.target_deg - s.reference_deg};
-    const float distance = std::sqrt(error[0] * error[0] + error[1] * error[1]);
-    if (!pitch_path_active_ || pitch_speed_ <= 0) {
-        pitch_speed_ = 0;
-        pitch_path_active_ = false;
-        if (distance > 0.00001f) {
-            pitch_direction_[0] = error[0] / distance;
-            pitch_direction_[1] = error[1] / distance;
-            pitch_end_[0] = b.target_deg;
-            pitch_end_[1] = s.target_deg;
-            pitch_speed_limit_ = 1.0e9f;
-            pitch_accel_limit_ = 1.0e9f;
-            const float components[3] = {pitch_direction_[0], pitch_direction_[1],
-                                         pitch_direction_[0] + pitch_direction_[1]};
-            const float speeds[3] = {config_.joint[BigPitch].max_speed_deg_s,
-                                     config_.joint[SmallPitch].max_speed_deg_s,
-                                     config_.pitch.second_drive_max_speed_deg_s};
-            const float accels[3] = {config_.joint[BigPitch].max_accel_deg_s2,
-                                     config_.joint[SmallPitch].max_accel_deg_s2,
-                                     config_.pitch.second_drive_max_accel_deg_s2};
-            for (unsigned i = 0; i < 3; ++i)
-                if (std::fabs(components[i]) > 0.000001f) {
-                    pitch_speed_limit_ =
-                        std::fmin(pitch_speed_limit_, speeds[i] / std::fabs(components[i]));
-                    pitch_accel_limit_ =
-                        std::fmin(pitch_accel_limit_, accels[i] / std::fabs(components[i]));
-                }
-            pitch_path_active_ = true;
-        }
-    }
-    if (pitch_path_active_) {
-        const float along = error[0] * pitch_direction_[0] + error[1] * pitch_direction_[1];
-        const float across = error[0] * pitch_direction_[1] - error[1] * pitch_direction_[0];
-        const float stop_distance = pitch_speed_ * pitch_speed_ / (2 * pitch_accel_limit_);
-        // 连续同方向遥控目标可延长线段；转向/退回时先沿旧可行线段减速再重规划。
-        // q1/q2范围及a2=q1+q2范围都是凸区间，合法端点间直线不会穿越限位。
-        const bool following = along >= stop_distance && std::fabs(across) <= 0.00001f;
-        float desired_speed = 0;
-        if (following) {
-            const float adt = pitch_accel_limit_ * dt;
-            // 比连续sqrt(2*a*d)提前一个采样周期制动，避免离散积分越过端点。
-            desired_speed = std::fmin(pitch_speed_limit_,
-                                      std::sqrt(adt * adt + 2 * pitch_accel_limit_ * along) - adt);
-            pitch_end_[0] = b.reference_deg + pitch_direction_[0] * along;
-            pitch_end_[1] = s.reference_deg + pitch_direction_[1] * along;
-        }
-        pitch_speed_ +=
-            clamp(desired_speed - pitch_speed_, -pitch_accel_limit_ * dt, pitch_accel_limit_ * dt);
-        if (pitch_speed_ < 0.0000001f) {
-            pitch_speed_ = 0;
-            pitch_path_active_ = false;
-        }
-        const float remaining = (pitch_end_[0] - b.reference_deg) * pitch_direction_[0] +
-                                (pitch_end_[1] - s.reference_deg) * pitch_direction_[1];
-        if (pitch_speed_ * dt > remaining + 0.0001f) {
-            trip(PositionLimit, SmallPitch);
-            return;
-        }
-        b.reference_deg += pitch_direction_[0] * pitch_speed_ * dt;
-        s.reference_deg += pitch_direction_[1] * pitch_speed_ * dt;
-    }
-    runtime_[BigPitch].reference_velocity = pitch_direction_[0] * pitch_speed_;
-    runtime_[SmallPitch].reference_velocity =
-        (pitch_direction_[0] + pitch_direction_[1]) * pitch_speed_;
 }
 
 uint16_t ArmControl::feedback_id(unsigned i) const {
@@ -282,14 +201,8 @@ bool ArmControl::valid_config() const {
     if (!config_.feedback_timeout_ms || !config_.command_timeout_ms || !config_.dji_unwrap_gap_ms ||
         config_.control_period_ms < 1 || config_.control_period_ms > 10)
         return false;
-    const auto &p = config_.pitch;
     if (config_.joint[BigPitch].motor != Motor::Dm4310Mit ||
-        config_.joint[SmallPitch].motor != Motor::Dm4310Mit || !finite(p.second_drive_min_deg) ||
-        !finite(p.second_drive_max_deg) || p.second_drive_min_deg >= p.second_drive_max_deg ||
-        p.second_drive_min_deg > 0 || p.second_drive_max_deg < 0 ||
-        !finite(p.second_drive_max_speed_deg_s) || p.second_drive_max_speed_deg_s <= 0 ||
-        !finite(p.second_drive_max_accel_deg_s2) || p.second_drive_max_accel_deg_s2 <= 0 ||
-        !p.max_feedback_skew_ms || p.max_feedback_skew_ms > config_.feedback_timeout_ms)
+        config_.joint[SmallPitch].motor != Motor::Dm4310Mit)
         return false;
     for (unsigned i = 0; i < kJointCount; ++i) {
         if (!selected(i))
@@ -306,7 +219,13 @@ bool ArmControl::valid_config() const {
             c.velocity_kp < 0 || !finite(c.velocity_ki) || c.velocity_ki < 0 ||
             !finite(c.max_temperature_c) || !c.motor_id || !finite(c.limit_margin_deg) ||
             c.limit_margin_deg < 0 || !finite(c.stationary_speed_deg_s) ||
-            c.stationary_speed_deg_s <= 0)
+            c.stationary_speed_deg_s <= 0 || !finite(c.initial_effort_limit) ||
+            c.initial_effort_limit > c.max_effort ||
+            (c.initial_effort_limit < 0 && c.initial_effort_limit != -1.0f) ||
+            !valid_feedforward(i, c.torque_bias_nm, c.gravity_gain_nm, c.gravity_offset_deg,
+                               c.up_ff_nm, c.down_ff_nm) ||
+            c.up_ff_nm > c.max_effort || c.down_ff_nm > c.max_effort ||
+            (c.up_direction != 1 && c.up_direction != -1))
             return false;
         if (c.motor == Motor::Dm4310Mit) {
             // 反馈数据低4位携带电机ID，此版要求ID为1~15且MST_ID各自独立。
@@ -397,6 +316,8 @@ bool ArmControl::receive(uint8_t bus, uint16_t id, const uint8_t *d, uint8_t len
             const auto encoder = be16(d);
             if (encoder >= 8192)
                 return false;
+            const bool continuous = r.have_feedback &&
+                                    uint32_t(now - s.last_feedback_ms) <= config_.dji_unwrap_gap_ms;
             s.raw_encoder = encoder;
             const bool fixed_absolute_zero = i == Yaw && c.fixed_zero_encoder >= 0;
             if (fixed_absolute_zero) {
@@ -425,6 +346,20 @@ bool ArmControl::receive(uint8_t bus, uint16_t id, const uint8_t *d, uint8_t len
                 r.encoder_sum += delta;
             }
             r.last_encoder = encoder;
+            if (i == Roll) {
+                auto &still = roll_zero_stillness_;
+                if (!continuous || !still.tracking)
+                    still = {r.encoder_sum, r.encoder_sum, now, true};
+                if (r.encoder_sum < still.min_encoder)
+                    still.min_encoder = r.encoder_sum;
+                if (r.encoder_sum > still.max_encoder)
+                    still.max_encoder = r.encoder_sum;
+                const float span_deg = float(still.max_encoder - still.min_encoder) *
+                                       (360.0f / 8192.0f) / c.feedback_per_joint;
+                // Use the unwrapped encoder range so noisy C610 RPM cannot reject a still axis.
+                if (span_deg > kRollZeroMaxSpanDeg)
+                    still = {r.encoder_sum, r.encoder_sum, now, true};
+            }
             r.motor_position_deg = float(r.encoder_sum) * (360.0f / 8192.0f);
             s.can_velocity_deg_s =
                 c.direction * float(int16_t(be16(d + 2))) * 6.0f / c.feedback_per_joint;
@@ -452,35 +387,45 @@ bool ArmControl::receive(uint8_t bus, uint16_t id, const uint8_t *d, uint8_t len
 void ArmControl::trip(uint32_t fault, unsigned i) {
     status_.faults |= fault;
     status_.joint[i].faults |= fault;
-    if (i == BigPitch || i == SmallPitch || fault == TransportError) {
-        status_.joint[BigPitch].calibrated = false;
-        status_.joint[SmallPitch].calibrated = false;
+    if (i == BigPitch || i == SmallPitch || fault == TransportError)
+        status_.joint[i].calibrated = false;
+    if (fault == TransportError) {
+        for (unsigned j = 0; j < kJointCount; ++j)
+            status_.joint[j].calibrated = false;
     }
-    disable(); // 所选关节作为整体停机，禁止自动恢复
+    if (parked_tuning_ && i != Yaw && !(fault & kSharedArmFaults)) {
+        const Result last_result = status_.last_result;
+        disable_joints(1u << i);
+        status_.last_result = last_result;
+    } else {
+        disable();
+    }
 }
 void ArmControl::disable() {
     yaw_position_ff_ = 0;
                         yaw_position_ff_active_ = false;
     yaw_speed_ff_ = 0;
+    parked_tuning_ = false;
     status_.enabled_mask = 0;
     for (unsigned i = 0; i < kJointCount; ++i) {
         auto &s = status_.joint[i];
         auto &r = runtime_[i];
         s.enabled = false;
         s.effort = 0;
+        s.feedforward_effort = 0;
+        s.motion_feedforward_effort = 0;
+        s.motion_ff_direction = 0;
         r.integral = 0;
         r.reference_velocity = 0;
         r.dm_was_enabled = false;
         s.drive_reference_velocity_deg_s = 0;
         s.velocity_target_deg_s = 0;
     }
-    pitch_speed_ = 0;
-    pitch_path_active_ = false;
     yaw_test_active_ = false;
     reset_yaw_pid();
 }
 Result ArmControl::disable_joints(uint8_t mask) {
-    if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
+    if (!mask_valid(mask, config_.joint_mask))
         return status_.last_result = Result::InvalidArgument;
     status_.enabled_mask &= ~mask;
     for (unsigned i = 0; i < kJointCount; ++i) {
@@ -490,15 +435,14 @@ Result ArmControl::disable_joints(uint8_t mask) {
         auto &r = runtime_[i];
         s.enabled = false;
         s.effort = 0;
+        s.feedforward_effort = 0;
+        s.motion_feedforward_effort = 0;
+        s.motion_ff_direction = 0;
         s.velocity_target_deg_s = 0;
         s.drive_reference_velocity_deg_s = 0;
         r.integral = 0;
         r.reference_velocity = 0;
         r.dm_was_enabled = false;
-    }
-    if (mask & kPitchPair) {
-        pitch_speed_ = 0;
-        pitch_path_active_ = false;
     }
     if (mask & (1u << Yaw)) {
         yaw_position_ff_ = 0;
@@ -511,13 +455,18 @@ Result ArmControl::disable_joints(uint8_t mask) {
     return status_.last_result = Result::Ok;
 }
 Result ArmControl::hold(uint8_t mask, uint32_t now) {
-    if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
+    if (!mask_valid(mask, config_.joint_mask))
         return status_.last_result = Result::InvalidArgument;
     refresh(now);
-    if (status_.faults)
-        return status_.last_result = Result::FaultLatched;
     // Disabled axes are deliberately left untouched, including their targets.
     const uint8_t active = mask & status_.enabled_mask;
+    // 只检查本次mask内的轴和共享CAN/时序故障；其他轴的局部故障不阻止本轴保持。
+    uint32_t relevant_faults = status_.faults & kSharedArmFaults;
+    for (unsigned i = 0; i < kJointCount; ++i)
+        if (mask & (1u << i))
+            relevant_faults |= status_.joint[i].faults;
+    if (relevant_faults)
+        return status_.last_result = Result::FaultLatched;
     for (unsigned i = 0; i < kJointCount; ++i) {
         if (!(active & (1u << i)))
             continue;
@@ -540,13 +489,12 @@ Result ArmControl::hold(uint8_t mask, uint32_t now) {
         auto &r = runtime_[i];
         s.target_deg = s.reference_deg = s.position_deg;
         s.effort = 0;
+        s.feedforward_effort = 0;
+        s.motion_feedforward_effort = 0;
+        s.motion_ff_direction = 0;
         s.velocity_target_deg_s = 0;
         r.integral = r.reference_velocity = 0;
         r.last_command_ms = now;
-    }
-    if (active & kPitchPair) {
-        pitch_speed_ = 0;
-        pitch_path_active_ = false;
     }
     if (active & (1u << Yaw)) {
         yaw_test_active_ = false;
@@ -681,7 +629,9 @@ bool ArmControl::get_tuning(unsigned i, JointTuning &tuning) const {
     if (i >= kJointCount || !selected(i))
         return false;
     const auto &c = config_.joint[i];
-    tuning = {c.position_kp, c.velocity_kp, c.velocity_ki, tuning_effort_limit_[i]};
+    tuning = {c.position_kp, c.velocity_kp, c.velocity_ki, tuning_effort_limit_[i],
+              c.torque_bias_nm, c.gravity_gain_nm, c.gravity_offset_deg,
+              c.up_ff_nm, c.down_ff_nm};
     return true;
 }
 Result ArmControl::set_tuning(unsigned i, const JointTuning &tuning, uint32_t now) {
@@ -703,16 +653,24 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
         !finite(tuning.velocity_kp) || tuning.velocity_kp < 0 || tuning.velocity_kp > 1.0e6f ||
         !finite(tuning.velocity_ki) || tuning.velocity_ki < 0 || tuning.velocity_ki > 1.0e6f ||
         !finite(tuning.effort_limit) || tuning.effort_limit < 0 ||
-        tuning.effort_limit > startup_effort_cap_[i])
+        tuning.effort_limit > startup_effort_cap_[i] ||
+        tuning.up_ff_nm > startup_effort_cap_[i] ||
+        tuning.down_ff_nm > startup_effort_cap_[i] ||
+        !valid_feedforward(i, tuning.torque_bias_nm, tuning.gravity_gain_nm,
+                           tuning.gravity_offset_deg, tuning.up_ff_nm, tuning.down_ff_nm))
         return status_.last_result = Result::InvalidArgument;
     if (!status_.configuration_valid)
         return status_.last_result = Result::ConfigUnconfirmed;
+    const bool parked_runtime = runtime && parked_tuning_ && i != Yaw;
+    const auto &previous = config_.joint[i];
+    const bool open_loop_adjustment =
+        parked_runtime && (i == BigPitch || i == SmallPitch) &&
+        previous.velocity_kp == 0 && previous.velocity_ki == 0 &&
+        tuning.velocity_kp == 0 && tuning.velocity_ki == 0;
     refresh(now);
-    // Yaw parameter updates use the Yaw-only fault scope; other arm joints do
-    // not participate in Yaw tuning. CAN1 transport/timing faults still block.
-    if (status_.faults & (i == Yaw ? (TransportError | TimingError) : 0xffffffffu))
+    if (status_.faults & ((parked_runtime || i == Yaw) ? kSharedArmFaults : ~uint32_t{0}))
         return status_.last_result = Result::FaultLatched;
-    const uint8_t affected = (i == BigPitch || i == SmallPitch) ? kPitchPair : uint8_t(1u << i);
+    const uint8_t affected = uint8_t(1u << i);
     for (unsigned j = 0; j < kJointCount; ++j) {
         if (!(affected & (1u << j)))
             continue;
@@ -724,9 +682,13 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
             return status_.last_result = Result::NotCalibrated;
         const bool live_yaw = runtime && i == Yaw;
         if (!finite(s.drive_velocity_deg_s) ||
-            (!live_yaw && std::fabs(s.drive_velocity_deg_s) > c.stationary_speed_deg_s))
+            (!parked_runtime && !live_yaw && !open_loop_adjustment &&
+             std::fabs(s.drive_velocity_deg_s) > c.stationary_speed_deg_s))
             return status_.last_result = Result::Moving;
-        if (runtime && !live_yaw && (!finite(s.drive_target_deg) || !finite(s.drive_reference_deg) ||
+        // Parked arm tuning may change gains while the joint is moving; the
+        // shared effort cap, soft limits and per-axis health checks still apply.
+        if (runtime && !open_loop_adjustment && !parked_runtime && !live_yaw &&
+            (!finite(s.drive_target_deg) || !finite(s.drive_reference_deg) ||
                         std::fabs(s.drive_target_deg - s.drive_position_deg) > .5f ||
                         std::fabs(s.drive_reference_deg - s.drive_position_deg) > .5f ||
                         std::fabs(runtime_[j].reference_velocity) > .00001f ||
@@ -735,13 +697,27 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
         if (s.faults || (c.motor != Motor::M2006 && s.temperature_c >= c.max_temperature_c) ||
             (c.motor == Motor::Dm4310Mit && s.motor_state >= 8))
             return status_.last_result = Result::FaultLatched;
+        if (parked_runtime && (!s.enabled || (c.motor == Motor::Dm4310Mit && s.motor_state != 1)))
+            return status_.last_result = Result::Busy;
     }
     // Commit only after every field and both pitch drives have passed validation.
     auto &c = config_.joint[i];
     c.position_kp = tuning.position_kp;
     c.velocity_kp = tuning.velocity_kp;
     c.velocity_ki = tuning.velocity_ki;
+    c.torque_bias_nm = tuning.torque_bias_nm;
+    c.gravity_gain_nm = tuning.gravity_gain_nm;
+    c.gravity_offset_deg = tuning.gravity_offset_deg;
+    c.up_ff_nm = tuning.up_ff_nm;
+    c.down_ff_nm = tuning.down_ff_nm;
     tuning_effort_limit_[i] = tuning.effort_limit;
+    if (parked_runtime) {
+        // Ki=0 must remove the accumulated effort for open-loop calibration.
+        auto &r = runtime_[i];
+        const float limit = std::fmin(r.effort_limit, tuning.effort_limit);
+        r.integral = tuning.velocity_ki == 0 ? 0 : clamp(r.integral, -limit, limit);
+        return status_.last_result = Result::Ok;
+    }
     for (unsigned j = 0; j < kJointCount; ++j) {
         if (!(affected & (1u << j)))
             continue;
@@ -755,10 +731,6 @@ Result ArmControl::set_tuning_checked(unsigned i, const JointTuning &tuning, uin
             status_.joint[j].drive_reference_velocity_deg_s = 0;
             status_.joint[j].velocity_target_deg_s = 0;
         }
-    }
-    if (affected & kPitchPair) {
-        pitch_speed_ = 0;
-        pitch_path_active_ = false;
     }
     return status_.last_result = Result::Ok;
 }
@@ -788,18 +760,11 @@ void ArmControl::refresh(uint32_t now) {
             !(i == Yaw && c.fixed_zero_encoder >= 0) &&
             uint32_t(now - s.last_feedback_ms) > config_.dji_unwrap_gap_ms) {
             s.calibrated = false;
+            if (i == Roll)
+                roll_zero_stillness_.tracking = false;
             if (s.enabled)
                 trip(PositionLost, i);
         }
-    }
-    const bool pitch_ready = pitch_feedback_ready(now);
-    status_.joint[BigPitch].online = pitch_ready;
-    status_.joint[SmallPitch].online = pitch_ready;
-    if (!pitch_ready) {
-        status_.joint[BigPitch].calibrated = false;
-        status_.joint[SmallPitch].calibrated = false;
-        if (status_.enabled_mask & kPitchPair)
-            trip(FeedbackTimeout, SmallPitch);
     }
     for (unsigned i = 0; i < kJointCount; ++i) {
         auto &s = status_.joint[i];
@@ -822,7 +787,7 @@ void ArmControl::refresh(uint32_t now) {
     }
 }
 Result ArmControl::capture_zero(uint8_t mask, uint32_t now) {
-    if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
+    if (!mask_valid(mask, config_.joint_mask))
         return status_.last_result = Result::InvalidArgument;
     if (status_.enabled_mask)
         return status_.last_result = Result::Busy;
@@ -831,10 +796,14 @@ Result ArmControl::capture_zero(uint8_t mask, uint32_t now) {
         if (mask & (1u << i)) {
             if (!status_.joint[i].online)
                 return status_.last_result = Result::NotOnline;
-            // 两DM一起同向运动时q肘速度可能为0，校零仍必须检查每个驱动轴静止。
-            if (std::fabs(status_.joint[i].drive_velocity_deg_s) >
-                config_.joint[i].stationary_speed_deg_s)
+            if (i == Roll) {
+                if (!roll_zero_stillness_.tracking ||
+                    uint32_t(now - roll_zero_stillness_.since_ms) < kRollZeroStationaryMs)
+                    return status_.last_result = Result::Moving;
+            } else if (std::fabs(status_.joint[i].drive_velocity_deg_s) >
+                       config_.joint[i].stationary_speed_deg_s) {
                 return status_.last_result = Result::Moving;
+            }
         }
     for (unsigned i = 0; i < kJointCount; ++i)
         if (mask & (1u << i)) {
@@ -852,20 +821,51 @@ Result ArmControl::capture_zero(uint8_t mask, uint32_t now) {
     update_drive_references();
     return status_.last_result = Result::Ok;
 }
+Result ArmControl::capture_parked_zero(uint32_t now) {
+    Result first_error = Result::Ok;
+    for (const uint8_t group : kParkedArmGroups) {
+        const Result result = capture_zero(group, now);
+        if (first_error == Result::Ok && result != Result::Ok)
+            first_error = result;
+    }
+    return status_.last_result = first_error;
+}
+
 Result ArmControl::enable(uint8_t mask, uint32_t now, bool independent_yaw) {
-    if (!mask_valid(mask, config_.joint_mask) || !whole_pitch_pair(mask))
+    if (parked_tuning_)
+        return status_.last_result = Result::Busy;
+    return enable_checked(mask, now, !(independent_yaw && mask == (1u << Yaw)));
+}
+Result ArmControl::enable_parked_tuning(uint32_t now) {
+    if (status_.enabled_mask)
+        return status_.last_result = Result::Busy;
+    parked_tuning_ = true;
+    Result first_error = Result::Ok;
+    for (const uint8_t group : kParkedArmGroups) {
+        const Result result = enable_checked(group, now, false);
+        if (first_error == Result::Ok && result != Result::Ok)
+            first_error = result;
+    }
+    if (status_.enabled_mask)
+        return status_.last_result = Result::Ok;
+    parked_tuning_ = false;
+    return status_.last_result = first_error;
+}
+Result ArmControl::enable_checked(uint8_t mask, uint32_t now, bool require_confirmation) {
+    if (!mask_valid(mask, config_.joint_mask))
         return status_.last_result = Result::InvalidArgument;
     const uint8_t added = mask & ~status_.enabled_mask;
     if (!added)
         return status_.last_result = Result::Busy;
-    const bool yaw_only = independent_yaw && mask == (1u << Yaw);
-    if (!status_.configuration_valid || (!config_.hardware_confirmed && !yaw_only) ||
-        ((mask & kPitchPair) && !config_.pitch.mapping_confirmed))
+    if (!status_.configuration_valid || (require_confirmation && !config_.hardware_confirmed))
         return status_.last_result = Result::ConfigUnconfirmed;
     refresh(now);
-    // Yaw-only enable is separate from the rest of the arm: other joint faults
-    // must not block it, but CAN1 transport/timing faults and Yaw's own fault do.
-    if (status_.faults & (yaw_only ? (TransportError | TimingError) : 0xffffffffu))
+    // 只检查本次要新增的轴和共享CAN/时序故障；其他轴的局部故障不阻止本轴使能。
+    uint32_t relevant_faults = status_.faults & kSharedArmFaults;
+    for (unsigned i = 0; i < kJointCount; ++i)
+        if (added & (1u << i))
+            relevant_faults |= status_.joint[i].faults;
+    if (relevant_faults)
         return status_.last_result = Result::FaultLatched;
     for (unsigned i = 0; i < kJointCount; ++i)
         if (added & (1u << i)) {
@@ -895,15 +895,13 @@ Result ArmControl::enable(uint8_t mask, uint32_t now, bool independent_yaw) {
             s.homing = i == Yaw && config_.joint[i].fixed_zero_encoder >= 0;
             s.target_deg = s.homing ? 0.0f : s.position_deg;
             s.reference_deg = s.position_deg;
+            s.motion_feedforward_effort = 0;
+            s.motion_ff_direction = 0;
             r.integral = 0;
             r.reference_velocity = 0;
             r.last_command_ms = now;
             r.enable_ms = now;
         }
-    if (added & kPitchPair) {
-        pitch_speed_ = 0;
-        pitch_path_active_ = false;
-    }
     if (added & (1u << Yaw))
         reset_yaw_pid();
     update_drive_references();
@@ -929,7 +927,7 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
                 s.homing = false;
             next[i] = s.homing ? 0.0f : q[i];
         }
-    // 单个pitch更新保留另一关节目标，完整验证a2后才整包提交，禁止单独clamp a2。
+    // 两pitch已解耦，整包只校验各轴自身范围，不再组合校验a2=q肩+q肘。
     if (!targets_in_range(next))
         return status_.last_result = Result::OutOfRange;
     for (unsigned i = 0; i < kJointCount; ++i)
@@ -951,10 +949,6 @@ Result ArmControl::set_targets(uint8_t mask, const float q[kJointCount], uint32_
                     : q[i];
             runtime_[i].last_command_ms = now;
         }
-    if (mask & kPitchPair) {
-        runtime_[BigPitch].last_command_ms = now;
-        runtime_[SmallPitch].last_command_ms = now;
-    }
     update_drive_references();
     return status_.last_result = Result::Ok;
 }
@@ -974,7 +968,7 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
     if (!yaw_dt_valid_ && status_.joint[Yaw].enabled)
         trip(TimingError, Yaw);
     refresh(now);
-    // 先统一检查DM状态，任何故障都保证本轮全部输出归零。
+    // 在生成输出前检查两台 DM 的使能应答。
     for (unsigned i = 0; i < kJointCount; ++i) {
         const auto &c = config_.joint[i];
         auto &r = runtime_[i];
@@ -988,22 +982,11 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
         else if (uint32_t(now - r.enable_ms) > 200)
             trip(EnableTimeout, i);
     }
-    // 先规划全部参考、检查全部边界，再计算任何输出；避免本轮后轴故障时前轴仍非零。
-    const bool pitch_running = (status_.enabled_mask & kPitchPair) == kPitchPair &&
-                               status_.joint[BigPitch].motor_state == 1 &&
-                               status_.joint[SmallPitch].motor_state == 1;
-    if (pitch_running)
-        step_pitch_reference(dt);
-    else {
-        runtime_[BigPitch].reference_velocity = 0;
-        runtime_[SmallPitch].reference_velocity = 0;
-    }
+    // 先完成各轴参考规划与边界检查，再计算这一轮出力；两pitch各自独立规划。
     for (unsigned i = 0; i < kJointCount; ++i) {
         const auto &c = config_.joint[i];
         auto &r = runtime_[i];
         auto &s = status_.joint[i];
-        if (i == BigPitch || i == SmallPitch)
-            continue;
         if (s.enabled && (c.motor != Motor::Dm4310Mit || s.motor_state == 1)) {
             if (i == Yaw) {
                 // Yaw cascade: position P uses the actual angle directly.
@@ -1041,18 +1024,14 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
              s.drive_reference_deg > drive_max(i) + 0.0001f))
             trip(PositionLimit, i);
     }
-    unsigned count = 0;
     for (unsigned i = 0; i < kJointCount; ++i) {
         if (!selected(i))
             continue;
         const auto &c = config_.joint[i];
         auto &r = runtime_[i];
         auto &s = status_.joint[i];
-        const bool ready = (c.motor != Motor::Dm4310Mit || s.motor_state == 1) &&
-                           ((i != BigPitch && i != SmallPitch) || pitch_running);
+        const bool ready = (c.motor != Motor::Dm4310Mit || s.motor_state == 1);
         if (s.enabled && ready) {
-            const float speed_limit = i == Yaw && !yaw_test_active_
-                ? tune_yaw_position_max_output : drive_speed_limit(i);
             const float limit = std::fmin(r.effort_limit, tuning_effort_limit_[i]);
             if (i == Yaw) {
                 float speed_target;
@@ -1127,15 +1106,39 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
                     final = 0;
                 s.effort = final;
             } else {
+                const float speed_limit = drive_speed_limit(i);
                 float speed_target =
                     clamp(r.reference_velocity +
                               c.position_kp * (s.drive_reference_deg - s.drive_position_deg),
                           -speed_limit, speed_limit);
                 s.velocity_target_deg_s = speed_target;
-                // 这里必须使用a2的驱动速度；不能把q肘速度送入第二DM的独立PI。
+                // 每轴使用自身驱动速度；解耦后不再有q肘=a2-a1，也不再把相对速度送入第二DM。
                 const float e = speed_target - s.drive_velocity_deg_s;
+                const float limit = std::fmin(r.effort_limit, tuning_effort_limit_[i]);
                 const float next_i = clamp(r.integral + c.velocity_ki * e * dt, -limit, limit);
-                const float u = c.velocity_kp * e + next_i;
+                s.feedforward_effort = 0;
+                if (i == BigPitch || i == SmallPitch) {
+                    s.feedforward_effort =
+                        c.torque_bias_nm + c.gravity_gain_nm *
+                            std::cos((s.drive_position_deg + c.gravity_offset_deg) / kRadToDeg);
+                    const float up_speed = c.up_direction * speed_target;
+                    if (up_speed >= kMotionFfStartSpeedDegS)
+                        s.motion_ff_direction = 1;
+                    else if (up_speed <= -kMotionFfStartSpeedDegS)
+                        s.motion_ff_direction = -1;
+                    else if (s.motion_ff_direction * up_speed <= kMotionFfStopSpeedDegS)
+                        s.motion_ff_direction = 0;
+                    float desired_ff = 0;
+                    if (s.motion_ff_direction > 0)
+                        desired_ff = c.up_direction * c.up_ff_nm;
+                    else if (s.motion_ff_direction < 0)
+                        desired_ff = -c.up_direction * c.down_ff_nm;
+                    const float max_change = kMotionFfSlewNmS * dt;
+                    s.motion_feedforward_effort +=
+                        clamp(desired_ff - s.motion_feedforward_effort, -max_change, max_change);
+                }
+                const float u = c.velocity_kp * e + next_i + s.feedforward_effort +
+                                s.motion_feedforward_effort;
                 float final = clamp(u, -limit, limit);
                 if ((s.drive_position_deg <= drive_min(i) && final < 0) ||
                     (s.drive_position_deg >= drive_max(i) && final > 0))
@@ -1146,6 +1149,9 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             }
         } else {
             s.effort = 0;
+            s.feedforward_effort = 0;
+            s.motion_feedforward_effort = 0;
+            s.motion_ff_direction = 0;
             r.integral = 0;
             s.velocity_target_deg_s = 0;
             if (i == Yaw) {
@@ -1155,6 +1161,149 @@ unsigned ArmControl::step(uint32_t now, Frame out[kJointCount]) {
             }
         }
 
+    }
+    return output_frames(out);
+}
+
+Result ArmControl::start_jog(unsigned axis, int8_t direction, uint32_t now) {
+    if (status_.faults)
+        return Result::FaultLatched;
+    // Jog是独立台架维护路径，仍要求两pitch同时在线/静止；正常控制已解耦。
+    const uint8_t required = kPitchPair | (1u << axis);
+    for (unsigned i = BigPitch; i <= Gripper; ++i) {
+        if (!(required & (1u << i)))
+            continue;
+        const auto &s = status_.joint[i];
+        const auto &c = config_.joint[i];
+        if (!s.online ||
+            (i >= Roll && uint32_t(now - s.last_feedback_ms) > config_.dji_unwrap_gap_ms))
+            return Result::NotOnline;
+        if (std::fabs(s.drive_velocity_deg_s) > c.stationary_speed_deg_s)
+            return Result::Moving;
+        if (i <= SmallPitch) {
+            if (s.motor_state != 0 || s.temperature_c >= c.max_temperature_c)
+                return Result::FaultLatched;
+            if (!s.calibrated)
+                return Result::NotCalibrated;
+            if (s.drive_position_deg < drive_min(i) || s.drive_position_deg > drive_max(i) ||
+                s.position_deg < c.min_deg || s.position_deg > c.max_deg)
+                return Result::OutOfRange;
+        }
+    }
+    if (axis >= Roll) {
+        // The C610 pulse uses its current stationary angle as a local origin.
+        const auto result = capture_zero(1u << axis, now);
+        if (result != Result::Ok)
+            return result;
+    }
+    for (unsigned i = BigPitch; i <= Gripper; ++i)
+        jog_start_deg_[i] = status_.joint[i].drive_position_deg;
+    jog_axis_ = axis;
+    jog_direction_ = direction;
+    status_.enabled_mask = 1u << axis;
+    status_.joint[axis].enabled = true;
+    runtime_[axis].enable_ms = runtime_[axis].last_command_ms = now;
+    runtime_[axis].dm_was_enabled = false;
+    return Result::Ok;
+}
+
+void ArmControl::run_jog(uint32_t now) {
+    constexpr float kStopTravelDeg = 1.0f;
+    constexpr float kMaxTravelDeg = 2.0f;
+    constexpr float kMaxSpeedDegS = 5.0f;
+    constexpr float kEffortCap[kJointCount] = {0, 0.12f, 0.12f, 200.0f, 120.0f};
+    const unsigned axis = jog_axis_;
+    // 与start_jog一致：台架jog仍把两pitch当作同一安全组。
+    const uint8_t required = kPitchPair | (1u << axis);
+    const uint32_t age = now - runtime_[axis].enable_ms;
+    for (unsigned i = BigPitch; i <= Gripper; ++i) {
+        if (!(required & (1u << i)))
+            continue;
+        const auto &s = status_.joint[i];
+        const auto &c = config_.joint[i];
+        if (!s.online)
+            return trip(FeedbackTimeout, i);
+        if (i <= SmallPitch && (s.motor_state >= 8 || (i != axis && s.motor_state != 0)))
+            return trip(MotorError, i);
+        if (i <= SmallPitch && s.temperature_c >= c.max_temperature_c)
+            return trip(OverTemperature, i);
+        // A commanded pitch can pick up speed before reaching the pulse travel limit.
+        const bool check_speed = i != axis || i >= Roll;
+        if ((check_speed && std::fabs(s.drive_velocity_deg_s) > kMaxSpeedDegS) ||
+            std::fabs(s.drive_position_deg - jog_start_deg_[i]) > kMaxTravelDeg ||
+            (i <= SmallPitch &&
+             (s.drive_position_deg < drive_min(i) || s.drive_position_deg > drive_max(i) ||
+              s.position_deg < c.min_deg || s.position_deg > c.max_deg)))
+            return trip(PositionLimit, i);
+    }
+
+    auto &s = status_.joint[axis];
+    auto &r = runtime_[axis];
+    if (std::fabs(s.drive_position_deg - jog_start_deg_[axis]) >= kStopTravelDeg)
+        return disable();
+    if (axis <= SmallPitch && s.motor_state != 1) {
+        if (r.dm_was_enabled)
+            return trip(MotorError, axis);
+        if (age >= 200)
+            return trip(EnableTimeout, axis);
+        return;
+    }
+    r.dm_was_enabled = axis <= SmallPitch;
+    const float cap = std::fmin(kEffortCap[axis], startup_effort_cap_[axis]);
+    // Ramp a small open-loop pulse for direction checks before kinematic validation.
+    s.effort = jog_direction_ * cap * std::fmin(float(age) / 200.0f, 1.0f);
+}
+
+unsigned ArmControl::step_jog(uint32_t now, int32_t request, bool permit, Frame out[kJointCount]) {
+    constexpr uint32_t kJogTimeoutMs = 700;
+    if (!out || !status_.configuration_valid || config_.joint_mask != kFourAxisJoints)
+        return 0;
+    const bool was_active = status_.enabled_mask != 0;
+    if (was_active) {
+        const uint32_t elapsed = now - last_step_ms_;
+        auto &r = runtime_[jog_axis_];
+        if (request == kJogStop || !permit) {
+            disable();
+            status_.last_result = request == kJogStop ? Result::Ok : Result::InterlockOpen;
+        } else if (request != 0) {
+            disable();
+            status_.last_result = Result::Busy;
+        } else if (uint32_t(now - r.enable_ms) >= kJogTimeoutMs) {
+            disable();
+        } else if (elapsed == 0 || elapsed > config_.control_period_ms + 2) {
+            trip(TimingError, jog_axis_);
+        } else {
+            r.last_command_ms = now;
+        }
+    }
+    last_step_ms_ = now;
+    refresh(now);
+    if (status_.enabled_mask) {
+        run_jog(now);
+    } else if (!was_active && request != 0) {
+        if (request == kJogStop)
+            status_.last_result = Result::Ok;
+        else if (request == kJogClearFaults)
+            clear_faults();
+        else if (request == kJogCapturePitchZero)
+            capture_zero(kPitchPair, now);
+        else if (request < -int(Gripper) || request > int(Gripper))
+            status_.last_result = Result::InvalidArgument;
+        else if (!permit)
+            status_.last_result = Result::InterlockOpen;
+        else
+            status_.last_result =
+                start_jog(unsigned(request < 0 ? -request : request), request < 0 ? -1 : 1, now);
+    }
+    return output_frames(out);
+}
+
+unsigned ArmControl::output_frames(Frame out[kJointCount]) const {
+    unsigned count = 0;
+    for (unsigned i = 0; i < kJointCount; ++i) {
+        if (!(config_.joint_mask & (1u << i))) continue;
+        const auto &c = config_.joint[i];
+        const auto &s = status_.joint[i];
         if (c.motor == Motor::Dm4310Mit) {
             auto &f = out[count++];
             f = {};

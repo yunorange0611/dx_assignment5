@@ -30,6 +30,7 @@ struct OperatorConfig {
     float gripper_open_deg, gripper_closed_deg;
     float gripper_hold_current; // C610原码，mA
     uint32_t gripper_close_timeout_ms;
+    float big_pitch_target_speed_deg_s = 7.0f; // Full-stick target advance, independent of servo speed.
 };
 extern const OperatorConfig kOperatorConfig;
 // Shared by normal control and read-only remote diagnostics. Invalid parameters
@@ -78,7 +79,8 @@ class ArmOperator {
     // This does not enable any drive: partially enabled arms require arm_request.
     void resume_from_tuning(const Status &, const RemoteInput &, uint32_t now_ms);
     OperatorOutput step(const RemoteInput &, const Interlocks &, const Status &, uint32_t now_ms,
-                        bool arm_request, bool stop_request);
+                        bool arm_request, bool stop_request, bool parked_tuning = false,
+                        float parked_deadband = 0);
     uint32_t enable_result(bool ok) {
         if (!ok) {
             active_ = false;

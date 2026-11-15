@@ -20,6 +20,7 @@ extern "C" {
 RobotControlStatus g_robot_status{};
 volatile uint32_t g_imu_stop_current = 0, g_imu_stop_latched = 0;
 volatile uint32_t g_robot_debug_command = ROBOT_DEBUG_IDLE;
+volatile float g_arm_remote_deadband = engineer::kOperatorConfig.deadband;
 volatile uint32_t robot_tune_mode = 0;
 volatile float tune_current_ma = 0, tune_speed_rpm = 0, tune_yaw_speed_deg_s = 0,
     tune_yaw_target_deg = 0;
@@ -70,13 +71,14 @@ void publish_protection(RobotControlStatus &s) {
     s.protection_latched_reasons = p.latched_reasons;
     s.protection_last_trip_ms = p.last_trip_ms;
 }
-void observe_remote(RobotControlStatus &s, const engineer::RemoteInput &r) {
+void observe_remote(RobotControlStatus &s, const engineer::RemoteInput &r,
+                    float deadband = engineer::kOperatorConfig.deadband) {
     const auto &c = engineer::kOperatorConfig;
     const uint8_t channels[] = {c.left_y_channel, c.left_x_channel,
                                 c.right_y_channel, c.right_x_channel};
     for (unsigned i = 0; i < 4; ++i)
         s.remote_axis[i] = engineer::remote_axis_value(r.frame, channels[i], c.axis_direction[i],
-                                                      c.deadband);
+                                                      deadband);
     s.remote_switch[0] = c.left_switch_index < 2 ? r.frame.switches[c.left_switch_index] : 0;
     s.remote_switch[1] = c.right_switch_index < 2 ? r.frame.switches[c.right_switch_index] : 0;
 }
@@ -327,7 +329,7 @@ bool execute_tuning(engineer::ArmControl &arm, engineer::ArmOperator &controller
     }
     bool all_ready = VEHICLE_SAFETY_ENABLED && kOperatorConfig.mapping_confirmed &&
         arm.status().configuration_valid && kArmConfig.hardware_confirmed &&
-        kArmConfig.pitch.mapping_confirmed && Yaw_ConfigurationReady(arm);
+        Yaw_ConfigurationReady(arm);
     for (unsigned i = 0; i < kJointCount; ++i)
         all_ready &= arm.status().joint[i].online && arm.status().joint[i].calibrated;
     const bool interlock_ok = locks.valid && uint32_t(now - locks.received_ms) <=
@@ -494,6 +496,15 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     now = HAL_GetTick();
     // Compatibility observations: added whole-vehicle IMU latch is rolled back.
     g_imu_stop_current = g_imu_stop_latched = 0;
+    const uint32_t tune_mode = robot_tune_mode;
+    const bool bench = kArmConfig.joint_mask == kFourAxisJoints;
+    const bool independent = kChassisIndependent && !bench && tune_mode == ROBOT_TUNE_NORMAL;
+    const uint8_t left = kOperatorConfig.left_switch_index < 2
+                             ? rx.frame.switches[kOperatorConfig.left_switch_index]
+                             : 0;
+    const bool parked_tuning = VEHICLE_SAFETY_ENABLED && independent &&
+                               (left == DR16_SWITCH_MID || left == DR16_SWITCH_DOWN);
+    const uint8_t controlled_joints = parked_tuning ? kFourAxisJoints : kArmConfig.joint_mask;
     // 仍在唯一控制任务内执行；关控优先，不让校零或开控绕过现有保护。
     if (debug_command == ROBOT_DEBUG_STOP || force_stop) {
         taskENTER_CRITICAL();
@@ -504,7 +515,8 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     if (!force_stop && !stop_request) {
         switch (debug_command) {
         case ROBOT_DEBUG_CAPTURE_ZERO:
-            arm.capture_zero(robot_tune_mode == ROBOT_TUNE_YAW_SPEED ||
+            if (parked_tuning) arm.capture_parked_zero(now);
+            else arm.capture_zero(robot_tune_mode == ROBOT_TUNE_YAW_SPEED ||
                                      robot_tune_mode == ROBOT_TUNE_YAW_POSITION
                                  ? uint8_t(1u << Yaw) : kArmConfig.joint_mask, now);
             stop_request = true;
@@ -536,7 +548,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     initialized = true;
     const bool remote_ok =
         input.valid && uint32_t(now - input.received_ms) <= kOperatorConfig.remote_timeout_ms;
-    const bool bench = kArmConfig.joint_mask == kFourAxisJoints;
+
     // Direct half-range input is consumed once when changed. Failed changes do
     // not become delayed applications: edit the value again after fixing cause.
     static float previous_half_range = 0;
@@ -554,6 +566,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         return;
     const bool interlock_ok = bench || (locks.valid && uint32_t(now - locks.received_ms) <=
                                                            kOperatorConfig.interlock_timeout_ms);
+    const uint32_t vehicle_reasons = vehicle_protection(now);
+    // Parked arm tuning uses real wheel-stop and arm feedback; drive commissioning
+    // flags and drive power/attitude readiness belong to the integrated drive path.
     const TaskProtectInput protection_input{
         uint8_t(arm.status().configuration_valid && kArmConfig.hardware_confirmed &&
                 kArmConfig.pitch.mapping_confirmed && kOperatorConfig.mapping_confirmed &&
@@ -562,8 +577,8 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         uint8_t(interlock_ok),
         uint8_t(force_stop || stop_request),
         uint8_t(elapsed > 0 && elapsed <= kArmConfig.control_period_ms + 2),
-        uint8_t(arm.status().faults != 0),
-        vehicle_protection(now)};
+        uint8_t(parked_tuning ? (arm.status().faults & kSharedArmFaults) != 0 : arm.status().faults != 0),
+        parked_tuning ? vehicle_reasons & (PROTECT_CHASSIS | PROTECT_TIPPED) : vehicle_reasons};
     Task_Protect_Tick(&protection_input, now);
     const bool tipover = (Task_Protect_GetStatus().current_reasons & PROTECT_TIPPED) != 0;
     // Independent chassis: stop/tip-over latches; release with neutral sticks,
@@ -624,8 +639,10 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         drive_armed = false;
         drive_neutral_tracking = false;
     }
+    const float requested_deadband = g_arm_remote_deadband;
+    const float deadband = parked_tuning && requested_deadband > 0 && requested_deadband < .5f ? requested_deadband : kOperatorConfig.deadband;
     auto result = controller.step(input, locks, arm.status(), now, arm_request,
-                                  Task_Protect_GetStatus().current_reasons != 0);
+                                  Task_Protect_GetStatus().current_reasons != 0, parked_tuning, deadband);
     if (bench && result.mode == RobotMode::Safe && result.block == OperatorBlock::NeedArm &&
         Task_Protect_GetStatus().current_reasons == 0)
         Task_Protect_Trip(PROTECT_STOP_REQUEST, now);
@@ -667,8 +684,9 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         if (!Task_Protect_TryArm() || arm.enable(kArmConfig.joint_mask, now) != Result::Ok) {
             Task_Protect_Trip(PROTECT_ENABLE_REJECTED, now);
             reject();
-        } else
+        } else {
             controller.enable_result(true);
+        }
     }
     if (Task_Protect_GetStatus().disabled && result.active)
         reject();
@@ -681,7 +699,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
         }
     } else if (result.active) {
         if (arm.set_effort_limit(Gripper, result.gripper_effort_limit) != Result::Ok ||
-            arm.set_targets(kArmConfig.joint_mask, result.target_deg, now) != Result::Ok) {
+            arm.set_targets(parked_tuning ? arm.status().enabled_mask : controlled_joints, result.target_deg, now) != Result::Ok) {
             Task_Protect_Trip(PROTECT_ARM_FAULT, now);
             reject();
         }
@@ -744,7 +762,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     }
     yaw_direct_was_active = yaw_direct;
     RobotControlStatus next{};
-    observe_remote(next, input);
+    observe_remote(next, input, deadband);
     next.updated_ms = now;
     taskENTER_CRITICAL();
     next.stop_epoch = stop_epoch;
@@ -783,7 +801,7 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     command.valid = true;
     // 0档底盘直驱：解析值仍来自同一次 observe_remote()，只是不再要求
     // result.active（机械臂开控）和整车/云台/IMU/功率许可。
-    const bool independent = kChassisIndependent && !bench && robot_tune_mode == 0;
+
     if (independent) {
         command.independent = true;
         command.enabled = drive_switch && remote_ok && !force_stop && !stop_request &&
@@ -825,13 +843,40 @@ void Robot_Execute(engineer::ArmControl &arm, uint32_t now, bool force_stop) {
     chassis_command = command;
     taskEXIT_CRITICAL();
 }
+engineer::Result Robot_ApplyArmTuning(engineer::ArmControl &arm, unsigned joint,
+                                     const engineer::JointTuning &tuning, uint32_t now) {
+    using namespace engineer;
+    // Use the current cycle's accepted remote state even when tuning a disabled arm.
+    const auto &s = g_robot_status;
+    if (!s.remote_online || s.remote_switch[1] != DR16_SWITCH_MID)
+        return Result::Busy;
+    for (const float axis : s.remote_axis)
+        if (axis != 0)
+            return Result::Busy;
+
+    if (!arm.status().enabled_mask || joint < BigPitch || joint > Gripper)
+        return arm.set_tuning(joint, tuning, now);
+    if (kArmConfig.joint_mask != kAllJoints || s.joint_mask != kFourAxisJoints ||
+        s.mode != ROBOT_GRAB || s.block != uint8_t(OperatorBlock::None) || !s.active ||
+        s.wait_neutral || s.protection_disabled)
+        return Result::Busy;
+
+    return arm.set_tuning_runtime(joint, tuning, now);
+}
+
 void Robot_ReportArmState(const engineer::Status &s) {
     // arm.step中的反馈/驱动/轨迹故障发生在Robot_Execute之后，必须同周期覆盖共享状态。
     taskENTER_CRITICAL();
     const bool tuning_owns = tuning.status().mode != 0 || tune_exit_wait;
     const uint8_t expected = tuning_owns ? g_robot_tune_status.held_mask
-                                         : engineer::kArmConfig.joint_mask;
-    if (s.faults || (g_robot_status.active && s.enabled_mask != expected)) {
+                                         : g_robot_status.joint_mask;
+    const bool parked_tuning = !tuning_owns && engineer::kArmConfig.joint_mask == engineer::kAllJoints &&
+                               expected == engineer::kFourAxisJoints;
+    const bool arm_fault = parked_tuning ? (s.faults & engineer::kSharedArmFaults) != 0
+                                         : s.faults != 0;
+    const bool lost_control = g_robot_status.active &&
+                              (parked_tuning ? !s.enabled_mask : s.enabled_mask != expected);
+    if (arm_fault || lost_control) {
         Task_Protect_Trip(PROTECT_ARM_FAULT, HAL_GetTick());
         g_robot_status.active = 0;
         g_robot_status.block = uint8_t(engineer::OperatorBlock::ArmUnavailable);

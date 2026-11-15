@@ -17,8 +17,11 @@ char g_stack_overflow_task[16]{};
 YawFeedbackDiag g_yaw_feedback_diag{};
 volatile uint32_t g_yaw_capture_command = 0;
 YawRawCapture g_yaw_raw_capture{};
-volatile ArmTuneRequest g_arm_tune_request{};
-ArmTuneStatus g_arm_tune_status{};
+volatile ArmTuneRequest g_arm_tune_request[ARM_JOINT_COUNT]{};
+ArmTuneStatus g_arm_tune_status[ARM_JOINT_COUNT]{};
+#if ARM_MOTOR_JOG_TEST
+volatile int32_t g_arm_jog_command = 0;
+#endif
 }
 
 namespace {
@@ -39,36 +42,61 @@ struct Received {
 osMessageQueueId_t commands = nullptr, feedback = nullptr;
 volatile bool stop_requested = false;
 volatile uint32_t dropped_rx = 0;
-void apply_tune_request(ArmControl &arm, uint32_t now) {
-    ArmTuneRequest request{};
-    taskENTER_CRITICAL();
-    request.joint = g_arm_tune_request.joint;
-    request.position_kp = g_arm_tune_request.position_kp;
-    request.velocity_kp = g_arm_tune_request.velocity_kp;
-    request.velocity_ki = g_arm_tune_request.velocity_ki;
-    request.effort_limit = g_arm_tune_request.effort_limit;
-    request.request_seq = g_arm_tune_request.request_seq;
-    taskEXIT_CRITICAL();
-    if (request.request_seq == g_arm_tune_status.consumed_seq)
-        return;
-    const JointTuning tuning{request.position_kp, request.velocity_kp, request.velocity_ki,
-                             request.effort_limit};
-    const auto result = arm.set_tuning(request.joint, tuning, now);
-    auto next = g_arm_tune_status;
-    next.consumed_seq = request.request_seq;
-    next.result = uint32_t(result);
-    if (result == Result::Ok) {
-        next.active_seq = request.request_seq;
-        next.active_joint = request.joint;
-        next.position_kp = tuning.position_kp;
-        next.velocity_kp = tuning.velocity_kp;
-        next.velocity_ki = tuning.velocity_ki;
-        next.effort_limit = tuning.effort_limit;
-    }
-    taskENTER_CRITICAL();
-    g_arm_tune_status = next;
-    taskEXIT_CRITICAL();
+#if ARM_MOTOR_JOG_TEST
+bool jog_permitted(uint32_t now) {
+    DR16Status remote{};
+    DR16_GetStatus(&remote);
+    const auto &c = kOperatorConfig;
+    if (!remote.valid || remote.consecutive_frames < 3 ||
+        uint32_t(now - remote.received_ms) > c.remote_timeout_ms ||
+        c.left_switch_index >= 2 || c.right_switch_index >= 2 ||
+        remote.frame.switches[c.left_switch_index] != DR16_SWITCH_MID ||
+        remote.frame.switches[c.right_switch_index] != DR16_SWITCH_MID)
+        return false;
+    const float neutral = c.deadband * 660.0f;
+    for (unsigned i = 0; i < 4; ++i)
+        if (remote.frame.channel[i] < -neutral || remote.frame.channel[i] > neutral)
+            return false;
+    return true;
 }
+#else
+void apply_tune_requests(ArmControl &arm, uint32_t now) {
+    // Retry pending FreeMASTER edits at 50 Hz.
+    static uint32_t last_poll_ms = 0;
+    if (uint32_t(now - last_poll_ms) < 20)
+        return;
+    last_poll_ms = now;
+
+    for (unsigned joint = BigPitch; joint <= Gripper; ++joint) {
+        const auto &request = g_arm_tune_request[joint];
+        auto &status = g_arm_tune_status[joint];
+        const JointTuning tuning{request.position_kp, request.velocity_kp, request.velocity_ki,
+                                 request.effort_limit, request.torque_bias_nm,
+                                 request.gravity_gain_nm, request.gravity_offset_deg,
+                                 request.up_ff_nm, request.down_ff_nm};
+        if (tuning.position_kp == status.position_kp && tuning.velocity_kp == status.velocity_kp &&
+            tuning.velocity_ki == status.velocity_ki && tuning.effort_limit == status.effort_limit &&
+            tuning.torque_bias_nm == status.torque_bias_nm &&
+            tuning.gravity_gain_nm == status.gravity_gain_nm &&
+            tuning.gravity_offset_deg == status.gravity_offset_deg &&
+            tuning.up_ff_nm == status.up_ff_nm && tuning.down_ff_nm == status.down_ff_nm) {
+            status.result = uint32_t(Result::Ok);
+            continue;
+        }
+        const auto result = Robot_ApplyArmTuning(arm, joint, tuning, now);
+        auto next = status;
+        next.result = uint32_t(result);
+        if (result == Result::Ok)
+            next = {uint32_t(result), tuning.position_kp, tuning.velocity_kp,
+                    tuning.velocity_ki, tuning.effort_limit, tuning.torque_bias_nm,
+                    tuning.gravity_gain_nm, tuning.gravity_offset_deg,
+                    tuning.up_ff_nm, tuning.down_ff_nm};
+        taskENTER_CRITICAL();
+        status = next;
+        taskEXIT_CRITICAL();
+    }
+}
+#endif
 // RX对象在任务栈上常驻；回调只复制到队列，不在ISR里做闭环/浮点解算。
 void receive_callback(can_device_receive *dev, uint8_t *data) {
     if (!feedback)
@@ -224,6 +252,9 @@ void publish(const ArmControl &arm, uint32_t now) {
         d.feedback_effort = j.motor_effort_feedback;
         d.temperature_c = j.temperature_c;
         d.velocity_target_deg_s = j.velocity_target_deg_s;
+        d.feedforward_effort = j.feedforward_effort;
+        d.motion_feedforward_effort = j.motion_feedforward_effort;
+        d.motion_ff_direction = j.motion_ff_direction;
         d.received = j.received;
         d.feedback_age_ms = now - j.last_feedback_ms;
         d.faults = j.faults;
@@ -306,14 +337,25 @@ extern "C" void arm_control_task(void *argument) {
     if (!BSP_DWT_Init(HAL_RCC_GetHCLKFreq()))
         Error_Handler();
     static ArmControl arm(kArmConfig); // Single owner; large history must not live on task stack.
-    const unsigned initial_joint = (kArmConfig.joint_mask & (1u << Yaw)) ? Yaw : BigPitch;
-    JointTuning initial_tuning{};
-    if (arm.get_tuning(initial_joint, initial_tuning)) {
-        g_arm_tune_status.active_joint = initial_joint;
-        g_arm_tune_status.position_kp = initial_tuning.position_kp;
-        g_arm_tune_status.velocity_kp = initial_tuning.velocity_kp;
-        g_arm_tune_status.velocity_ki = initial_tuning.velocity_ki;
-        g_arm_tune_status.effort_limit = initial_tuning.effort_limit;
+#if !ARM_MOTOR_JOG_TEST
+    for (unsigned joint = BigPitch; joint <= Gripper; ++joint) {
+        JointTuning initial{};
+        if (!arm.get_tuning(joint, initial))
+            continue;
+        auto &request = g_arm_tune_request[joint];
+        request.position_kp = initial.position_kp;
+        request.velocity_kp = initial.velocity_kp;
+        request.velocity_ki = initial.velocity_ki;
+        request.effort_limit = initial.effort_limit;
+        request.torque_bias_nm = initial.torque_bias_nm;
+        request.gravity_gain_nm = initial.gravity_gain_nm;
+        request.gravity_offset_deg = initial.gravity_offset_deg;
+        request.up_ff_nm = initial.up_ff_nm;
+        request.down_ff_nm = initial.down_ff_nm;
+        g_arm_tune_status[joint] = {0, initial.position_kp, initial.velocity_kp,
+                                   initial.velocity_ki, initial.effort_limit, initial.torque_bias_nm,
+                                   initial.gravity_gain_nm, initial.gravity_offset_deg,
+                                   initial.up_ff_nm, initial.down_ff_nm};
     }
     uint8_t owned_buses = 0;
     const uint32_t period = kArmConfig.control_period_ms;
@@ -393,7 +435,6 @@ extern "C" void arm_control_task(void *argument) {
             }
         }
         now = HAL_GetTick();
-        apply_tune_request(arm, now);
         const auto previous_tune_epoch = g_robot_tune_status.epoch;
         const bool previous_tune_ready = g_robot_tune_status.ready;
         Robot_Execute(arm, now, user_stopped);
@@ -414,8 +455,10 @@ extern "C" void arm_control_task(void *argument) {
         have_yaw_cycles = true;
         arm.set_yaw_control_dt(yaw_dt_s);
         Frame frames[kJointCount]{};
+        apply_tune_requests(arm, now);
         const unsigned count = arm.step(now, frames);
-        if (previous_enabled && !arm.status().enabled_mask)
+#endif
+        if (previous_enabled & ~arm.status().enabled_mask)
             can_cancel_pending(owned_buses);
         for (unsigned i = 0; i < count; ++i) {
             auto &f = frames[i];

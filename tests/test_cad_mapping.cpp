@@ -19,6 +19,19 @@ Config bench() {
     c.joint_mask = kAllJoints;
     c.hardware_confirmed = true;
     c.pitch.mapping_confirmed = true;
+    // Mapping cases exercise both directions with an explicit synthetic range.
+    c.joint[BigPitch].min_deg = c.joint[SmallPitch].min_deg = -150;
+    c.joint[BigPitch].max_deg = c.joint[SmallPitch].max_deg = 150;
+    // Synthetic mapping/loop cases use a load-free fixture; production FF is
+    // covered by the measured-default case in test_arm.
+    c.joint[BigPitch].torque_bias_nm = 0;
+    c.joint[BigPitch].gravity_gain_nm = 0;
+    c.joint[BigPitch].gravity_offset_deg = 0;
+    c.joint[BigPitch].up_ff_nm = c.joint[BigPitch].down_ff_nm = 0;
+    c.joint[SmallPitch].torque_bias_nm = 0;
+    c.joint[SmallPitch].gravity_gain_nm = 0;
+    c.joint[SmallPitch].gravity_offset_deg = 0;
+    c.joint[SmallPitch].up_ff_nm = c.joint[SmallPitch].down_ff_nm = 0;
     return c;
 }
 bool near(float a, float b, float tolerance = 0.0001f) {
@@ -71,12 +84,12 @@ int current(const Frame &f, unsigned slot) {
 
 int test_cad_mapping() {
     Frame frames[kJointCount]{};
-    { // Default firmware keeps both hardware and newly identified pitch mapping gates closed.
+    { // Default firmware keeps the hardware and remote gates closed; pitch mapping is no longer a gate.
         CHECK(!kArmConfig.hardware_confirmed);
-        CHECK(!kArmConfig.pitch.mapping_confirmed);
+        CHECK(!kArmConfig.pitch.mapping_confirmed); // deprecated field
         CHECK(!kOperatorConfig.mapping_confirmed);
         auto cfg = bench();
-        cfg.pitch.mapping_confirmed = false;
+        cfg.hardware_confirmed = false;
         ArmControl a(cfg);
         pitch(a, cfg, 0);
         CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
@@ -85,7 +98,7 @@ int test_cad_mapping() {
         CHECK(find(frames, n, 1) != nullptr && find(frames, n, 2) != nullptr);
         CHECK(find(frames, n, 1)->data[7] == 0xfd && find(frames, n, 2)->data[7] == 0xfd);
     }
-    { // Different nonzero raw zeros, reduction ratios and opposite encoder signs.
+    { // Each pitch uses its own nonzero zero, reduction ratio and encoder sign.
         auto cfg = bench();
         cfg.joint[BigPitch].direction = -1;
         cfg.joint[BigPitch].feedback_per_joint = 2;
@@ -94,49 +107,53 @@ int test_cad_mapping() {
         ArmControl a(cfg);
         dm_raw(a, cfg, BigPitch, 30000, 2048, 0);
         dm_raw(a, cfg, SmallPitch, 35000, 2048, 0);
-        CHECK(a.capture_zero(1u << BigPitch, 0) == Result::InvalidArgument);
-        CHECK(!a.status().joint[BigPitch].calibrated && !a.status().joint[SmallPitch].calibrated);
-        CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
+        CHECK(a.capture_zero(1u << BigPitch, 0) == Result::Ok);
+        CHECK(a.status().joint[BigPitch].calibrated && !a.status().joint[SmallPitch].calibrated);
+        CHECK(a.capture_zero(1u << SmallPitch, 0) == Result::Ok);
+        CHECK(a.status().joint[BigPitch].calibrated && a.status().joint[SmallPitch].calibrated);
         dm_raw(a, cfg, BigPitch, 30100, 2050, 4);
         dm_raw(a, cfg, SmallPitch, 35400, 2054, 4);
-        const float p_quantum = 25.0f * kRadToDeg / 65535;
+        const float p_quantum = (2.0f * 3.14159f) * kRadToDeg / 65535;
         const float a1 = -100 * p_quantum / 2, a2 = 400 * p_quantum / 4;
         const float v1 = -((2050.0f * 60 / 4095) - 30) * kRadToDeg / 2;
         const float v2 = ((2054.0f * 60 / 4095) - 30) * kRadToDeg / 4;
         CHECK(near(a.status().joint[BigPitch].position_deg, a1, 0.0003f));
-        CHECK(near(a.status().joint[SmallPitch].position_deg, a2 - a1, 0.0003f));
+        CHECK(near(a.status().joint[SmallPitch].position_deg, a2, 0.0003f));
         CHECK(near(a.status().joint[SmallPitch].drive_position_deg, a2, 0.0003f));
         CHECK(near(a.status().joint[BigPitch].velocity_deg_s, v1, 0.0003f));
-        CHECK(near(a.status().joint[SmallPitch].velocity_deg_s, v2 - v1, 0.0003f));
+        CHECK(near(a.status().joint[SmallPitch].velocity_deg_s, v2, 0.0003f));
         CHECK(near(a.status().joint[SmallPitch].drive_velocity_deg_s, v2, 0.0003f));
-        CHECK(a.enable(1u << SmallPitch, 4) == Result::InvalidArgument);
-        CHECK(a.enable(kPitchPair, 4) == Result::Ok);
+        CHECK(a.enable(1u << SmallPitch, 4) == Result::Ok);
+        CHECK(a.enable(1u << BigPitch, 4) == Result::Ok);
         const auto &s = a.status();
         CHECK(near(s.joint[BigPitch].target_deg, a1, 0.0003f));
-        CHECK(near(s.joint[SmallPitch].target_deg, a2 - a1, 0.0003f));
+        CHECK(near(s.joint[SmallPitch].target_deg, a2, 0.0003f));
         CHECK(near(s.joint[SmallPitch].drive_target_deg, a2, 0.0003f));
         CHECK(near(s.joint[SmallPitch].drive_reference_deg, a2, 0.0003f));
         float q[5] = {0, 10, 5, 0, 0};
         CHECK(a.set_targets(kPitchPair, q, 4) == Result::Ok);
         CHECK(a.status().joint[BigPitch].drive_target_deg == 10);
-        CHECK(a.status().joint[SmallPitch].drive_target_deg == 15);
+        CHECK(a.status().joint[SmallPitch].drive_target_deg == 5);
         q[BigPitch] = 12;
-        q[SmallPitch] = 999; // An unmasked element must not overwrite the held elbow target.
+        q[SmallPitch] = 999; // An unmasked element must not overwrite the held second pitch target.
         CHECK(a.set_targets(1u << BigPitch, q, 4) == Result::Ok);
         CHECK(a.status().joint[SmallPitch].target_deg == 5);
-        CHECK(a.status().joint[SmallPitch].drive_target_deg == 17);
-        q[Yaw] = 20;
-        q[BigPitch] = 20;
-        q[SmallPitch] = 20;
-        CHECK(a.set_targets((1u << Yaw) | kPitchPair, q, 4) == Result::OutOfRange);
-        CHECK(a.status().joint[Yaw].target_deg == 0);
-        CHECK(a.status().joint[BigPitch].target_deg == 12 &&
-              a.status().joint[SmallPitch].target_deg == 5);
+        CHECK(a.status().joint[SmallPitch].drive_target_deg == 5);
+        q[BigPitch] = 100;
+        q[SmallPitch] = -40;
+        CHECK(a.set_targets(kPitchPair, q, 4) == Result::Ok);
+        CHECK(a.status().joint[BigPitch].drive_target_deg == 100);
+        CHECK(a.status().joint[SmallPitch].drive_target_deg == -40);
+        q[BigPitch] = 100;
+        q[SmallPitch] = 100; // Each axis is inside its own +/-150 range; no a2 sum limit.
+        CHECK(a.set_targets(kPitchPair, q, 4) == Result::Ok);
+        CHECK(a.status().joint[BigPitch].drive_target_deg == 100);
+        CHECK(a.status().joint[SmallPitch].drive_target_deg == 100);
         q[BigPitch] = std::numeric_limits<float>::quiet_NaN();
         CHECK(a.set_targets(kPitchPair, q, 4) == Result::InvalidArgument);
-        CHECK(a.status().joint[SmallPitch].drive_target_deg == 17);
+        CHECK(a.status().joint[SmallPitch].drive_target_deg == 100);
     }
-    { // A single shoulder update also keeps the paired drive's command watchdog alive.
+    { // 解耦后刷新一个pitch不会延长另一个pitch的命令看门狗。
         auto cfg = bench();
         ArmControl a(cfg);
         pitch(a, cfg, 0);
@@ -149,12 +166,14 @@ int test_cad_mapping() {
             q[BigPitch] = 10;
             CHECK(a.set_targets(1u << BigPitch, q, t) == Result::Ok);
             a.step(t, frames);
-            CHECK(a.status().faults == 0 && a.status().enabled_mask == kPitchPair);
-            CHECK(a.status().joint[SmallPitch].target_deg == 5);
+            if (t <= 248)
+                CHECK(a.status().faults == 0 && a.status().enabled_mask == kPitchPair);
         }
+        CHECK(a.status().faults & CommandTimeout);
     }
-    { // Equal drive velocities cancel in q_elbow, but the second PI must still brake its motor.
+    { // Equal drive velocities are reported independently; the second PI must still brake its motor.
         auto cfg = bench();
+        cfg.joint[SmallPitch].velocity_kp = 2.0f; // Synthetic high-gain case, not the production default.
         ArmControl a(cfg);
         pitch(a, cfg, 0);
         CHECK(a.capture_zero(kPitchPair, 0) == Result::Ok);
@@ -162,19 +181,20 @@ int test_cad_mapping() {
         a.step(0, frames);
         pitch(a, cfg, 4, 2054);
         const unsigned n = a.step(4, frames);
-        CHECK(near(a.status().joint[SmallPitch].velocity_deg_s, 0));
+        CHECK(near(a.status().joint[SmallPitch].velocity_deg_s,
+                   a.status().joint[SmallPitch].drive_velocity_deg_s));
         CHECK(a.status().joint[SmallPitch].drive_velocity_deg_s > 5);
         CHECK(a.status().joint[SmallPitch].effort < -0.1f);
         CHECK(find(frames, n, 2) != nullptr);
         CHECK(torque(*find(frames, n, 2), cfg.joint[SmallPitch].t_max) < -0.1f);
         CHECK(a.status().faults == 0);
     }
-    { // Feedback skew is bounded independently of the ordinary 50ms feedback timeout.
+    { // 解耦后不再要求两DM反馈时差；各轴按自己的50ms超时判断在线。
         auto cfg = bench();
         ArmControl a(cfg);
         dm_raw(a, cfg, BigPitch, 32768, 2048, 10);
         dm_raw(a, cfg, SmallPitch, 32768, 2048, 0);
-        CHECK(a.capture_zero(kPitchPair, 10) == Result::NotOnline);
+        CHECK(a.capture_zero(kPitchPair, 10) == Result::Ok);
         pitch(a, cfg, 12);
         CHECK(a.capture_zero(kPitchPair, 12) == Result::Ok);
         CHECK(a.enable(kPitchPair, 12) == Result::Ok);
@@ -183,20 +203,24 @@ int test_cad_mapping() {
         a.step(16, frames);
         dm_raw(a, cfg, BigPitch, 32768, 2048, 20);
         a.step(20, frames);
-        CHECK(a.status().faults == 0); // Exactly 8ms is accepted.
+        CHECK(a.status().faults == 0); // SmallPitch最近一次反馈在12ms。
         dm_raw(a, cfg, BigPitch, 32768, 2048, 24);
-        const unsigned n = a.step(24, frames);
+        a.step(24, frames);
+        CHECK(a.status().faults == 0);
+        for (uint32_t t = 28; t <= 64; t += 4) {
+            dm_raw(a, cfg, BigPitch, 32768, 2048, t);
+            a.step(t, frames);
+        }
         CHECK(a.status().faults & FeedbackTimeout);
         CHECK(a.status().enabled_mask == 0);
-        CHECK(!a.status().joint[BigPitch].calibrated && !a.status().joint[SmallPitch].calibrated);
-        CHECK(find(frames, n, 1)->data[7] == 0xfd && find(frames, n, 2)->data[7] == 0xfd);
+        CHECK(!a.status().joint[SmallPitch].calibrated && a.status().joint[BigPitch].calibrated);
         CHECK(a.clear_faults() == Result::Ok);
-        pitch(a, cfg, 28);
-        CHECK(a.enable(kPitchPair, 28) == Result::NotCalibrated);
-        CHECK(a.capture_zero(kPitchPair, 28) == Result::Ok);
-        CHECK(a.enable(kPitchPair, 28) == Result::Ok);
+        pitch(a, cfg, 68);
+        CHECK(a.enable(kPitchPair, 68) == Result::NotCalibrated);
+        CHECK(a.capture_zero(kPitchPair, 68) == Result::Ok);
+        CHECK(a.enable(kPitchPair, 68) == Result::Ok);
     }
-    { // A motor fault invalidates the paired calibration; MCU tick rollover is not skew.
+    { // A motor fault invalidates only that joint's calibration; MCU tick rollover is not a fault.
         auto cfg = bench();
         ArmControl a(cfg);
         const uint32_t t = 0xfffffffcu;
@@ -211,17 +235,16 @@ int test_cad_mapping() {
         dm_raw(a, cfg, SmallPitch, 32768, 2048, 4, 8);
         a.step(4, frames);
         CHECK(a.status().faults & MotorError);
-        CHECK(!a.status().joint[BigPitch].calibrated && !a.status().joint[SmallPitch].calibrated);
+        CHECK(a.status().joint[BigPitch].calibrated && !a.status().joint[SmallPitch].calibrated);
     }
-    { // Retargeting a moving pitch pair stays inside both q and mapped-drive envelopes.
+    { // 解耦后两pitch各自按自身速度/加速度/范围规划，不再有a2映射。
         auto cfg = bench();
         ArmControl a(cfg);
         pitch(a, cfg, 0);
         a.capture_zero(kPitchPair, 0);
         a.enable(kPitchPair, 0);
         float q[5] = {0, 10, 5, 0, 0};
-        float old_v1 = 0, old_v2 = 0, old_q1_v = 0, old_q2_v = 0;
-        float old_q1 = 0, old_q2 = 0;
+        float old_v1 = 0, old_v2 = 0;
         for (unsigned i = 0; i < 1400; ++i) {
             const unsigned t = i * 4;
             if (i == 30) {
@@ -246,46 +269,36 @@ int test_cad_mapping() {
             const auto &p1 = a.status().joint[BigPitch];
             const auto &p2 = a.status().joint[SmallPitch];
             CHECK(a.status().faults == 0 && a.status().enabled_mask == kPitchPair);
-            CHECK(p1.reference_deg >= -30.0001f && p1.reference_deg <= 30.0001f);
-            CHECK(p2.reference_deg >= -30.0001f && p2.reference_deg <= 30.0001f);
-            CHECK(p2.drive_reference_deg >= -30.0001f && p2.drive_reference_deg <= 30.0001f);
-            CHECK(near(p2.drive_reference_deg, p1.reference_deg + p2.reference_deg, 0.0001f));
-            const float v1 = p1.drive_reference_velocity_deg_s,
-                        v2 = p2.drive_reference_velocity_deg_s;
-            const float q1_v = v1, q2_v = v2 - v1;
+            CHECK(p1.reference_deg >= cfg.joint[BigPitch].min_deg - 0.0001f &&
+                  p1.reference_deg <= cfg.joint[BigPitch].max_deg + 0.0001f);
+            CHECK(p2.reference_deg >= cfg.joint[SmallPitch].min_deg - 0.0001f &&
+                  p2.reference_deg <= cfg.joint[SmallPitch].max_deg + 0.0001f);
+            CHECK(near(p1.drive_reference_deg, p1.reference_deg, 0.0001f));
+            CHECK(near(p2.drive_reference_deg, p2.reference_deg, 0.0001f));
+            const float v1 = p1.drive_reference_velocity_deg_s;
+            const float v2 = p2.drive_reference_velocity_deg_s;
             CHECK(std::fabs(v1) <= cfg.joint[BigPitch].max_speed_deg_s + 0.0001f);
-            CHECK(std::fabs(v2) <= cfg.pitch.second_drive_max_speed_deg_s + 0.0001f);
-            CHECK(std::fabs(q2_v) <= cfg.joint[SmallPitch].max_speed_deg_s + 0.0001f);
+            CHECK(std::fabs(v2) <= cfg.joint[SmallPitch].max_speed_deg_s + 0.0001f);
             CHECK(std::fabs(v1 - old_v1) <=
                   cfg.joint[BigPitch].max_accel_deg_s2 * 0.004f + 0.0002f);
             CHECK(std::fabs(v2 - old_v2) <=
-                  cfg.pitch.second_drive_max_accel_deg_s2 * 0.004f + 0.0002f);
-            CHECK(std::fabs(q1_v - old_q1_v) <=
-                  cfg.joint[BigPitch].max_accel_deg_s2 * 0.004f + 0.0002f);
-            CHECK(std::fabs(q2_v - old_q2_v) <=
                   cfg.joint[SmallPitch].max_accel_deg_s2 * 0.004f + 0.0002f);
-            CHECK(near((p1.reference_deg - old_q1) / 0.004f, q1_v, 0.002f));
-            CHECK(near((p2.reference_deg - old_q2) / 0.004f, q2_v, 0.002f));
             old_v1 = v1;
             old_v2 = v2;
-            old_q1_v = q1_v;
-            old_q2_v = q2_v;
-            old_q1 = p1.reference_deg;
-            old_q2 = p2.reference_deg;
         }
         CHECK(near(a.status().joint[BigPitch].reference_deg, 10, 0.02f));
         CHECK(near(a.status().joint[SmallPitch].reference_deg, 5, 0.02f));
     }
     { // The 32T output angle reduces the old shaft-side envelope by exactly 3/4.
         const auto &g = kArmConfig.joint[Gripper];
-        CHECK(g.feedback_per_joint == 48 && g.min_deg == 0 && g.max_deg == 45);
+        CHECK(g.feedback_per_joint == 48 && g.direction == 1 && g.min_deg == 0 && g.max_deg == 45);
         CHECK(g.max_speed_deg_s == 3.75f && g.max_accel_deg_s2 == 11.25f);
         CHECK(g.limit_margin_deg == 1.5f && g.stationary_speed_deg_s == 1.5f);
         CHECK(near(g.velocity_kp * 0.75f, 20) && near(g.velocity_ki * 0.75f, 5));
         CHECK(g.max_deg * g.feedback_per_joint == 60 * 36);
         CHECK(g.max_speed_deg_s * g.feedback_per_joint == 5 * 36);
         CHECK(g.max_accel_deg_s2 * g.feedback_per_joint == 15 * 36);
-        CHECK(kOperatorConfig.gripper_closed_deg == 45 &&
+        CHECK(kOperatorConfig.gripper_open_deg == 45 && kOperatorConfig.gripper_closed_deg == 0 &&
               kOperatorConfig.gripper_close_timeout_ms == 2000);
         auto cfg = bench();
         ArmControl a(cfg);
@@ -299,7 +312,7 @@ int test_cad_mapping() {
             const unsigned step = (total - accumulated) > 3000 ? 3000 : (total - accumulated);
             accumulated += step;
             ++now;
-            dji(a, Gripper, (1000 + accumulated) % 8192, now);
+            dji(a, Gripper, (1000 + total + int(accumulated) * g.direction) % 8192, now);
         }
         CHECK(near(a.status().joint[Gripper].position_deg, 45));
         float q[5] = {0, 0, 0, 0, 60};
@@ -340,7 +353,7 @@ int test_cad_mapping() {
             CHECK(find(frames, n, 0x200) != nullptr && find(old_frames, old_n, 0x200) != nullptr);
             const unsigned slot = (cfg.joint[Gripper].motor_id - 1) % 4;
             CHECK(current(*find(frames, n, 0x200), slot) ==
-                  int16_t(a.status().joint[Gripper].effort));
+                  int16_t(a.status().joint[Gripper].effort * cfg.joint[Gripper].direction));
             CHECK(std::abs(current(*find(frames, n, 0x200), slot) -
                            current(*find(old_frames, old_n, 0x200), slot)) <= 1);
         }

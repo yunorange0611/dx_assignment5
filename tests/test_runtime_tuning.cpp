@@ -1,6 +1,7 @@
 #include "robot_control.h"
 #include "robot_control_internal.h"
 #include "Arm/arm_control.h"
+#include "arm_feedback_fixture.h"
 #include "Arm/yaw_config.h"
 #include "Chassis/chassis_control.h"
 #include "Vehicle/robot_tuning.h"
@@ -26,6 +27,8 @@ InsStatus imu{};
 uint32_t vehicle_reasons = 0;
 unsigned revocations = 0;
 bool feed(ArmControl &arm, unsigned joint, uint32_t now, unsigned encoder = 1000, int rpm = 0) {
+    if (joint == Roll)
+        prime_roll_feedback(arm, now, encoder);
     if (joint == BigPitch || joint == SmallPitch) {
         const uint8_t d[8] = {uint8_t(0x10 + joint), 0x80, 0, 0x80, 0x08, 0, 25, 25};
         return arm.receive(1, arm.feedback_id(joint), d, 8, now);
@@ -35,8 +38,7 @@ bool feed(ArmControl &arm, unsigned joint, uint32_t now, unsigned encoder = 1000
     return arm.receive(1, arm.feedback_id(joint), d, 8, now);
 }
 struct Rig {
-    Config cfg = [] { auto c = kArmConfig; c.joint[Yaw].fixed_zero_encoder = -1; return c; }();
-    ArmControl arm{cfg};
+    ArmControl arm{kArmConfig};
     ChassisCommand command{};
     Frame frames[kJointCount]{};
     uint32_t now = 1000;
@@ -198,12 +200,12 @@ int run() {
 
     // Invalid online gains are rejected atomically while the existing arm holds.
     const float accepted_yaw_kp = g_robot_tune_status.yaw_velocity_kp;
-    const float accepted_yaw_limit = g_robot_tune_status.yaw_voltage_limit_raw;
+    const float accepted_yaw_limit = g_robot_tune_status.yaw_current_limit_ma;
     tune_yaw_velocity_kp = std::numeric_limits<float>::quiet_NaN();
     r.tick();
     CHECK(g_robot_tune_status.yaw_parameter_result == uint32_t(Result::InvalidArgument));
     CHECK(g_robot_tune_status.yaw_velocity_kp == accepted_yaw_kp &&
-          g_robot_tune_status.yaw_voltage_limit_raw == accepted_yaw_limit);
+          g_robot_tune_status.yaw_current_limit_ma == accepted_yaw_limit);
     CHECK(r.arm.status().enabled_mask == kAllJoints);
     tune_yaw_velocity_kp = accepted_yaw_kp;
     r.tick();
@@ -237,23 +239,23 @@ int run() {
     robot_tune_mode = ROBOT_TUNE_NORMAL;
     r.left = DR16_SWITCH_MID;
     r.right = DR16_SWITCH_UP;
-    g_robot_debug_command = ROBOT_DEBUG_REQUEST_CONTROL;
+    CHECK(Robot_RequestControl());
     r.tick();
     CHECK(!r.command.enabled && r.arm.status().enabled_mask == kAllJoints);
     const auto gripper_before_resume = r.arm.status().joint[Gripper].target_deg;
     r.wait();
-    g_robot_debug_command = ROBOT_DEBUG_REQUEST_CONTROL;
+    CHECK(Robot_RequestControl());
     r.tick();
     CHECK(!r.command.enabled && r.arm.status().joint[Gripper].target_deg == gripper_before_resume);
     r.right = DR16_SWITCH_MID;
-    g_robot_debug_command = ROBOT_DEBUG_REQUEST_CONTROL;
+    CHECK(Robot_RequestControl());
     r.tick();
     CHECK(!r.command.enabled);
     r.wait();
     CHECK(!r.command.enabled); // No delayed execution of either premature request.
 
-    // Full-axis return with command 4 must preserve holders despite a prior protection latch.
-    g_robot_debug_command = ROBOT_DEBUG_REQUEST_CONTROL;
+    // Explicit full-axis return must preserve holders despite a prior protection latch.
+    CHECK(Robot_RequestControl());
     r.tick();
     CHECK(r.arm.status().enabled_mask == kAllJoints && g_robot_status.active);
     CHECK(!g_robot_status.protection_disabled && !g_robot_status.emergency_stop);

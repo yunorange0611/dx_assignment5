@@ -3,14 +3,18 @@
 #include <cstdint>
 #include "Arm/yaw_pid.h"
 
-// 上层使用关节端deg/deg/s：BigPitch=肩角增量，SmallPitch=肘相对角增量。
-// 两DM的驱动坐标为a1=q肩、a2=q肩+q肘；电机闭环和effort仍属于驱动坐标。
+// 上层使用关节端deg/deg/s：BigPitch=DM1独立关节角，SmallPitch=DM2独立关节角。
+// 两轴运动已解耦，不再使用q肘=a2-a1或a2=q肩+q肘换算；电机闭环和effort直接使用各自驱动角。
 namespace engineer {
 constexpr unsigned kJointCount = 5;
 constexpr uint8_t kAllJoints = 0x1f;
 constexpr uint8_t kFourAxisJoints = 0x1e; // 大/小pitch、roll、夹爪；无yaw
 enum Joint : uint8_t { Yaw, BigPitch, SmallPitch, Roll, Gripper };
+// 兼容旧调用方的组合mask；两pitch已解耦，不再要求成对校零/使能。
 constexpr uint8_t kPitchPair = (1u << BigPitch) | (1u << SmallPitch);
+constexpr uint8_t kParkedArmGroups[] = {1u << BigPitch, 1u << SmallPitch, 1u << Roll,
+                                        1u << Gripper};
+constexpr int32_t kJogCapturePitchZero = 5, kJogClearFaults = 8, kJogStop = 9;
 enum class Motor : uint8_t { Gm6020Voltage, M2006, Dm4310Mit, Gm6020Current };
 enum Fault : uint32_t {
     NoFault = 0,
@@ -24,6 +28,7 @@ enum Fault : uint32_t {
     TimingError = 1u << 7,
     EnableTimeout = 1u << 8
 };
+constexpr uint32_t kSharedArmFaults = TransportError | TimingError;
 enum class Result : uint8_t {
     Ok,
     InvalidArgument,
@@ -33,7 +38,8 @@ enum class Result : uint8_t {
     NotCalibrated,
     FaultLatched,
     Moving,
-    OutOfRange
+    OutOfRange,
+    InterlockOpen
 };
 
 struct JointConfig {
@@ -53,14 +59,22 @@ struct JointConfig {
     float max_temperature_c;             // C610不提供温度，此项不适用于M2006
     float limit_margin_deg = 2.0f;       // 反馈越界锁存余量，同样按此轴角度单位
     float stationary_speed_deg_s = 2.0f; // 手动校零允许的驱动速度阈值
+    float initial_effort_limit = -1.0f;  // -1 uses max_effort; same units as max_effort.
+    // Pitch DM drives only. Angle is the calibrated drive angle plus this offset.
+    float torque_bias_nm = 0, gravity_gain_nm = 0, gravity_offset_deg = 0;
+    // Nonnegative motion-assist magnitudes. up_direction maps physical up to drive angle.
+    float up_ff_nm = 0, down_ff_nm = 0;
+    int8_t up_direction = 1;
     int16_t fixed_zero_encoder = -1;
     bool encoder_velocity = false; // Yaw only; false restores CAN rpm feedback. // DJI单圈固定零点0..8191；-1表示未标定
 };
+// 已弃用：两pitch解耦后不再使用第二驱动a2=q肩+q肘范围、两反馈时差和成对确认。
+// 字段暂时保留以兼容现有配置初始化和调试工具，后续可整体删除。
 struct PitchConfig {
-    bool mapping_confirmed; // 两DM实例、正向、联合零位及连杆分支实测确认后才设true
-    float second_drive_min_deg, second_drive_max_deg; // a2=q肩+q肘的独立保护范围
+    bool mapping_confirmed;
+    float second_drive_min_deg, second_drive_max_deg;
     float second_drive_max_speed_deg_s, second_drive_max_accel_deg_s2;
-    uint32_t max_feedback_skew_ms; // 两反馈时间差门槛；不代表硬件同步采样
+    uint32_t max_feedback_skew_ms;
 };
 struct Config {
     JointConfig joint[kJointCount];
@@ -92,6 +106,7 @@ struct JointStatus {
     float motor_effort_feedback; // DJI反馈原码 / DM Nm；不是夹持力
     float temperature_c;
     float velocity_target_deg_s;
+    float feedforward_effort; // Pitch bias + cosine term before the combined output limit, Nm.
     uint32_t received, last_feedback_ms, faults;
     bool online, calibrated, enabled;
     uint8_t motor_state; // DM: 0=失能,1=使能,8~F=故障
@@ -100,6 +115,8 @@ struct JointStatus {
     float can_velocity_deg_s, encoder_velocity_deg_s;
     uint32_t velocity_window_ms;
     bool homing; // 固定零点轴开控回零中
+    float motion_feedforward_effort;
+    int8_t motion_ff_direction; // +1 up, -1 down, 0 holding; selected from desired speed.
 };
 struct Status {
     JointStatus joint[kJointCount];
@@ -111,6 +128,8 @@ struct Status {
 
 struct JointTuning {
     float position_kp, velocity_kp, velocity_ki, effort_limit;
+    float torque_bias_nm = 0, gravity_gain_nm = 0, gravity_offset_deg = 0;
+    float up_ff_nm = 0, down_ff_nm = 0;
 };
 
 // Read-only diagnostics for the Yaw-only PID pair.
@@ -133,7 +152,10 @@ class ArmControl {
     bool receive(uint8_t bus, uint16_t id, const uint8_t *data, uint8_t len, uint32_t now_ms);
     Result capture_zero(uint8_t mask, uint32_t now_ms);
     // Explicitly add the requested axes; already-enabled axes keep their state.
+    Result enable_checked(uint8_t mask, uint32_t now, bool require_confirmation);
     Result enable(uint8_t mask, uint32_t now_ms, bool independent_yaw = false);
+    Result capture_parked_zero(uint32_t now_ms);
+    Result enable_parked_tuning(uint32_t now_ms);
     void disable();
     // Owner-only mode changes. Neither operation enables an axis; pitch stays paired.
     Result hold(uint8_t mask, uint32_t now_ms);
@@ -144,8 +166,8 @@ class ArmControl {
     Result set_effort_limit(unsigned joint, float limit);
     // Disabled-only RAM tuning. Limits never exceed the startup output cap.
     Result set_tuning(unsigned joint, const JointTuning &tuning, uint32_t now_ms);
-    // Runtime tuning requires the affected drive(s) stationary and their targets
-    // and references within 0.5 deg of feedback. Other holding axes stay enabled.
+    // Normal runtime tuning requires settled drives; parked tuning accepts moving,
+    // healthy axes. The task owner checks remote input before calling this method.
     Result set_tuning_runtime(unsigned joint, const JointTuning &tuning, uint32_t now_ms);
     bool get_tuning(unsigned joint, JointTuning &tuning) const;
     Result set_yaw_limits(const YawRuntimeLimits &limits, uint32_t now_ms);
@@ -167,6 +189,7 @@ class ArmControl {
         return yaw_limits_;
     }
     // 输出最多5帧：DJI按bus+组ID合帧，DM每台一帧。调用者提供>=5个槽位。
+    unsigned step_jog(uint32_t now_ms, int32_t request, bool permit, Frame out[kJointCount]);
     unsigned step(uint32_t now_ms, Frame out[kJointCount]);
     const Status &status() const {
         return status_;
@@ -186,15 +209,23 @@ class ArmControl {
     int64_t yaw_velocity_ticks_ = 0;
     uint16_t yaw_velocity_last_encoder_ = 0;
     float update_yaw_velocity(uint16_t encoder, uint32_t now, bool reset);
+    struct RollZeroStillness {
+        int64_t min_encoder, max_encoder;
+        uint32_t since_ms;
+        bool tracking;
+    } roll_zero_stillness_{};
+    unsigned output_frames(Frame out[kJointCount]) const;
+    unsigned jog_axis_ = BigPitch;
+    int8_t jog_direction_ = 0;
+    float jog_start_deg_[kJointCount]{};
+    Result start_jog(unsigned joint, int8_t direction, uint32_t now_ms);
+    void run_jog(uint32_t now_ms);
     Config config_;
     const float startup_effort_cap_[kJointCount];
     float tuning_effort_limit_[kJointCount]{};
     Status status_{};
     uint32_t last_step_ms_ = 0;
-    bool have_step_ = false;
-    float pitch_direction_[2]{}, pitch_end_[2]{};
-    float pitch_speed_ = 0, pitch_speed_limit_ = 0, pitch_accel_limit_ = 0;
-    bool pitch_path_active_ = false;
+    bool have_step_ = false, parked_tuning_ = false;
     YawRuntimeLimits yaw_limits_{};
     bool yaw_tuning_unlimited_ = false;
     float yaw_motion_min_ = 0, yaw_motion_max_ = 0, yaw_motion_speed_ = 0, yaw_test_speed_ = 0;
@@ -212,8 +243,6 @@ class ArmControl {
     void refresh(uint32_t now_ms);
     void update_joint_feedback();
     void update_drive_references();
-    void step_pitch_reference(float dt);
-    bool pitch_feedback_ready(uint32_t now_ms) const;
     bool targets_in_range(const float q[kJointCount]) const;
     float drive_min(unsigned joint) const;
     float drive_max(unsigned joint) const;

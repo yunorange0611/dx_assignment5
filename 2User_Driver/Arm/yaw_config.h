@@ -31,6 +31,8 @@ inline constexpr JointConfig kYawConfig = {
     70, // 无DM协议量程；温度门槛°C
     2.0f, // 越界余量deg
     2.0f, // 静止速度阈值deg/s
+    -1.0f, // initial_effort_limit: use max_effort
+    0, 0, 0, 0, 0, 1, // no pitch feedforward
     kYawZeroEncoder,
     true // encoder_velocity: 40ms encoder window; false restores CAN rpm
 };

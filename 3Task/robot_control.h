@@ -47,6 +47,7 @@ enum RobotDebugCommand {
     ROBOT_DEBUG_DISABLE_YAW  // 只失能 Yaw
 };
 extern volatile uint32_t g_robot_debug_command;
+extern volatile float g_arm_remote_deadband; // Parked arm only, normalized (0, 0.5).
 // One daily firmware. Remote Drive/Grab/Standby remains independent of these
 // owner-consumed FreeMASTER inputs. Switching mode clears motion targets.
 enum RobotTuneMode {
@@ -67,11 +68,11 @@ typedef struct {
     float yaw_position_kp, yaw_velocity_kp, yaw_velocity_ki, yaw_voltage_limit_raw;
 } RobotTuneStatus;
 extern RobotTuneStatus g_robot_tune_status; // Read-only accepted mode / limits.
-// ZERO/CLEAR同时请求关控，已使能时核心返回Busy；绝不自动校零/自动开控。
+// ZERO在失能时采集零位；整车停车四轴由左拨杆选择开控或关控。
 // 单C板：底盘/安全管理约每20ms更新真实状态；100ms过期禁止运动。
 // 非法输入立即使互锁无效，不继续沿用旧许可。无底盘任务时不要伪造全部为1。
 int Robot_SetInterlocks(const RobotInterlocks *state);
-// 回中/停车、反馈和校零就绪后显式请求一次；待机中忽略、不排队等待以后开控。
+// 整车其他控制路径的显式请求；停车四轴由遥控器的左拨杆选择。
 int Robot_RequestControl(void);
 void Robot_StopControl(void);
 int Robot_GetControlStatus(RobotControlStatus *status); // Diagnostics and calibration state only.

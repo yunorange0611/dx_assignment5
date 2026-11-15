@@ -26,10 +26,8 @@ ArmOperator::ArmOperator(const Config &a, const OperatorConfig &c) : arm_(a), co
              finite(c.gripper_open_deg) && finite(c.gripper_closed_deg) &&
              c.gripper_open_deg != c.gripper_closed_deg && finite(c.gripper_hold_current) &&
              c.gripper_hold_current > 0 && c.gripper_hold_current <= a.joint[Gripper].max_effort &&
-             c.gripper_close_timeout_ms && finite(a.pitch.second_drive_min_deg) &&
-             finite(a.pitch.second_drive_max_deg) && a.pitch.second_drive_min_deg <= 0 &&
-             a.pitch.second_drive_max_deg >= 0 &&
-             a.pitch.second_drive_min_deg < a.pitch.second_drive_max_deg;
+             c.gripper_close_timeout_ms && finite(c.big_pitch_target_speed_deg_s) &&
+             c.big_pitch_target_speed_deg_s > 0;
     const unsigned channels[] = {c.left_y_channel, c.left_x_channel, c.right_y_channel,
                                  c.right_x_channel};
     for (unsigned i = 0; i < 4; ++i) {
@@ -61,17 +59,6 @@ void ArmOperator::freeze(const Status &s) {
             (arm_.joint_mask & (1u << i))
                 ? clamp(s.joint[i].position_deg, arm_.joint[i].min_deg, arm_.joint[i].max_deg)
                 : 0;
-    // 反馈接近保护边界时，逐关节clamp后仍须保留a2的可行范围。
-    const auto &p = arm_.pitch;
-    targets_[BigPitch] = clamp(targets_[BigPitch],
-                               std::fmax(arm_.joint[BigPitch].min_deg,
-                                         p.second_drive_min_deg - arm_.joint[SmallPitch].max_deg),
-                               std::fmin(arm_.joint[BigPitch].max_deg,
-                                         p.second_drive_max_deg - arm_.joint[SmallPitch].min_deg));
-    targets_[SmallPitch] = clamp(
-        targets_[SmallPitch],
-        std::fmax(arm_.joint[SmallPitch].min_deg, p.second_drive_min_deg - targets_[BigPitch]),
-        std::fmin(arm_.joint[SmallPitch].max_deg, p.second_drive_max_deg - targets_[BigPitch]));
     close_tracking_ = false;
     close_limited_ = false;
 }
@@ -114,7 +101,8 @@ float remote_axis_value(const DR16Frame &f, unsigned ch, int sign, float deadban
 }
 
 OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, const Status &s,
-                                 uint32_t now, bool arm_request, bool stop_request) {
+                                 uint32_t now, bool arm_request, bool stop_request,
+                                 bool parked_tuning, float parked_deadband) {
     OperatorOutput o;
     const bool bench = arm_.joint_mask == kFourAxisJoints;
     o.gripper_effort_limit = config_.gripper_hold_current;
@@ -139,12 +127,12 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
             o.target_deg[i] = targets_[i];
         return o;
     };
-    auto fail = [&](OperatorBlock reason) {
+    auto fail = [&](OperatorBlock reason, RobotMode stopped_mode = RobotMode::Safe) {
         if (!safe_latched_)
             wait_for_neutral(s);
         safe_latched_ = true;
         active_ = false;
-        mode_ = RobotMode::Safe;
+        mode_ = stopped_mode;
         bench_up_seen_ = false;
         bench_arm_pending_ = false;
         permission_blocked_ = false;
@@ -175,6 +163,10 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
          in.drive_yaw_min_deg < yaw.min_deg || in.drive_yaw_max_deg > yaw.max_deg ||
          in.drive_yaw_max_speed_deg_s <= 0 || in.drive_yaw_max_speed_deg_s > yaw.max_speed_deg_s))
         return fail(OperatorBlock::InvalidInterlock);
+    // The parked arm follows the current switch position.
+    if (parked_tuning && left == DR16_SWITCH_DOWN)
+        return fail(OperatorBlock::Standby, RobotMode::Standby);
+
     if (bench && left == DR16_SWITCH_UP) {
         // UP是台架关控位；只有本次健康连接中实际见过UP，MID才能产生开控事件。
         const auto stopped = fail(OperatorBlock::NeedArm);
@@ -182,12 +174,18 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         return stopped;
     }
     safe_latched_ = false;
-    bool joints_ready = true;
+    const uint8_t controlled_joints = parked_tuning ? kFourAxisJoints : arm_.joint_mask;
+    uint8_t ready_joints = 0;
     for (unsigned i = 0; i < kJointCount; ++i)
-        if ((arm_.joint_mask & (1u << i)) && (!s.joint[i].online || !s.joint[i].calibrated))
-            joints_ready = false;
-    if (active_ && (s.enabled_mask != arm_.joint_mask || s.faults || !s.configuration_valid ||
-                    !joints_ready))
+        if ((controlled_joints & (1u << i)) && s.joint[i].online && s.joint[i].calibrated &&
+            !s.joint[i].faults)
+            ready_joints |= 1u << i;
+    const bool joints_ready = parked_tuning ? ready_joints != 0 : ready_joints == controlled_joints;
+    const bool arm_fault = parked_tuning ? (s.faults & kSharedArmFaults) != 0 : s.faults != 0;
+    const bool enabled = parked_tuning
+                             ? s.enabled_mask != 0 && !(s.enabled_mask & ~controlled_joints)
+                             : s.enabled_mask == controlled_joints;
+    if (active_ && (!enabled || arm_fault || !s.configuration_valid || !joints_ready))
         return fail(OperatorBlock::ArmUnavailable);
     if (bench_up_seen_) {
         bench_arm_pending_ = left == DR16_SWITCH_MID;
@@ -199,14 +197,16 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         wait_for_neutral(s);
         permission_blocked_ = false;
     }
+    const float deadband = parked_tuning && parked_deadband > 0 && parked_deadband < .5f
+                               ? parked_deadband : config_.deadband;
     const float ly = remote_axis_value(r.frame, config_.left_y_channel,
-                                       config_.axis_direction[0], config_.deadband);
+                                       config_.axis_direction[0], deadband);
     const float lx = remote_axis_value(r.frame, config_.left_x_channel,
-                                       config_.axis_direction[1], config_.deadband);
+                                       config_.axis_direction[1], deadband);
     const float ry = remote_axis_value(r.frame, config_.right_y_channel,
-                                       config_.axis_direction[2], config_.deadband);
+                                       config_.axis_direction[2], deadband);
     const float rx = remote_axis_value(r.frame, config_.right_x_channel,
-                                       config_.axis_direction[3], config_.deadband);
+                                       config_.axis_direction[3], deadband);
     const bool neutral = ly == 0 && lx == 0 && ry == 0 && rx == 0 && right == DR16_SWITCH_MID;
     if (bench && (!neutral || mode_ != RobotMode::Grab || !joints_ready || !s.configuration_valid ||
                   s.faults))
@@ -223,7 +223,8 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         // 即使arm_request为真也不在待机中开控；退出时重新经过停车和回中。
         return hold(OperatorBlock::Standby);
     }
-    bool permitted = bench || (mode_ == RobotMode::Grab ? in.chassis_stopped : in.arm_allows_drive);
+    bool permitted = bench || parked_tuning ||
+                     (mode_ == RobotMode::Grab ? in.chassis_stopped : in.arm_allows_drive);
     OperatorBlock denial =
         mode_ == RobotMode::Grab ? OperatorBlock::WaitChassisStop : OperatorBlock::PostureDenied;
     if (mode_ == RobotMode::Drive && in.drive_yaw_allowed &&
@@ -243,6 +244,8 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
         return hold(denial);
     }
     permission_blocked_ = false;
+    if (parked_tuning)
+        waiting_ = false;
     if (waiting_) {
         // 只在切换/重新许可阶段要求停稳；正常行驶不能永久要求chassis_stopped。
         if (!bench && !in.chassis_stopped) {
@@ -262,9 +265,9 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
             return hold(OperatorBlock::WaitNeutral);
     }
     if (!active_) {
-        const bool requested = arm_request || bench_arm_pending_;
-        bench_arm_pending_ = false; // 只消费一次；失败后必须重新UP→MID或显式请求。
-        if (!requested || !neutral || !s.configuration_valid || s.faults)
+        const bool requested = parked_tuning || (neutral && (arm_request || bench_arm_pending_));
+        bench_arm_pending_ = false;
+        if (!requested || !s.configuration_valid || arm_fault)
             return hold(OperatorBlock::NeedArm);
         if (!joints_ready)
             return hold(OperatorBlock::ArmUnavailable);
@@ -278,7 +281,10 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
     const float dt = float(elapsed) * 0.001f;
     auto integrate = [&](unsigned i, float input) {
         const auto &c = arm_.joint[i];
-        targets_[i] = clamp(targets_[i] + input * c.max_speed_deg_s * dt, c.min_deg, c.max_deg);
+        const float speed = i == BigPitch
+                                ? std::fmin(config_.big_pitch_target_speed_deg_s, c.max_speed_deg_s)
+                                : c.max_speed_deg_s;
+        targets_[i] = clamp(targets_[i] + input * speed * dt, c.min_deg, c.max_deg);
     };
     auto constrain_yaw_target = [&]() {
         // Remote target may lead the actual angle only by the configured amount,
@@ -313,22 +319,9 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
             constrain_yaw_target();
         // 其余机械臂轴不接受行驶摇杆新目标。
     } else if (mode_ == RobotMode::Grab) {
-        const auto &b = arm_.joint[BigPitch];
-        const auto &elbow_config = arm_.joint[SmallPitch];
-        float db = clamp(targets_[BigPitch] + ly * b.max_speed_deg_s * dt, b.min_deg, b.max_deg) -
-                   targets_[BigPitch];
-        float ds = clamp(targets_[SmallPitch] + ry * elbow_config.max_speed_deg_s * dt,
-                         elbow_config.min_deg, elbow_config.max_deg) -
-                   targets_[SmallPitch];
-        const float sum = targets_[BigPitch] + targets_[SmallPitch], delta = db + ds;
-        float scale = 1;
-        if (delta > 0)
-            scale = std::fmin(scale, (arm_.pitch.second_drive_max_deg - sum) / delta);
-        else if (delta < 0)
-            scale = std::fmin(scale, (arm_.pitch.second_drive_min_deg - sum) / delta);
-        scale = clamp(scale, 0, 1);
-        targets_[BigPitch] += db * scale;
-        targets_[SmallPitch] += ds * scale;
+        // 两pitch已解耦：左竖只推DM1关节目标，右竖只推DM2关节目标，各按自身范围限位。
+        integrate(BigPitch, ly);
+        integrate(SmallPitch, ry);
         integrate(Roll, lx);
         if (!bench) {
             integrate(Yaw, -rx); // 遥控Yaw左右反向；不改变电机反馈/输出坐标
@@ -340,7 +333,14 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
             close_tracking_ = false;
             close_limited_ = false;
         }
-        if (right == DR16_SWITCH_DOWN) {
+        const bool manual_gripper = parked_tuning && right == DR16_SWITCH_MID;
+        const bool closing = right == DR16_SWITCH_DOWN || (manual_gripper && rx > 0);
+        const bool opening = right == DR16_SWITCH_UP || (manual_gripper && rx < 0);
+        if (manual_gripper && !closing) {
+            close_tracking_ = false;
+            close_limited_ = false;
+        }
+        if (closing) {
             if (!close_tracking_) {
                 close_tracking_ = true;
                 close_since_ = now;
@@ -348,10 +348,10 @@ OperatorOutput ArmOperator::step(const RemoteInput &r, const Interlocks &in, con
             if (uint32_t(now - close_since_) >= config_.gripper_close_timeout_ms)
                 close_limited_ = true;
         }
-        if (right != DR16_SWITCH_MID && !close_limited_) {
-            const float goal =
-                right == DR16_SWITCH_UP ? config_.gripper_open_deg : config_.gripper_closed_deg;
-            const float max_step = arm_.joint[Gripper].max_speed_deg_s * dt;
+        if ((opening || closing) && !close_limited_) {
+            const float goal = opening ? config_.gripper_open_deg : config_.gripper_closed_deg;
+            const float fraction = manual_gripper ? std::fabs(rx) : 1.0f;
+            const float max_step = fraction * arm_.joint[Gripper].max_speed_deg_s * dt;
             targets_[Gripper] += clamp(goal - targets_[Gripper], -max_step, max_step);
             o.gripper_effort_limit = arm_.joint[Gripper].max_effort;
         }
